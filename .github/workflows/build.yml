@@ -1,0 +1,120 @@
+name: Build YueLink
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+env:
+  FLUTTER_VERSION: '3.27.1'
+  GO_VERSION: '1.22'
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+      - run: flutter pub get
+      - run: flutter analyze
+
+  build-core:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: android
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-latest
+            platform: ios
+          - os: macos-latest
+            platform: macos
+          - os: windows-latest
+            platform: windows
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Android NDK
+        if: matrix.platform == 'android'
+        uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
+
+      - name: Build core
+        run: dart setup.dart build -p ${{ matrix.platform }}
+
+      - name: Install core
+        run: dart setup.dart install -p ${{ matrix.platform }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-${{ matrix.platform }}
+          path: core/build/
+
+  build-android:
+    needs: [analyze, build-core]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-android
+          path: core/build/
+      - run: dart setup.dart install -p android
+      - run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yuelink-android
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  build-macos:
+    needs: [analyze, build-core]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-macos
+          path: core/build/
+      - run: dart setup.dart install -p macos
+      - run: flutter build macos --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yuelink-macos
+          path: build/macos/Build/Products/Release/
+
+  build-windows:
+    needs: [analyze, build-core]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-windows
+          path: core/build/
+      - run: dart setup.dart install -p windows
+      - run: flutter build windows --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yuelink-windows
+          path: build/windows/x64/runner/Release/

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../constants.dart';
 import '../providers/core_provider.dart';
 import '../services/settings_service.dart';
 
@@ -67,6 +69,21 @@ class SettingsPage extends ConsumerWidget {
                     ref.read(autoConnectProvider.notifier).state = v;
                     SettingsService.set('autoConnect', v);
                   },
+                ),
+                ListTile(
+                  title: const Text('HTTP 端口'),
+                  trailing: Text('${AppConstants.defaultHttpPort}',
+                      style: Theme.of(context).textTheme.bodyMedium),
+                ),
+                ListTile(
+                  title: const Text('SOCKS 端口'),
+                  trailing: Text('${AppConstants.defaultSocksPort}',
+                      style: Theme.of(context).textTheme.bodyMedium),
+                ),
+                ListTile(
+                  title: const Text('Mixed 端口'),
+                  trailing: Text('${AppConstants.defaultMixedPort}',
+                      style: Theme.of(context).textTheme.bodyMedium),
                 ),
               ],
             ),
@@ -163,24 +180,44 @@ class SettingsPage extends ConsumerWidget {
           Card(
             child: Column(
               children: [
-                const ListTile(
-                  title: Text('YueLink'),
-                  subtitle: Text('by Yue.to'),
+                ListTile(
+                  title: const Text(AppConstants.appName),
+                  subtitle: const Text('by ${AppConstants.appBrand}'),
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.link_rounded,
+                        size: 22,
+                        color: Theme.of(context).colorScheme.primary),
+                  ),
                 ),
-                const ListTile(
-                  title: Text('版本'),
-                  trailing: Text('1.0.0'),
+                ListTile(
+                  title: const Text('版本'),
+                  trailing: Text(AppConstants.appVersion,
+                      style: Theme.of(context).textTheme.bodyMedium),
                 ),
-                const ListTile(
-                  title: Text('内核'),
-                  trailing: Text('mihomo (Clash.Meta)'),
+                ListTile(
+                  title: const Text('内核'),
+                  trailing: Text('mihomo (Clash.Meta)',
+                      style: Theme.of(context).textTheme.bodyMedium),
                 ),
                 ListTile(
                   title: const Text('项目主页'),
                   trailing: const Icon(Icons.open_in_new, size: 16),
-                  onTap: () {
-                    // TODO: launch URL
-                  },
+                  onTap: () => _launchUrl('https://github.com/onesyue/yuelink'),
+                ),
+                ListTile(
+                  title: const Text('开源许可'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  onTap: () => showLicensePage(
+                    context: context,
+                    applicationName: AppConstants.appName,
+                    applicationVersion: AppConstants.appVersion,
+                  ),
                 ),
               ],
             ),
@@ -189,6 +226,13 @@ class SettingsPage extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 }
 

@@ -65,11 +65,25 @@ Flutter UI (Dart, Riverpod) → CoreController (dart:ffi) → hub.go (CGO //expo
 - Package/Bundle ID: `com.yueto.yuelink`
 - App Group (iOS): `group.com.yueto.yuelink`
 
+### Mock mode:
+
+When Go core is unavailable (no native library), `CoreController` automatically falls back to `CoreMock`, which simulates proxy groups, nodes, traffic, and connections. UI development works fully without Go.
+
 ## Dependencies
 
 - Flutter >= 3.22, Dart >= 3.4
 - Go >= 1.22 (for core compilation)
 - `flutter_riverpod` for state management
-- `ffi` + `path_provider` + `http` as core Dart deps
+- `ffi` + `path_provider` + `http` + `url_launcher` as core Dart deps
 - Android NDK r26+ for Android builds
 - Xcode >= 15 for iOS/macOS builds
+
+## Testing
+
+```bash
+flutter test                          # Run all tests
+flutter test test/models/             # Run model tests only
+flutter test test/services/           # Run service tests only
+```
+
+Test files: `test/models/` (profile, proxy, traffic), `test/services/` (subscription parser), `test/ffi/` (core mock).

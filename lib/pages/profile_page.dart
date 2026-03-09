@@ -17,7 +17,25 @@ class ProfilePage extends ConsumerWidget {
     return Scaffold(
       body: profilesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('加载失败: $e')),
+        error: (e, _) => Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.error),
+              const SizedBox(height: 12),
+              Text('加载失败: $e',
+                  style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () => ref.read(profilesProvider.notifier).load(),
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('重试'),
+              ),
+            ],
+          ),
+        ),
         data: (profiles) {
           if (profiles.isEmpty) {
             return Center(
@@ -37,27 +55,47 @@ class ProfilePage extends ConsumerWidget {
               ),
             );
           }
-          return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: profiles.length,
-            itemBuilder: (context, index) {
-              final profile = profiles[index];
-              final isActive = profile.id == activeId;
-              return _ProfileCard(
-                profile: profile,
-                isActive: isActive,
-                onTap: () {
-                  ref.read(activeProfileIdProvider.notifier).select(
-                      profile.id);
-                },
-                onUpdate: () {
-                  ref.read(profilesProvider.notifier).update(profile);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('正在更新...')));
-                },
-                onDelete: () => _confirmDelete(context, ref, profile),
-              );
-            },
+          return RefreshIndicator(
+            onRefresh: () => ref.read(profilesProvider.notifier).load(),
+            child: ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: profiles.length,
+              itemBuilder: (context, index) {
+                final profile = profiles[index];
+                final isActive = profile.id == activeId;
+                return _ProfileCard(
+                  profile: profile,
+                  isActive: isActive,
+                  onTap: () {
+                    ref
+                        .read(activeProfileIdProvider.notifier)
+                        .select(profile.id);
+                  },
+                  onUpdate: () async {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('正在更新订阅...')));
+                    try {
+                      await ref
+                          .read(profilesProvider.notifier)
+                          .update(profile);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('更新成功')));
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('更新失败: $e')));
+                      }
+                    }
+                  },
+                  onEdit: () => _showEditDialog(context, ref, profile),
+                  onDelete: () => _confirmDelete(context, ref, profile),
+                );
+              },
+            ),
           );
         },
       ),
@@ -67,12 +105,14 @@ class ProfilePage extends ConsumerWidget {
           FloatingActionButton.small(
             heroTag: 'paste',
             onPressed: () => _pasteFromClipboard(context, ref),
+            tooltip: '从剪贴板粘贴',
             child: const Icon(Icons.content_paste),
           ),
           const SizedBox(height: 8),
           FloatingActionButton(
             heroTag: 'add',
             onPressed: () => _showAddDialog(context, ref),
+            tooltip: '添加订阅',
             child: const Icon(Icons.add),
           ),
         ],
@@ -112,6 +152,11 @@ class ProfilePage extends ConsumerWidget {
             onPressed: () {
               Navigator.pop(ctx);
               ref.read(profilesProvider.notifier).delete(profile.id);
+              // Clear active if deleting the active profile
+              final activeId = ref.read(activeProfileIdProvider);
+              if (activeId == profile.id) {
+                ref.read(activeProfileIdProvider.notifier).select(null);
+              }
             },
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('删除'),
@@ -142,6 +187,7 @@ class ProfilePage extends ConsumerWidget {
                   hintText: '我的机场',
                   prefixIcon: Icon(Icons.label_outline),
                 ),
+                textInputAction: TextInputAction.next,
               ),
               const SizedBox(height: 12),
               TextField(
@@ -152,6 +198,7 @@ class ProfilePage extends ConsumerWidget {
                   prefixIcon: Icon(Icons.link),
                 ),
                 maxLines: 2,
+                textInputAction: TextInputAction.done,
               ),
             ],
           ),
@@ -173,9 +220,9 @@ class ProfilePage extends ConsumerWidget {
                         final profile = await ref
                             .read(profilesProvider.notifier)
                             .add(name: name, url: url);
-                        // Auto-select the new profile
-                        ref.read(activeProfileIdProvider.notifier).select(
-                            profile.id);
+                        ref
+                            .read(activeProfileIdProvider.notifier)
+                            .select(profile.id);
                         if (ctx.mounted) Navigator.pop(ctx);
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -193,8 +240,7 @@ class ProfilePage extends ConsumerWidget {
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child:
-                          CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Text('添加'),
             ),
@@ -204,6 +250,62 @@ class ProfilePage extends ConsumerWidget {
     );
   }
 
+  void _showEditDialog(
+      BuildContext context, WidgetRef ref, Profile profile) {
+    final nameCtrl = TextEditingController(text: profile.name);
+    final urlCtrl = TextEditingController(text: profile.url);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('编辑订阅'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(
+                labelText: '名称',
+                prefixIcon: Icon(Icons.label_outline),
+              ),
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: urlCtrl,
+              decoration: const InputDecoration(
+                labelText: '订阅链接',
+                prefixIcon: Icon(Icons.link),
+              ),
+              maxLines: 2,
+              textInputAction: TextInputAction.done,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final name = nameCtrl.text.trim();
+              final url = urlCtrl.text.trim();
+              if (name.isEmpty || url.isEmpty) return;
+
+              profile.name = name;
+              profile.url = url;
+              ref.read(profilesProvider.notifier).update(profile);
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(const SnackBar(content: Text('已保存')));
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ProfileCard extends StatelessWidget {
@@ -211,6 +313,7 @@ class _ProfileCard extends StatelessWidget {
   final bool isActive;
   final VoidCallback onTap;
   final VoidCallback onUpdate;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   const _ProfileCard({
@@ -218,6 +321,7 @@ class _ProfileCard extends StatelessWidget {
     required this.isActive,
     required this.onTap,
     required this.onUpdate,
+    required this.onEdit,
     required this.onDelete,
   });
 
@@ -257,11 +361,14 @@ class _ProfileCard extends StatelessWidget {
                   PopupMenuButton<String>(
                     onSelected: (action) {
                       if (action == 'update') onUpdate();
+                      if (action == 'edit') onEdit();
                       if (action == 'delete') onDelete();
                     },
                     itemBuilder: (_) => [
                       const PopupMenuItem(
                           value: 'update', child: Text('更新订阅')),
+                      const PopupMenuItem(
+                          value: 'edit', child: Text('编辑')),
                       const PopupMenuItem(
                           value: 'delete',
                           child: Text('删除',

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/traffic.dart';
@@ -193,6 +194,8 @@ class _HomePageState extends ConsumerState<HomePage> {
     final actions = ref.read(coreActionsProvider);
     final status = ref.read(coreStatusProvider);
     final isMock = ref.read(isMockModeProvider);
+
+    HapticFeedback.mediumImpact();
 
     if (status == CoreStatus.running) {
       await actions.stop();

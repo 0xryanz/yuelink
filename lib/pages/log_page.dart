@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../ffi/core_controller.dart';
 import '../models/traffic.dart';
 import '../providers/core_provider.dart';
+import '../services/subscription_parser.dart';
 
 class LogPage extends ConsumerStatefulWidget {
   const LogPage({super.key});
@@ -19,6 +20,8 @@ class _LogPageState extends ConsumerState<LogPage> {
   int _uploadTotal = 0;
   int _downloadTotal = 0;
   Timer? _refreshTimer;
+  String _searchQuery = '';
+  final _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -29,6 +32,7 @@ class _LogPageState extends ConsumerState<LogPage> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -57,6 +61,18 @@ class _LogPageState extends ConsumerState<LogPage> {
         _downloadTotal = (data['downloadTotal'] as num?)?.toInt() ?? 0;
       });
     }
+  }
+
+  List<ConnectionInfo> get _filteredConnections {
+    if (_searchQuery.isEmpty) return _connections;
+    final q = _searchQuery.toLowerCase();
+    return _connections
+        .where((c) =>
+            c.host.toLowerCase().contains(q) ||
+            c.rule.toLowerCase().contains(q) ||
+            c.chains.toLowerCase().contains(q) ||
+            c.network.toLowerCase().contains(q))
+        .toList();
   }
 
   @override
@@ -89,6 +105,8 @@ class _LogPageState extends ConsumerState<LogPage> {
       );
     }
 
+    final filtered = _filteredConnections;
+
     return Scaffold(
       body: Column(
         children: [
@@ -103,13 +121,13 @@ class _LogPageState extends ConsumerState<LogPage> {
                   icon: Icons.arrow_upward,
                   iconColor: Colors.blue,
                   label: '总上传',
-                  value: _formatTotal(_uploadTotal),
+                  value: formatBytes(_uploadTotal),
                 ),
                 _StatChip(
                   icon: Icons.arrow_downward,
                   iconColor: Colors.green,
                   label: '总下载',
-                  value: _formatTotal(_downloadTotal),
+                  value: formatBytes(_downloadTotal),
                 ),
                 _StatChip(
                   icon: Icons.link,
@@ -122,27 +140,64 @@ class _LogPageState extends ConsumerState<LogPage> {
           ),
           const Divider(height: 1),
 
-          // Action bar
+          // Search + action bar
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: Row(
               children: [
-                TextButton.icon(
-                  onPressed: _refresh,
-                  icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('刷新'),
+                Expanded(
+                  child: SizedBox(
+                    height: 36,
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: '搜索连接...',
+                        prefixIcon: const Icon(Icons.search, size: 18),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? GestureDetector(
+                                onTap: () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                                child: const Icon(Icons.clear, size: 16),
+                              )
+                            : null,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 6),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide.none,
+                        ),
+                        filled: true,
+                        fillColor: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                      ),
+                      style: const TextStyle(fontSize: 13),
+                      onChanged: (v) =>
+                          setState(() => _searchQuery = v.trim()),
+                    ),
+                  ),
                 ),
-                const Spacer(),
-                TextButton.icon(
+                const SizedBox(width: 4),
+                IconButton(
+                  onPressed: _refresh,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  tooltip: '刷新',
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
                   onPressed: _connections.isEmpty
                       ? null
                       : () {
                           CoreController.instance.closeAllConnections();
                           _refresh();
                         },
-                  icon: const Icon(Icons.close_rounded, size: 16),
-                  label: const Text('关闭全部'),
-                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  tooltip: '关闭全部',
+                  visualDensity: VisualDensity.compact,
+                  color: Colors.red.shade300,
                 ),
               ],
             ),
@@ -150,17 +205,19 @@ class _LogPageState extends ConsumerState<LogPage> {
 
           // Connection list
           Expanded(
-            child: _connections.isEmpty
+            child: filtered.isEmpty
                 ? Center(
-                    child: Text('暂无活动连接',
+                    child: Text(
+                        _searchQuery.isEmpty ? '暂无活动连接' : '未找到匹配的连接',
                         style: Theme.of(context).textTheme.bodyMedium))
                 : ListView.separated(
-                    itemCount: _connections.length,
+                    itemCount: filtered.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, index) {
-                      final conn = _connections[index];
+                      final conn = filtered[index];
                       return _ConnectionTile(
                         conn: conn,
+                        onTap: () => _showConnectionDetail(context, conn),
                         onClose: () {
                           CoreController.instance.closeConnection(conn.id);
                           _refresh();
@@ -174,26 +231,111 @@ class _LogPageState extends ConsumerState<LogPage> {
     );
   }
 
-  String _formatTotal(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  void _showConnectionDetail(BuildContext context, ConnectionInfo conn) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    conn.network == 'udp' ? Icons.swap_horiz : Icons.link,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(conn.host,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+              const Divider(height: 24),
+              _DetailRow(label: '协议', value: conn.network.toUpperCase()),
+              _DetailRow(label: '规则', value: conn.rule),
+              _DetailRow(label: '代理链', value: conn.chains),
+              _DetailRow(
+                  label: '上传', value: formatBytes(conn.upload)),
+              _DetailRow(
+                  label: '下载', value: formatBytes(conn.download)),
+              _DetailRow(
+                  label: '开始时间',
+                  value:
+                      '${conn.start.hour.toString().padLeft(2, '0')}:${conn.start.minute.toString().padLeft(2, '0')}:${conn.start.second.toString().padLeft(2, '0')}'),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    CoreController.instance.closeConnection(conn.id);
+                    _refresh();
+                    Navigator.pop(ctx);
+                  },
+                  icon: const Icon(Icons.close, size: 16),
+                  label: const Text('关闭连接'),
+                  style:
+                      OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+  const _DetailRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 72,
+            child: Text(label,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ),
+          Expanded(
+            child: Text(value,
+                style: Theme.of(context).textTheme.bodyMedium),
+          ),
+        ],
+      ),
+    );
   }
 }
 
 class _ConnectionTile extends StatelessWidget {
   final ConnectionInfo conn;
+  final VoidCallback onTap;
   final VoidCallback onClose;
 
-  const _ConnectionTile({required this.conn, required this.onClose});
+  const _ConnectionTile({
+    required this.conn,
+    required this.onTap,
+    required this.onClose,
+  });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       dense: true,
+      onTap: onTap,
       leading: Icon(
         conn.network == 'udp' ? Icons.swap_horiz : Icons.link,
         size: 18,

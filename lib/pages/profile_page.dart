@@ -430,14 +430,30 @@ class _ProfileCard extends StatelessWidget {
                 ),
               ],
 
-              // Last updated
+              // Last updated + staleness warning
               if (profile.lastUpdated != null) ...[
                 const SizedBox(height: 4),
-                Text(
-                  '更新于 ${_formatTime(profile.lastUpdated!)}',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                Row(
+                  children: [
+                    Text(
+                      '更新于 ${_formatTime(profile.lastUpdated!)}',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant),
+                    ),
+                    if (_isStale(profile)) ...[
+                      const SizedBox(width: 6),
+                      Icon(Icons.warning_amber_rounded,
+                          size: 14, color: Colors.orange.shade700),
+                      const SizedBox(width: 2),
+                      Text('需要更新',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.orange.shade700)),
+                    ],
+                  ],
                 ),
               ],
             ],
@@ -451,6 +467,11 @@ class _ProfileCard extends StatelessWidget {
     if (percent < 0.5) return Colors.green;
     if (percent < 0.8) return Colors.orange;
     return Colors.red;
+  }
+
+  bool _isStale(Profile p) {
+    if (p.lastUpdated == null) return false;
+    return DateTime.now().difference(p.lastUpdated!) > p.updateInterval;
   }
 
   String _formatTime(DateTime dt) {

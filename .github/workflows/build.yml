@@ -2,10 +2,10 @@ name: Build YueLink
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
     tags: ['v*']
   pull_request:
-    branches: [main]
+    branches: [main, master]
 
 env:
   FLUTTER_VERSION: '3.27.1'
@@ -21,6 +21,7 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
       - run: flutter pub get
       - run: flutter analyze
+      - run: flutter test
 
   build-core:
     runs-on: ${{ matrix.os }}

@@ -230,48 +230,53 @@ class _ProxyGroupCard extends ConsumerWidget {
                 final delay = delays[name];
                 final isTesting = testing.contains(name);
 
-                return ChoiceChip(
-                  label: SizedBox(
-                    width: 100,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(name,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12)),
-                        const SizedBox(height: 2),
-                        if (isTesting)
-                          const SizedBox(
-                            width: 12,
-                            height: 12,
-                            child:
-                                CircularProgressIndicator(strokeWidth: 1.5),
-                          )
-                        else if (delay != null)
-                          Text(
-                            delay > 0 ? '${delay}ms' : 'timeout',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: _delayColor(delay),
-                            ),
-                          )
-                        else
-                          Text('--',
+                return GestureDetector(
+                  onLongPress: isTesting
+                      ? null
+                      : () => ref.read(delayTestProvider).testDelay(name),
+                  child: ChoiceChip(
+                    label: SizedBox(
+                      width: 100,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(name,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12)),
+                          const SizedBox(height: 2),
+                          if (isTesting)
+                            const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 1.5),
+                            )
+                          else if (delay != null)
+                            Text(
+                              delay > 0 ? '${delay}ms' : 'timeout',
                               style: TextStyle(
-                                  fontSize: 10,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant)),
-                      ],
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: _delayColor(delay),
+                              ),
+                            )
+                          else
+                            Text('--',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant)),
+                        ],
+                      ),
                     ),
+                    selected: isSelected,
+                    onSelected: (_) {
+                      ref
+                          .read(proxyGroupsProvider.notifier)
+                          .changeProxy(group.name, name);
+                    },
                   ),
-                  selected: isSelected,
-                  onSelected: (_) {
-                    ref
-                        .read(proxyGroupsProvider.notifier)
-                        .changeProxy(group.name, name);
-                  },
                 );
               }).toList(),
             ),

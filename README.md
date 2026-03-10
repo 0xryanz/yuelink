@@ -1,10 +1,25 @@
 # YueLink
 
-**by [Yue.to](https://yue.to)**
+**by [Yue.to](https://yue.to)** · 跨平台代理客户端
 
-跨平台代理客户端，基于 Flutter + [mihomo](https://github.com/MetaCubeX/mihomo) 内核。
+[![Build](https://github.com/onesyue/yuelink/actions/workflows/build.yml/badge.svg)](https://github.com/onesyue/yuelink/actions/workflows/build.yml)
+[![Flutter](https://img.shields.io/badge/Flutter-3.27-blue)](https://flutter.dev)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-支持平台：Android / iOS / macOS / Windows / Linux
+基于 Flutter + [mihomo](https://github.com/MetaCubeX/mihomo) (Clash.Meta) 内核，支持 Android / iOS / macOS / Windows / Linux。
+
+## 功能特性
+
+- **多平台支持** — Android (VpnService TUN)、iOS (NetworkExtension)、macOS/Windows (系统代理)、Linux
+- **订阅管理** — 添加/编辑/删除/更新订阅，自动解析流量和到期信息，过期提醒
+- **代理节点** — 分组展示、搜索筛选、按延迟排序、单节点/批量测速
+- **连接监控** — 实时连接列表、搜索过滤、详情查看、一键关闭
+- **个性化** — Material 3 设计、亮色/暗色主题、响应式布局
+- **Mock 模式** — 无需 Go 核心即可完整运行 UI，适合开发调试
+
+## 截图
+
+> 安装 Xcode 后运行 `flutter run -d macos` 可查看实际效果。Mock 模式下所有页面均可完整交互。
 
 ## 环境要求
 
@@ -12,141 +27,87 @@
 |------|------|------|
 | Flutter | >= 3.22 | UI 框架 |
 | Dart | >= 3.4 | 随 Flutter 附带 |
-| Go | >= 1.22 | 编译 mihomo 核心 |
+| Go | >= 1.22 | 编译 mihomo 核心（可选，有 Mock 模式） |
 | Android SDK + NDK | NDK r26+ | Android 构建 |
 | Xcode | >= 15 | iOS / macOS 构建 |
-| MinGW-w64 | — | macOS/Linux 上交叉编译 Windows |
 
 ## 快速开始
 
-### 1. 克隆仓库
-
 ```bash
-git clone https://github.com/user/yuelink.git
+# 克隆
+git clone https://github.com/onesyue/yuelink.git
 cd yuelink
 git submodule update --init --recursive
-```
 
-### 2. 编译 mihomo 核心
-
-```bash
-# 构建当前平台（以 macOS arm64 为例）
-dart setup.dart build -p macos -a arm64
-
-# 构建 Android 全架构（arm64 + arm + x86_64）
-dart setup.dart build -p android
-
-# 构建 iOS
-dart setup.dart build -p ios
-
-# 将编译产物复制到 Flutter 工程目录
-dart setup.dart install -p android
-```
-
-查看所有选项：
-
-```bash
-dart setup.dart
-```
-
-### 3. 运行 Flutter 应用
-
-```bash
+# 安装依赖
 flutter pub get
+
+# 运行（Mock 模式，无需 Go）
 flutter run
+
+# 编译 Go 核心（可选）
+dart setup.dart build -p macos -a arm64
+dart setup.dart install -p macos
+flutter run -d macos
+```
+
+## 测试
+
+```bash
+flutter test          # 运行全部 49 个测试
+flutter analyze       # 静态分析
 ```
 
 ## 项目结构
 
 ```
 yuelink/
-├── core/                        # Go 核心层
-│   ├── hub.go                   # CGO 导出函数入口
-│   ├── state.go                 # 核心状态管理
-│   ├── go.mod
-│   └── mihomo/                  # mihomo 源码 (git submodule)
-├── lib/                         # Flutter/Dart 代码
-│   ├── main.dart
-│   ├── ffi/                     # dart:ffi 绑定
-│   │   ├── core_bindings.dart   # C 函数绑定
-│   │   └── core_controller.dart # Dart 侧核心控制器
-│   ├── models/                  # 数据模型
+├── core/                        # Go 核心层 (CGO → mihomo)
+├── lib/
+│   ├── ffi/                     # dart:ffi 绑定 + Mock
+│   ├── models/                  # 数据模型 (Profile, Proxy, Traffic)
 │   ├── providers/               # Riverpod 状态管理
-│   ├── pages/                   # UI 页面
-│   └── services/                # 平台服务抽象
-├── android/                     # Android 平台代码 (VpnService)
-├── ios/                         # iOS 平台代码 (NetworkExtension)
-├── macos/                       # macOS 平台代码
-├── windows/                     # Windows 平台代码
-├── linux/                       # Linux 平台代码
-├── plugins/                     # 自定义 Flutter 插件
-├── setup.dart                   # 核心编译脚本
-└── pubspec.yaml
+│   ├── pages/                   # 5 个页面 (首页/代理/配置/日志/设置)
+│   └── services/                # 平台服务 + 订阅解析
+├── android/                     # VpnService 实现
+├── ios/                         # NetworkExtension 实现
+├── macos/                       # 系统代理 (networksetup)
+├── scripts/                     # 工具脚本
+├── setup.dart                   # Go 核心编译脚本
+└── test/                        # 单元测试
 ```
 
 ## 架构
 
 ```
-┌──────────────────────────────────┐
-│          Flutter UI (Dart)       │
-│      Riverpod 状态管理            │
-├──────────────────────────────────┤
-│       CoreController (Dart)      │
-│        dart:ffi 桥接层            │
-├──────────────────────────────────┤
-│        hub.go (CGO //export)     │
-│          Go 薄封装层              │
-├──────────────────────────────────┤
-│         mihomo 代理引擎           │
-│   tunnel / listener / resolver   │
-└──────────────────────────────────┘
-         ↕ TUN / 系统代理
-┌──────────────────────────────────┐
-│       平台原生 VPN 服务           │
-│  Android: VpnService             │
-│  iOS/macOS: NEPacketTunnelProvider│
-│  Windows: wintun                 │
-│  Linux: TUN device               │
-└──────────────────────────────────┘
+Flutter UI (Riverpod) → CoreController (dart:ffi) → hub.go (CGO) → mihomo engine
+                                                                        ↕
+                                                     Platform VPN (TUN / 系统代理)
 ```
 
-### 核心编译方式
-
-- **Android / macOS / Windows / Linux：** `go build -buildmode=c-shared` → 动态库 (`.so` / `.dylib` / `.dll`)
-- **iOS：** `go build -buildmode=c-archive` → 静态库 (`.a`)，因为 iOS 禁止加载第三方动态库
-
-### Go → Dart 通信
-
-- **Dart → Go：** 通过 `dart:ffi` 同步调用 CGO 导出的 C 函数
-- **Go → Dart：** 通过 `NativePort` + `ReceivePort` 异步事件推送（流量统计、日志、延迟测试结果）
+- **iOS**: 静态库 (`c-archive`)，NetworkExtension 独立进程
+- **其他平台**: 动态库 (`c-shared`)
+- **Mock 模式**: Go 库不存在时自动降级为模拟数据
 
 ## 构建命令
 
 | 命令 | 说明 |
 |------|------|
-| `dart setup.dart build -p <platform>` | 编译指定平台的 mihomo 核心 |
-| `dart setup.dart build -p <platform> -a <arch>` | 编译指定平台和架构 |
-| `dart setup.dart install -p <platform>` | 复制编译产物到 Flutter 工程 |
-| `dart setup.dart clean` | 清理所有编译产物 |
-| `flutter pub get` | 安装 Dart 依赖 |
-| `flutter run` | 运行调试版本 |
-| `flutter build apk` | 构建 Android APK |
-| `flutter build ios` | 构建 iOS |
-| `flutter build macos` | 构建 macOS |
-| `flutter build windows` | 构建 Windows |
+| `dart setup.dart build -p <platform> [-a <arch>]` | 编译 Go 核心 |
+| `dart setup.dart install -p <platform>` | 复制到 Flutter 工程 |
+| `dart setup.dart clean` | 清理编译产物 |
+| `flutter build apk` | Android APK |
+| `flutter build ios` | iOS |
+| `flutter build macos` | macOS |
+| `flutter build windows` | Windows |
 
-## 配置文件
-
-YueLink 使用 `yuelink.yaml` 作为配置文件，兼容 mihomo/Clash 配置格式。
-
-## 包名信息
+## 包名
 
 | 项目 | 值 |
 |------|-----|
-| Flutter 包名 | `com.yueto.yuelink` |
-| iOS Bundle ID | `com.yueto.yuelink` |
-| App 显示名称 | YueLink |
+| Package | `com.yueto.yuelink` |
 | 配置文件 | `yuelink.yaml` |
+| App Group (iOS) | `group.com.yueto.yuelink` |
 
 ## License
 

@@ -30,7 +30,6 @@ class _NodesPageState extends ConsumerState<NodesPage> {
     final s = S.of(context);
     final status = ref.watch(coreStatusProvider);
     final groups = ref.watch(proxyGroupsProvider);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (status != CoreStatus.running) {
       return Scaffold(
@@ -66,20 +65,9 @@ class _NodesPageState extends ConsumerState<NodesPage> {
             physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
             slivers: [
               SliverAppBar(
-                expandedHeight: 100.0,
                 backgroundColor: Colors.transparent,
                 surfaceTintColor: Colors.transparent,
                 pinned: true,
-                flexibleSpace: FlexibleSpaceBar(
-                  titlePadding: const EdgeInsets.symmetric(horizontal: YLSpacing.xl, vertical: YLSpacing.lg),
-                  title: Text(
-                    s.navProxies,
-                    style: YLText.display.copyWith(
-                      color: isDark ? Colors.white : Colors.black,
-                      fontSize: 28,
-                    ),
-                  ),
-                ),
                 actions: [
                   _CompactRoutingMode(),
                   const SizedBox(width: 4),
@@ -171,9 +159,7 @@ class _GroupCardState extends ConsumerState<_GroupCard> with SingleTickerProvide
           color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.04),
           width: 0.5,
         ),
-        boxShadow: isDark ? [] : [
-          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
-        ],
+        boxShadow: YLShadow.card(context),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -347,9 +333,7 @@ class _CompactRoutingMode extends ConsumerWidget {
                     ? (isDark ? YLColors.zinc700 : Colors.white)
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(YLRadius.pill),
-                boxShadow: isSelected && !isDark
-                    ? [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4, offset: const Offset(0, 1))]
-                    : [],
+                boxShadow: isSelected ? YLShadow.sm(context) : [],
               ),
               child: Text(
                 labels[i],

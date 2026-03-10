@@ -75,13 +75,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                 decoration: BoxDecoration(
                   color: isDark ? YLColors.zinc900 : Colors.white,
                   shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
-                    )
-                  ],
+                  boxShadow: YLShadow.sm(context),
                 ),
                 child: Icon(Icons.cable_rounded, size: 48, 
                     color: isDark ? YLColors.zinc700 : YLColors.zinc300),
@@ -150,13 +144,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                 Expanded(
                   child: Container(
                     decoration: BoxDecoration(
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(isDark ? 0.2 : 0.02),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        )
-                      ],
+                      boxShadow: YLShadow.card(context),
                     ),
                     child: TextField(
                       controller: _searchCtrl,
@@ -411,13 +399,7 @@ class _ConnectionTile extends StatelessWidget {
           color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
           width: 1,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.2 : 0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: YLShadow.card(context),
       ),
       child: Material(
         color: Colors.transparent,
@@ -599,13 +581,7 @@ class _ConnectionDetailSheet extends StatelessWidget {
         decoration: BoxDecoration(
           color: isDark ? YLColors.zinc900 : Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(YLRadius.xl)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 24,
-              offset: const Offset(0, -4),
-            )
-          ],
+          boxShadow: YLShadow.overlay(context),
         ),
         child: ListView(
           controller: scroll,

@@ -583,13 +583,7 @@ class _ProfileCard extends StatelessWidget {
               : (isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.08)),
           width: 0.5,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        boxShadow: YLShadow.card(context),
       ),
       child: InkWell(
         onTap: onTap,

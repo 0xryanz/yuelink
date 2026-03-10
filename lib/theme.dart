@@ -95,6 +95,43 @@ class YLRadius {
   static const pill = 999.0;
 }
 
+// ── Shadow scale ─────────────────────────────────────────────────────────────
+
+class YLShadow {
+  YLShadow._();
+
+  /// Small: selected pills, tabs, segmented controls. Light only.
+  static List<BoxShadow> sm(BuildContext context) {
+    if (Theme.of(context).brightness == Brightness.dark) return const [];
+    return [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, 1))];
+  }
+
+  /// Card: standard content cards across all pages.
+  static List<BoxShadow> card(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return [BoxShadow(
+      color: Colors.black.withValues(alpha: isDark ? 0.10 : 0.03),
+      blurRadius: isDark ? 6 : 10,
+      offset: Offset(0, isDark ? 2 : 3),
+    )];
+  }
+
+  /// Hero: primary visual anchor (HeroCard only).
+  static List<BoxShadow> hero(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return [BoxShadow(
+      color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.06),
+      blurRadius: isDark ? 12 : 16,
+      offset: Offset(0, isDark ? 3 : 4),
+    )];
+  }
+
+  /// Overlay: bottom sheets, floating panels.
+  static List<BoxShadow> overlay(BuildContext context) {
+    return [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 24, offset: const Offset(0, -4))];
+  }
+}
+
 // ── Theme factory ─────────────────────────────────────────────────────────────
 
 ThemeData buildTheme(Brightness brightness) {
@@ -295,14 +332,7 @@ class YLSurface extends StatelessWidget {
           color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05),
           width: 0.5,
         ),
-        boxShadow: [
-          if (!isDark)
-            BoxShadow(
-              color: Colors.black.withOpacity(0.02),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-        ],
+        boxShadow: YLShadow.card(context),
       ),
       child: child,
     );
@@ -509,9 +539,7 @@ class YLPillSegmentedControl<T> extends StatelessWidget {
                       ? (isDark ? YLColors.surfaceDark : YLColors.surfaceLight)
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(YLRadius.pill),
-                  boxShadow: isSelected && !isDark ? [
-                    BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 2))
-                  ] : [],
+                  boxShadow: isSelected ? YLShadow.sm(context) : [],
                 ),
                 alignment: Alignment.center,
                 child: Text(

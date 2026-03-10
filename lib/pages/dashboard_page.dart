@@ -388,13 +388,7 @@ class _HeroCard extends ConsumerWidget {
                   : Colors.black.withValues(alpha: 0.08)),
           width: 0.5,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: YLShadow.hero(context),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -652,6 +646,7 @@ class _OverviewCard extends ConsumerWidget {
               : Colors.black.withValues(alpha: 0.08),
           width: 0.5,
         ),
+        boxShadow: YLShadow.card(context),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -818,6 +813,7 @@ class _ExitIpCard extends StatelessWidget {
                 : Colors.black.withValues(alpha: 0.08),
             width: 0.5,
           ),
+          boxShadow: YLShadow.card(context),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -878,6 +874,7 @@ class _ChartCard extends ConsumerWidget {
               : Colors.black.withValues(alpha: 0.08),
           width: 0.5,
         ),
+        boxShadow: YLShadow.card(context),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

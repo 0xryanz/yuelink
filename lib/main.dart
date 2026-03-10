@@ -721,15 +721,7 @@ class _SidebarItem extends StatelessWidget {
                       width: 0.5,
                     )
                   : null,
-              boxShadow: isActive
-                  ? [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: isDark ? 0.1 : 0.03),
-                        blurRadius: 4,
-                        offset: const Offset(0, 1),
-                      ),
-                    ]
-                  : null,
+              boxShadow: isActive ? YLShadow.sm(context) : null,
             ),
             child: Row(
               children: [

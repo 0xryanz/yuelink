@@ -234,15 +234,30 @@ jobs:
       - run: flutter pub get
       - run: flutter build macos --release
 
-      - name: Package macOS app
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Package macOS .dmg
         run: |
-          cd build/macos/Build/Products/Release
-          zip -r --symlinks YueLink-macOS.zip YueLink.app
+          create-dmg \
+            --volname "YueLink" \
+            --volicon "macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_512.png" \
+            --window-pos 200 120 \
+            --window-size 660 400 \
+            --icon-size 80 \
+            --icon "YueLink.app" 180 170 \
+            --app-drop-link 480 170 \
+            --hide-extension "YueLink.app" \
+            "YueLink-macOS.dmg" \
+            "build/macos/Build/Products/Release/YueLink.app" \
+          || true
+          # create-dmg returns 2 on success when --volicon uses png, treat as success
+          test -f YueLink-macOS.dmg
 
       - uses: actions/upload-artifact@v4
         with:
           name: yuelink-macos
-          path: build/macos/Build/Products/Release/YueLink-macOS.zip
+          path: YueLink-macOS.dmg
 
   # ── Windows ───────────────────────────────────────────────────────────────
   build-windows:
@@ -268,16 +283,16 @@ jobs:
       - run: flutter pub get
       - run: flutter build windows --release
 
-      - name: Package Windows build
+      - name: Build installer with Inno Setup
         shell: pwsh
         run: |
-          Compress-Archive -Path build/windows/x64/runner/Release/* `
-            -DestinationPath YueLink-Windows.zip
+          $version = if ($env:GITHUB_REF -match 'refs/tags/v(.+)') { $Matches[1] } else { '0.0.0' }
+          iscc "/DMyAppVersion=$version" windows\installer.iss
 
       - uses: actions/upload-artifact@v4
         with:
           name: yuelink-windows
-          path: YueLink-Windows.zip
+          path: windows/YueLink-Windows-Setup.exe
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Job 4: Release (only on version tags)
@@ -299,8 +314,8 @@ jobs:
           mkdir -p release
           cp artifacts/yuelink-android/YueLink-Android.apk release/
           cp artifacts/yuelink-ios/YueLink-iOS.ipa release/
-          cp artifacts/yuelink-macos/YueLink-macOS.zip release/
-          cp artifacts/yuelink-windows/YueLink-Windows.zip release/
+          cp artifacts/yuelink-macos/YueLink-macOS.dmg release/
+          cp artifacts/yuelink-windows/YueLink-Windows-Setup.exe release/
           ls -lh release/
 
       - name: Create GitHub Release

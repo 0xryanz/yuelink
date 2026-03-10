@@ -144,16 +144,23 @@ class MainActivity : FlutterActivity() {
         bindService(bindIntent, serviceConnection, Context.BIND_AUTO_CREATE)
 
         android.os.Handler(mainLooper).postDelayed({
-            val bound = vpnService
-            if (bound != null) {
-                bound.onTunReady = { fd -> result.success(fd) }
-                val currentFd = bound.getTunFd()
-                if (currentFd != -1) {
-                    bound.onTunReady = null
-                    result.success(currentFd)
+            if (isFinishing || isDestroyed) return@postDelayed
+            try {
+                val bound = vpnService
+                if (bound != null) {
+                    bound.onTunReady = { fd ->
+                        try { result.success(fd) } catch (_: Exception) {}
+                    }
+                    val currentFd = bound.getTunFd()
+                    if (currentFd != -1) {
+                        bound.onTunReady = null
+                        result.success(currentFd)
+                    }
+                } else {
+                    result.success(-1)
                 }
-            } else {
-                result.success(-1)
+            } catch (_: Exception) {
+                try { result.success(-1) } catch (_: Exception) {}
             }
         }, 500)
     }
@@ -178,17 +185,22 @@ class MainActivity : FlutterActivity() {
         if (requestCode != VPN_REQUEST_CODE) return
 
         val granted = resultCode == Activity.RESULT_OK
-        if (vpnPermissionResult != null) {
-            vpnPermissionResult?.success(granted)
-            vpnPermissionResult = null
-        } else if (vpnStartResult != null) {
-            val pendingResult = vpnStartResult!!
-            vpnStartResult = null
-            if (granted) {
-                doStartVpnService(pendingMixedPort, pendingSplitMode, pendingSplitApps, pendingResult)
-            } else {
-                pendingResult.success(-1)
+        try {
+            if (vpnPermissionResult != null) {
+                vpnPermissionResult?.success(granted)
+                vpnPermissionResult = null
+            } else if (vpnStartResult != null) {
+                val pendingResult = vpnStartResult!!
+                vpnStartResult = null
+                if (granted) {
+                    doStartVpnService(pendingMixedPort, pendingSplitMode, pendingSplitApps, pendingResult)
+                } else {
+                    pendingResult.success(-1)
+                }
             }
+        } catch (_: Exception) {
+            vpnPermissionResult = null
+            vpnStartResult = null
         }
     }
 

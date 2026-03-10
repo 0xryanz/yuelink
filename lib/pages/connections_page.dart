@@ -24,6 +24,9 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   _SortColumn _sortCol = _SortColumn.duration;
   bool _sortAsc = false;
 
+  static bool get _isSubPage =>
+      !(Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+
   List<ActiveConnection> _sorted(List<ActiveConnection> list) {
     final copy = List<ActiveConnection>.from(list);
     copy.sort((a, b) {
@@ -64,7 +67,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
 
     if (status != CoreStatus.running) {
       return Scaffold(
-        backgroundColor: Colors.transparent,
+        appBar: _isSubPage ? AppBar(title: Text(s.navConnections)) : null,
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -99,7 +102,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
     final actions = ref.read(connectionActionsProvider);
 
     return Scaffold(
-      backgroundColor: Colors.transparent, // Let the parent gradient show through
+      appBar: _isSubPage ? AppBar(title: Text(s.navConnections)) : null,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

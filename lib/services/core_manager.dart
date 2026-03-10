@@ -232,11 +232,13 @@ class CoreManager {
     }
 
     _running = true;
-    // Save config and wait for API in background — don't block UI
     _saveLastWorkingConfig(configYaml);
-    _waitForApi().then((apiOk) {
-      if (apiOk) debugPrint('[CoreManager] API ready');
-    });
+
+    // Wait for the external-controller HTTP server to be ready.
+    // It starts in a goroutine, so there's a brief delay after hub.Parse().
+    // Without waiting, API calls (routing mode, proxy refresh) fail silently.
+    final apiOk = await _waitForApi();
+    debugPrint('[CoreManager] API ${apiOk ? "ready" : "NOT available"}');
     return true;
   }
 
@@ -264,9 +266,10 @@ class CoreManager {
   // ------------------------------------------------------------------
 
   /// Wait for the REST API to become available.
-  /// Retries for up to ~9 seconds (30 × 300 ms) to accommodate slow devices
-  /// and complex configs that take longer to initialize.
-  Future<bool> _waitForApi({int maxRetries = 30}) async {
+  /// The external-controller HTTP server starts in a goroutine after
+  /// hub.Parse() returns, typically ready within 100-300ms.
+  /// Retries for up to ~5 seconds to accommodate slow devices.
+  Future<bool> _waitForApi({int maxRetries = 50}) async {
     for (var i = 0; i < maxRetries; i++) {
       if (await api.isAvailable()) {
         debugPrint('[CoreManager] API available after ${i + 1} attempts');

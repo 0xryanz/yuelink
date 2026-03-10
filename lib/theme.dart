@@ -64,7 +64,7 @@ class YLText {
 
   static const mono = TextStyle(
       fontSize: 13, fontWeight: FontWeight.w500,
-      fontFamily: 'Menlo', // Fallback to system monospace
+      fontFamily: 'monospace',
       fontFeatures: [FontFeature.tabularFigures()]);
 }
 
@@ -162,7 +162,7 @@ ThemeData buildTheme(Brightness brightness) {
     splashColor: Colors.transparent,
     highlightColor: Colors.transparent,
     hoverColor: isDark ? Colors.white.withValues(alpha: 0.04) : Colors.black.withValues(alpha: 0.03),
-    fontFamily: '.SF Pro Display', // Apple system font fallback
+    fontFamily: null, // Use platform default font
 
     // Surfaces
     cardTheme: CardTheme(

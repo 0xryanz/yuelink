@@ -5,13 +5,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 YueLink (by Yue.to) is a cross-platform proxy client built with Flutter + mihomo (Clash.Meta) Go core.
-Supports: Android, iOS, macOS, Windows, Linux. Version: `0.0.1-alpha` (dev uses `v0.0.1-alpha` tag; version increments only for releases).
+Supports: Android, iOS, macOS, Windows. Version: `0.0.1-alpha` (dev uses `v0.0.1-alpha` tag; version increments only for releases).
 
 ## Build Commands
 
 ```bash
 flutter pub get                                    # Install Flutter dependencies
-dart setup.dart build -p <platform> [-a <arch>]    # Compile Go core (android|ios|macos|windows|linux)
+dart setup.dart build -p <platform> [-a <arch>]    # Compile Go core (android|ios|macos|windows)
 dart setup.dart install -p <platform>              # Copy libs to Flutter platform dirs
 dart setup.dart clean                              # Remove build artifacts
 flutter run                                        # Run (mock mode if no native lib)
@@ -37,10 +37,10 @@ Flutter UI (Dart, Riverpod) → CoreController (dart:ffi) → hub.go (CGO //expo
 
 ### Key layers
 
-- **`core/`** — Go wrapper around mihomo. Exports C functions via `//export` (CGO). Compiled to `.so`/`.dylib`/`.dll` (dynamic) or `.a` (static, iOS only) via `setup.dart`.
-- **`lib/ffi/`** — Dart FFI bindings. `CoreBindings` has raw FFI (8 lifecycle symbols only: InitCore, StartCore, StopCore, Shutdown, IsRunning, ValidateConfig, UpdateConfig, FreeCString). `CoreController` is the high-level wrapper; data methods (getProxies, changeProxy, testDelay, getTraffic) always delegate to `CoreMock` — they exist only for mock mode UI development.
+- **`core/`** — Go wrapper around mihomo. Exports C functions via `//export` (CGO). Compiled to `.so`/`.dylib`/`.dll` (dynamic) or `.a` (static, iOS only) via `setup.dart`. Android builds use `-tags cmfa` to enable mihomo's Android-specific features.
+- **`lib/ffi/`** — Dart FFI bindings. `CoreBindings` has raw FFI (8 lifecycle symbols: InitCore, StartCore, StopCore, Shutdown, IsRunning, ValidateConfig, UpdateConfig, FreeCString). `CoreController` is the high-level wrapper; data methods (getProxies, changeProxy, testDelay, getTraffic) always delegate to `CoreMock` — they exist only for mock mode UI development.
 - **`lib/providers/`** — Riverpod state management. `core_provider.dart` (lifecycle, traffic, heartbeat), `proxy_provider.dart` (nodes, groups, delay tests), `profile_provider.dart` (subscriptions), `proxy_provider_provider.dart` (remote proxy providers).
-- **`lib/pages/`** — 4-tab layout: Dashboard (connect/traffic/status), Nodes (proxy groups + routing mode), Profile (subscriptions), Settings. Settings sub-pages: connections, logs, overwrite, proxy providers.
+- **`lib/pages/`** — 4-tab layout: Dashboard (connect/traffic/status), Nodes (proxy groups + routing mode), Subscriptions (profiles), Settings. Settings sub-pages: connections, logs, overwrite, proxy providers.
 - **`lib/services/`** — `VpnService` (MethodChannel), `MihomoApi` (REST on port 9090), `MihomoStream` (WebSocket for traffic/logs), `CoreManager` (lifecycle singleton — handles VPN internally per platform), `ProfileService` (static methods for profile CRUD + config loading), `OverwriteService` (config merging), `SettingsService` (SharedPreferences wrapper).
 - **`lib/theme.dart`** — Design system: `YLColors` (zinc palette + semantic colors), `YLText` (typography), `YLSpacing`/`YLRadius`, `YLShadow` (context-aware for dark mode), reusable widgets (`YLSurface`, `YLStatusDot`, `YLChip`, `YLDelayBadge`, `YLPillSegmentedControl`, etc.).
 - **`lib/l10n/app_strings.dart`** — Hand-written `S` class for i18n. Both Chinese and English via `_e ? 'en' : 'zh'` ternaries. No code generation. Use `S.of(context)` in widgets, `S.current` in providers/services without BuildContext.
@@ -70,8 +70,10 @@ Flutter UI (Dart, Riverpod) → CoreController (dart:ffi) → hub.go (CGO //expo
 - **Default connection mode is `systemProxy`** (not TUN). Mobile (Android/iOS) always uses VPN regardless of this setting; the setting only applies to desktop.
 - iOS: Go core must be `c-archive` (static library), not `c-shared`. Extension runs in separate process with ~15MB memory limit.
 - Go core state is protected by a single mutex (`state.go`) — all exported functions must acquire the lock.
+- **All Go exports that can fail return `*C.char`** (empty string = success, non-empty = error message). Caller must free via `FreeCString`. This applies to InitCore, StartCore, and UpdateConfig. Only IsRunning/StopCore/Shutdown use simple types.
 - `CoreManager` handles VPN internally for each platform — `CoreActions` must NOT call `VpnService` directly.
 - Android VPN permission is always requested (no connectionMode guard) because Android always needs VpnService.
+- **Android TUN config**: `ConfigTemplate._injectTunFd()` replaces the entire `tun:` section with Android-safe settings: `auto-route: false`, `auto-detect-interface: false` (netlink banned on Android 14+). Never set `auto-route: true` when using VpnService fd.
 - Connection mode UI is hidden on mobile — only shown on desktop (`isDesktop = Platform.isMacOS || Platform.isWindows`).
 - MethodChannel name: `com.yueto.yuelink/vpn` (consistent across all platforms).
 - Package/Bundle ID: `com.yueto.yuelink`
@@ -80,10 +82,11 @@ Flutter UI (Dart, Riverpod) → CoreController (dart:ffi) → hub.go (CGO //expo
 - `ProfileService` uses static methods, not a Riverpod provider. Call `ProfileService.loadConfig(id)` directly.
 - `YLColors.primary` is black (`#000000`) — never use it as foreground in dark mode. Use `isDark ? Colors.white : YLColors.primary` pattern.
 - Android native strings (VPN notification etc.) use Android string resources with `values-zh/` locale variant, not the Dart `S` class.
+- **Sidebar uses instant state switching** (no AnimatedContainer). This is intentional to avoid flicker on Windows. Do not add animation back.
 
 ### FFI symbol alignment
 
-Dart bindings (`core_bindings.dart`) must exactly match Go exports (`core/hub.go`). Current 8 Dart bindings match 8 of 9 Go exports (`GetVersion` is intentionally unbound — version comes via REST API). **Never add FFI bindings for data operations** — those belong in `MihomoApi`.
+Dart bindings (`core_bindings.dart`) must exactly match Go exports (`core/hub.go`). Current 8 Dart bindings match 8 of 9 Go exports (`GetVersion` is intentionally unbound — version comes via REST API). **Never add FFI bindings for data operations** — those belong in `MihomoApi`. All failable exports return `Pointer<Utf8>` (C string), not `int`.
 
 ### Mock mode
 
@@ -91,7 +94,7 @@ When Go core is unavailable (no native library), `CoreController` automatically 
 
 ### Core startup sequence
 
-`CoreActions.start()` → VPN permission (Android only) → `CoreManager.start(configYaml)` → `OverwriteService.apply()` → platform-specific VPN (Android: `startAndroidVpn()` for TUN fd, iOS: `startIosVpn()`) → `ConfigTemplate.process()` → `CoreController.start()` → `_waitForApi()` (non-blocking) → system proxy (desktop). `CoreManager` owns all VPN logic internally.
+`CoreActions.start()` → VPN permission (Android only) → `CoreManager.start(configYaml)` → `OverwriteService.apply()` → platform-specific VPN (Android: `startAndroidVpn()` for TUN fd, iOS: `startIosVpn()`) → `ConfigTemplate.process()` (injects TUN fd on Android, ensures external-controller) → `CoreController.start()` → `_waitForApi()` (non-blocking) → system proxy (desktop). `CoreManager` owns all VPN logic internally. On failure, `CoreManager._startFfi()` throws with the actual Go error message (propagated to UI via `CoreActions` catch block).
 
 ### Proxy group ordering
 

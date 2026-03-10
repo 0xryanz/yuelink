@@ -24,11 +24,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         options: [String: NSObject]?,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        // Network settings match what VpnService sets on Android:
-        // fake-ip range 198.18.0.1/16 with default route
+        // TUN address: 172.19.0.1/30 (matches mihomo tun.inet4-address).
+        // DNS: real servers, but mihomo's dns-hijack intercepts all queries
+        // on port 53 through the TUN for fake-ip resolution.
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "254.1.1.1")
 
-        let ipv4 = NEIPv4Settings(addresses: ["198.18.0.1"], subnetMasks: ["255.255.0.0"])
+        let ipv4 = NEIPv4Settings(addresses: ["172.19.0.1"], subnetMasks: ["255.255.252.0"])
         ipv4.includedRoutes = [NEIPv4Route.default()]
         settings.ipv4Settings = ipv4
 
@@ -50,6 +51,99 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
+    /// Find the TUN file descriptor created by NEPacketTunnelProvider.
+    /// Scans open fds for a utun device (public API, no private KVC).
+    private func findTunFd() -> Int32 {
+        var buf = [CChar](repeating: 0, count: Int(IFNAMSIZ))
+        for fd: Int32 in 0...1024 {
+            var len = socklen_t(buf.count)
+            // SYSPROTO_CONTROL = 2, UTUN_OPT_IFNAME = 2
+            if getsockopt(fd, 2, 2, &buf, &len) == 0 {
+                let name = String(cString: buf)
+                if name.hasPrefix("utun") {
+                    return fd
+                }
+            }
+        }
+        return -1
+    }
+
+    /// Inject TUN configuration into the mihomo config YAML.
+    /// Removes any existing tun section and appends an iOS-safe one.
+    /// Also ensures comprehensive DNS config and disables find-process-mode.
+    private func injectTunConfig(_ config: String, fd: Int32) -> String {
+        var result = config
+
+        // Remove existing tun section
+        if let range = result.range(of: #"(?m)^tun:.*\n(?:[ \t]+.*\n)*"#, options: .regularExpression) {
+            result.removeSubrange(range)
+        }
+
+        // Force find-process-mode: off on iOS (no permission, avoids overhead)
+        if let range = result.range(of: #"(?m)^find-process-mode:.*$"#, options: .regularExpression) {
+            result.replaceSubrange(range, with: "find-process-mode: off")
+        } else {
+            result += "\nfind-process-mode: off\n"
+        }
+
+        // Append iOS-safe TUN config (matches NEPacketTunnelNetworkSettings)
+        result += "\ntun:\n"
+            + "  enable: true\n"
+            + "  stack: gvisor\n"
+            + "  file-descriptor: \(fd)\n"
+            + "  inet4-address:\n"
+            + "    - 172.19.0.1/30\n"
+            + "  mtu: 9000\n"
+            + "  auto-route: false\n"
+            + "  auto-detect-interface: false\n"
+            + "  dns-hijack:\n"
+            + "    - any:53\n"
+
+        // Ensure comprehensive DNS config for TUN fake-ip
+        if result.range(of: #"(?m)^dns:"#, options: .regularExpression) == nil {
+            result += "\ndns:\n"
+                + "  enable: true\n"
+                + "  prefer-h3: true\n"
+                + "  enhanced-mode: fake-ip\n"
+                + "  fake-ip-range: 198.18.0.1/16\n"
+                + "  fake-ip-filter:\n"
+                + "    - \"*\"\n"
+                + "    - \"+.lan\"\n"
+                + "    - \"+.local\"\n"
+                + "  default-nameserver:\n"
+                + "    - 223.5.5.5\n"
+                + "    - 119.29.29.29\n"
+                + "    - 8.8.8.8\n"
+                + "  nameserver:\n"
+                + "    - https://doh.pub/dns-query\n"
+                + "    - https://dns.alidns.com/dns-query\n"
+                + "  direct-nameserver:\n"
+                + "    - https://doh.pub/dns-query\n"
+                + "    - https://dns.alidns.com/dns-query\n"
+                + "  proxy-server-nameserver:\n"
+                + "    - https://doh.pub/dns-query\n"
+                + "    - https://dns.alidns.com/dns-query\n"
+                + "  fallback:\n"
+                + "    - \"tls://8.8.4.4:853\"\n"
+                + "    - \"tls://1.0.0.1:853\"\n"
+                + "    - \"https://1.0.0.1/dns-query\"\n"
+                + "    - \"https://8.8.4.4/dns-query\"\n"
+                + "  fallback-filter:\n"
+                + "    geoip: true\n"
+                + "    geoip-code: CN\n"
+                + "    geosite:\n"
+                + "      - gfw\n"
+                + "    domain:\n"
+                + "      - \"+.google.com\"\n"
+                + "      - \"+.facebook.com\"\n"
+                + "      - \"+.youtube.com\"\n"
+                + "      - \"+.github.com\"\n"
+                + "      - \"+.googleapis.com\"\n"
+        }
+
+        return result
+    }
+
     override func stopTunnel(
         with reason: NEProviderStopReason,
         completionHandler: @escaping () -> Void
@@ -61,9 +155,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
         // IPC: main app sends updated config → hot-reload
         // Message format: raw UTF-8 config YAML bytes
-        guard let configYaml = String(data: messageData, encoding: .utf8) else {
+        guard var configYaml = String(data: messageData, encoding: .utf8) else {
             completionHandler?(nil)
             return
+        }
+
+        // Inject TUN fd for hot-reload too
+        let tunFd = findTunFd()
+        if tunFd > 0 {
+            configYaml = injectTunConfig(configYaml, fd: tunFd)
         }
 
         // Write new config to app group and reload
@@ -94,10 +194,21 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         )
 
         // Read config written by the main app
-        guard let configYaml = try? String(contentsOfFile: configPath, encoding: .utf8),
+        guard var configYaml = try? String(contentsOfFile: configPath, encoding: .utf8),
               !configYaml.isEmpty else {
             completionHandler(TunnelError.noConfig)
             return
+        }
+
+        // Inject TUN fd so mihomo reads packets from the system VPN tunnel.
+        // Without this, mihomo only listens on mixed-port but no traffic
+        // reaches it because NEPacketTunnelProvider routes at the IP level.
+        let tunFd = findTunFd()
+        if tunFd > 0 {
+            NSLog("[PacketTunnel] Found TUN fd: %d", tunFd)
+            configYaml = injectTunConfig(configYaml, fd: tunFd)
+        } else {
+            NSLog("[PacketTunnel] WARNING: Could not find TUN fd")
         }
 
         // Initialize Go core with home directory

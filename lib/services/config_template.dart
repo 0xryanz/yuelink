@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 
 import '../constants.dart';
@@ -8,9 +10,9 @@ import '../constants.dart';
 /// proxies, proxy-groups, rules, rule-providers, DNS, etc.
 /// The app only needs to:
 /// 1. Replace template variables (`$app_name` -> `YueLink`)
-/// 2. Ensure `external-controller` is set for REST API access
+/// 2. Ensure critical keys are set for core functionality
 ///
-/// The bundled `default_config.yaml` is a **minimal fallback** only used
+/// The bundled `default_config.yaml` is a **complete fallback** used
 /// when a subscription provides raw proxy nodes without groups/rules.
 class ConfigTemplate {
   ConfigTemplate._();
@@ -22,14 +24,13 @@ class ConfigTemplate {
 
   /// Process a raw config from a subscription.
   ///
-  /// 1. Replaces template variables (`$app_name` -> `YueLink`)
-  /// 2. Ensures `external-controller` is set for REST API access
-  /// 3. Ensures `external-controller` secret if configured
-  /// 4. On Android: injects `tun.file-descriptor` so mihomo uses the
-  ///    pre-created TUN fd from VpnService instead of creating its own
+  /// Ensures all critical config keys are present for reliable operation
+  /// across all platforms. Uses "ensure" pattern: only injects when missing,
+  /// never overwrites subscription-provided settings.
   static String process(
     String rawConfig, {
     int apiPort = AppConstants.defaultApiPort,
+    int mixedPort = AppConstants.defaultMixedPort,
     String? secret,
     int? tunFd,
   }) {
@@ -40,15 +41,41 @@ class ConfigTemplate {
       config = config.replaceAll(entry.key, entry.value);
     }
 
+    // Ensure mixed-port is present — without it mihomo silently skips
+    // creating the HTTP+SOCKS listener, so system proxy (macOS/Windows)
+    // and direct proxy connections all fail.
+    config = _ensureMixedPort(config, mixedPort);
+
     // Ensure external-controller is present
     config = _ensureExternalController(config, apiPort, secret);
+
+    // Ensure DNS is always present — not just for TUN mode.
+    // Without DNS config, subscriptions relying on fake-ip or domain
+    // resolution fail silently even in system proxy mode.
+    config = _ensureDns(config);
+
+    // Ensure sniffer for TLS/HTTP domain detection — critical for
+    // DOMAIN-type rules to work correctly with encrypted connections.
+    config = _ensureSniffer(config);
+
+    // Ensure geodata settings so GEOIP/GEOSITE rules work
+    config = _ensureGeodata(config);
+
+    // Ensure profile persistence (store selected node, fake-ip cache)
+    config = _ensureProfile(config);
+
+    // Ensure performance tuning defaults
+    config = _ensurePerformance(config);
+
+    // Ensure allow-lan for mixed-port to listen on all interfaces
+    config = _ensureAllowLan(config);
+
+    // Platform-specific: find-process-mode
+    config = _ensureFindProcessMode(config);
 
     // Inject TUN fd (Android VpnService mode)
     if (tunFd != null && tunFd > 0) {
       config = _injectTunFd(config, tunFd);
-      // TUN mode requires DNS to be enabled for fake-ip / domain resolution.
-      // Most subscriptions already have dns.enable: true, but ensure it.
-      config = _ensureDns(config);
     }
 
     return config;
@@ -77,6 +104,11 @@ class ConfigTemplate {
       config = _removeSection(config, 'tun');
     }
 
+    // Override find-process-mode for mobile (Android has no permission)
+    if (_hasKey(config, 'find-process-mode')) {
+      config = _replaceScalar(config, 'find-process-mode', 'off');
+    }
+
     // Append clean Android TUN section
     // inet4-address MUST match VpnService's addAddress() — without it,
     // sing-tun's system/mixed stack fails with "missing interface address"
@@ -94,21 +126,143 @@ class ConfigTemplate {
         '    - any:53\n';
   }
 
-  /// Ensure DNS is enabled (required for TUN mode to resolve domains via fake-ip).
+  /// Ensure DNS is enabled with comprehensive fake-ip + fallback config.
   /// If the subscription config already has a dns section, leave it alone.
-  /// Only injects a minimal DNS config when completely missing.
   static String _ensureDns(String config) {
     if (_hasKey(config, 'dns')) return config;
     return '$config\ndns:\n'
         '  enable: true\n'
+        '  prefer-h3: true\n'
         '  enhanced-mode: fake-ip\n'
         '  fake-ip-range: 198.18.0.1/16\n'
+        '  fake-ip-filter:\n'
+        '    - "*"\n'
+        '    - "+.lan"\n'
+        '    - "+.local"\n'
         '  default-nameserver:\n'
         '    - 223.5.5.5\n'
+        '    - 119.29.29.29\n'
         '    - 8.8.8.8\n'
         '  nameserver:\n'
         '    - https://doh.pub/dns-query\n'
-        '    - https://dns.alidns.com/dns-query\n';
+        '    - https://dns.alidns.com/dns-query\n'
+        '  direct-nameserver:\n'
+        '    - https://doh.pub/dns-query\n'
+        '    - https://dns.alidns.com/dns-query\n'
+        '  proxy-server-nameserver:\n'
+        '    - https://doh.pub/dns-query\n'
+        '    - https://dns.alidns.com/dns-query\n'
+        '  fallback:\n'
+        '    - "tls://8.8.4.4:853"\n'
+        '    - "tls://1.0.0.1:853"\n'
+        '    - "https://1.0.0.1/dns-query"\n'
+        '    - "https://8.8.4.4/dns-query"\n'
+        '  fallback-filter:\n'
+        '    geoip: true\n'
+        '    geoip-code: CN\n'
+        '    geosite:\n'
+        '      - gfw\n'
+        '    domain:\n'
+        '      - "+.google.com"\n'
+        '      - "+.facebook.com"\n'
+        '      - "+.youtube.com"\n'
+        '      - "+.github.com"\n'
+        '      - "+.googleapis.com"\n';
+  }
+
+  /// Ensure sniffer is configured for TLS/HTTP/QUIC domain detection.
+  /// Without sniffer, DOMAIN-type rules can't match encrypted connections.
+  static String _ensureSniffer(String config) {
+    if (_hasKey(config, 'sniffer')) return config;
+    return '$config\nsniffer:\n'
+        '  enable: true\n'
+        '  force-dns-mapping: true\n'
+        '  parse-pure-ip: true\n'
+        '  override-destination: true\n'
+        '  sniff:\n'
+        '    HTTP:\n'
+        '      ports: [80, 8080-8880]\n'
+        '      override-destination: true\n'
+        '    TLS:\n'
+        '      ports: [443, 8443]\n'
+        '    QUIC:\n'
+        '      ports: [443, 8443]\n'
+        '  force-domain:\n'
+        '    - "+.v2ex.com"\n'
+        '  skip-domain:\n'
+        '    - "Mijia Cloud"\n'
+        '    - "+.push.apple.com"\n';
+  }
+
+  /// Ensure geodata settings so GEOIP/GEOSITE rules resolve correctly.
+  static String _ensureGeodata(String config) {
+    if (!_hasKey(config, 'geodata-mode')) {
+      config += '\ngeodata-mode: true\n';
+    }
+    if (!_hasKey(config, 'geodata-loader')) {
+      config += 'geodata-loader: standard\n';
+    }
+    if (!_hasKey(config, 'geo-auto-update')) {
+      config += 'geo-auto-update: true\n';
+    }
+    if (!_hasKey(config, 'geo-update-interval')) {
+      config += 'geo-update-interval: 24\n';
+    }
+    if (!_hasKey(config, 'geox-url')) {
+      config += 'geox-url:\n'
+          '  geoip: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"\n'
+          '  geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"\n'
+          '  mmdb: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb"\n';
+    }
+    return config;
+  }
+
+  /// Ensure profile persistence settings.
+  static String _ensureProfile(String config) {
+    if (_hasKey(config, 'profile')) return config;
+    return '$config\nprofile:\n'
+        '  store-selected: true\n'
+        '  store-fake-ip: true\n';
+  }
+
+  /// Ensure performance tuning defaults.
+  static String _ensurePerformance(String config) {
+    if (!_hasKey(config, 'tcp-concurrent')) {
+      config += '\ntcp-concurrent: true\n';
+    }
+    if (!_hasKey(config, 'unified-delay')) {
+      config += 'unified-delay: true\n';
+    }
+    if (!_hasKey(config, 'global-client-fingerprint')) {
+      config += 'global-client-fingerprint: chrome\n';
+    }
+    return config;
+  }
+
+  /// Ensure allow-lan for mixed-port to listen on all interfaces.
+  static String _ensureAllowLan(String config) {
+    if (!_hasKey(config, 'allow-lan')) {
+      config += '\nallow-lan: true\n';
+    }
+    if (!_hasKey(config, 'bind-address')) {
+      config += 'bind-address: "*"\n';
+    }
+    return config;
+  }
+
+  /// Ensure find-process-mode based on platform.
+  /// Desktop (macOS/Windows/Linux): always — enables process-based routing.
+  /// Mobile (Android/iOS): off — no permission, avoids useless overhead.
+  static String _ensureFindProcessMode(String config) {
+    if (_hasKey(config, 'find-process-mode')) {
+      // On mobile, force off regardless of subscription setting
+      if (Platform.isAndroid || Platform.isIOS) {
+        config = _replaceScalar(config, 'find-process-mode', 'off');
+      }
+      return config;
+    }
+    final mode = (Platform.isAndroid || Platform.isIOS) ? 'off' : 'always';
+    return '$config\nfind-process-mode: $mode\n';
   }
 
   /// Remove a top-level YAML section (key + all indented content below it).
@@ -118,6 +272,24 @@ class ConfigTemplate {
       multiLine: true,
     );
     return config.replaceFirst(pattern, '');
+  }
+
+  /// Replace the value of a top-level scalar key.
+  static String _replaceScalar(String config, String key, String value) {
+    return config.replaceAll(
+      RegExp('^$key:.*\$', multiLine: true),
+      '$key: $value',
+    );
+  }
+
+  /// Ensure the config has mixed-port set.
+  ///
+  /// mihomo silently skips creating the HTTP+SOCKS proxy listener when
+  /// mixed-port is 0 (not set). Without it, system proxy on macOS/Windows
+  /// points to a port where nobody is listening, and all proxy traffic fails.
+  static String _ensureMixedPort(String config, int port) {
+    if (_hasKey(config, 'mixed-port')) return config;
+    return '$config\nmixed-port: $port\n';
   }
 
   /// Ensure the config has external-controller set.
@@ -173,7 +345,7 @@ class ConfigTemplate {
     return match?.group(1);
   }
 
-  /// Load the built-in minimal fallback config.
+  /// Load the built-in fallback config.
   ///
   /// This is NOT the default config for normal usage. Subscriptions provide
   /// complete configs. This is only for the rare case where a subscription

@@ -22,6 +22,9 @@ class _LogPageState extends ConsumerState<LogPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
+  static bool get _isSubPage =>
+      !(Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +45,7 @@ class _LogPageState extends ConsumerState<LogPage>
 
     if (!isRunning) {
       return Scaffold(
+        appBar: _isSubPage ? AppBar(title: Text(s.tabLogs)) : null,
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -61,6 +65,7 @@ class _LogPageState extends ConsumerState<LogPage>
     }
 
     return Scaffold(
+      appBar: _isSubPage ? AppBar(title: Text(s.tabLogs)) : null,
       body: Column(
         children: [
           TabBar(
@@ -119,25 +124,12 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
     final filtered = _filterLogs(logs);
     final isDesktop = _isDesktop;
 
-    // Terminal dark theme for desktop
-    final bgColor = isDesktop ? const Color(0xFF1E1E1E) : null;
-    final controlsBg = isDesktop
-        ? const Color(0xFF2D2D2D)
-        : Theme.of(context).colorScheme.surfaceContainerLow;
-    final searchFillColor = isDesktop
-        ? const Color(0xFF3C3C3C)
-        : Theme.of(context).colorScheme.surfaceContainerHighest;
-    final searchTextColor =
-        isDesktop ? const Color(0xFFD4D4D4) : null;
-    final statusBarBg = isDesktop
-        ? const Color(0xFF007ACC)
-        : Theme.of(context).colorScheme.surfaceContainerLow;
-    final statusBarTextColor =
-        isDesktop ? Colors.white : null;
+    final theme = Theme.of(context);
+    final controlsBg = theme.colorScheme.surfaceContainerLow;
+    final searchFillColor = theme.colorScheme.surfaceContainerHighest;
+    final statusBarBg = theme.colorScheme.surfaceContainerLow;
 
-    return Container(
-      color: bgColor,
-      child: Column(
+    return Column(
         children: [
           // Controls toolbar
           Container(
@@ -153,22 +145,13 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
                       controller: _searchController,
                       style: TextStyle(
                           fontSize: 12,
-                          color: searchTextColor,
                           fontFamily: isDesktop ? 'monospace' : null),
                       decoration: InputDecoration(
                         hintText: _regexMode
                             ? s.searchLogsRegexHint
                             : s.searchLogsHint,
-                        hintStyle: TextStyle(
-                            fontSize: 12,
-                            color: isDesktop
-                                ? const Color(0xFF6A6A6A)
-                                : null),
-                        prefixIcon: Icon(Icons.search,
-                            size: 16,
-                            color: isDesktop
-                                ? const Color(0xFF6A6A6A)
-                                : null),
+                        hintStyle: const TextStyle(fontSize: 12),
+                        prefixIcon: const Icon(Icons.search, size: 16),
                         suffixIcon: _searchQuery.isNotEmpty
                             ? GestureDetector(
                                 onTap: () {
@@ -178,11 +161,7 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
                                     _regexError = false;
                                   });
                                 },
-                                child: Icon(Icons.clear,
-                                    size: 14,
-                                    color: isDesktop
-                                        ? const Color(0xFF6A6A6A)
-                                        : null),
+                                child: const Icon(Icons.clear, size: 14),
                               )
                             : null,
                         isDense: true,
@@ -238,11 +217,7 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
                       height: 28,
                       decoration: BoxDecoration(
                         color: _regexMode
-                            ? (isDesktop
-                                ? const Color(0xFF0E639C)
-                                : Theme.of(context)
-                                    .colorScheme
-                                    .primaryContainer)
+                            ? theme.colorScheme.primaryContainer
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(4),
                       ),
@@ -253,16 +228,8 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
                             fontWeight: FontWeight.bold,
                             fontFamily: 'monospace',
                             color: _regexMode
-                                ? (isDesktop
-                                    ? Colors.white
-                                    : Theme.of(context)
-                                        .colorScheme
-                                        .onPrimaryContainer)
-                                : (isDesktop
-                                    ? const Color(0xFF6A6A6A)
-                                    : Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant),
+                                ? theme.colorScheme.onPrimaryContainer
+                                : theme.colorScheme.onSurfaceVariant,
                           )),
                     ),
                   ),
@@ -277,12 +244,8 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
                   icon: Icon(Icons.filter_list,
                       size: 16,
                       color: level != 'info'
-                          ? (isDesktop
-                              ? const Color(0xFF4EC9B0)
-                              : Theme.of(context).colorScheme.primary)
-                          : (isDesktop
-                              ? const Color(0xFF6A6A6A)
-                              : null)),
+                          ? theme.colorScheme.primary
+                          : null),
                   itemBuilder: (_) => const [
                     PopupMenuItem(
                         value: 'debug', child: Text('Debug')),
@@ -296,11 +259,7 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
                 IconButton(
                   onPressed: () =>
                       ref.read(logEntriesProvider.notifier).clear(),
-                  icon: Icon(Icons.delete_outline,
-                      size: 16,
-                      color: isDesktop
-                          ? const Color(0xFF6A6A6A)
-                          : null),
+                  icon: const Icon(Icons.delete_outline, size: 16),
                   tooltip: s.clearLogs,
                   visualDensity: VisualDensity.compact,
                 ),
@@ -313,14 +272,7 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
             child: filtered.isEmpty
                 ? Center(
                     child: Text(s.noLogs,
-                        style: TextStyle(
-                          color: isDesktop
-                              ? const Color(0xFF6A6A6A)
-                              : Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium
-                                  ?.color,
-                        )))
+                        style: theme.textTheme.bodyMedium))
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 8, vertical: 4),
@@ -343,36 +295,23 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
                 Text(s.logsCount(filtered.length),
                     style: TextStyle(
                         fontSize: 11,
-                        color: statusBarTextColor ??
-                            Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.color)),
+                        color: theme.textTheme.bodySmall?.color)),
                 const Spacer(),
                 if (_regexMode)
                   Text('REGEX',
                       style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: isDesktop
-                              ? const Color(0xFFFFC83D)
-                              : Theme.of(context)
-                                  .colorScheme
-                                  .primary)),
+                          color: theme.colorScheme.primary)),
                 if (_regexMode) const SizedBox(width: 8),
                 Text(s.logLevelLabel(level.toUpperCase()),
                     style: TextStyle(
                         fontSize: 11,
-                        color: statusBarTextColor ??
-                            Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.color)),
+                        color: theme.textTheme.bodySmall?.color)),
               ],
             ),
           ),
         ],
-      ),
     );
   }
 
@@ -420,13 +359,8 @@ class _LogTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final timeColor = isDesktop
-        ? const Color(0xFF569CD6) // VS Code blue for timestamps
-        : Theme.of(context).colorScheme.onSurfaceVariant;
-
-    final payloadColor = isDesktop
-        ? _desktopPayloadColor(entry.type)
-        : _mobilePayloadColor(entry.type, context);
+    final timeColor = Theme.of(context).colorScheme.onSurfaceVariant;
+    final payloadColor = _payloadColor(entry.type, context);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
@@ -451,7 +385,7 @@ class _LogTile extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11,
                 fontFamily: 'monospace',
-                color: _levelTagColor(entry.type),
+                color: _levelDotColor(entry.type),
                 fontWeight: FontWeight.bold,
               ),
             )
@@ -482,33 +416,7 @@ class _LogTile extends StatelessWidget {
     );
   }
 
-  Color _levelTagColor(String type) {
-    switch (type) {
-      case 'error':
-        return const Color(0xFFF44747); // VS Code red
-      case 'warning':
-        return const Color(0xFFFFCC00); // yellow
-      case 'debug':
-        return const Color(0xFF6A9955); // VS Code green comment
-      default:
-        return const Color(0xFF4EC9B0); // VS Code teal (info)
-    }
-  }
-
-  Color _desktopPayloadColor(String type) {
-    switch (type) {
-      case 'error':
-        return const Color(0xFFF44747);
-      case 'warning':
-        return const Color(0xFFCE9178); // VS Code string orange
-      case 'debug':
-        return const Color(0xFF6A9955);
-      default:
-        return const Color(0xFFD4D4D4); // VS Code default text
-    }
-  }
-
-  Color _mobilePayloadColor(String type, BuildContext context) {
+  Color _payloadColor(String type, BuildContext context) {
     switch (type) {
       case 'error':
         return Colors.red;

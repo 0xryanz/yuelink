@@ -1,25 +1,93 @@
-# YueLink minimal fallback config.
+# YueLink complete fallback config.
 # Only used when subscription does not provide a complete config.
 # In normal usage, the subscription provides everything
 # (proxy-groups, rules, rule-providers, DNS, sniffer, etc.)
+# ConfigTemplate.process() also ensures these keys are present
+# even when using subscription configs.
 
 mixed-port: 7890
-allow-lan: false
+allow-lan: true
+bind-address: "*"
 log-level: info
 ipv6: false
 
+geodata-mode: true
+geodata-loader: standard
+geo-auto-update: true
+geo-update-interval: 24
+geox-url:
+  geoip: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
+  geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
+  mmdb: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb"
+
+tcp-concurrent: true
+unified-delay: true
+global-client-fingerprint: chrome
+find-process-mode: always
+
+profile:
+  store-selected: true
+  store-fake-ip: true
+
 external-controller: 127.0.0.1:9090
+
+sniffer:
+  enable: true
+  force-dns-mapping: true
+  parse-pure-ip: true
+  override-destination: true
+  sniff:
+    HTTP:
+      ports: [80, 8080-8880]
+      override-destination: true
+    TLS:
+      ports: [443, 8443]
+    QUIC:
+      ports: [443, 8443]
+  force-domain:
+    - "+.v2ex.com"
+  skip-domain:
+    - "Mijia Cloud"
+    - "+.push.apple.com"
 
 dns:
   enable: true
+  prefer-h3: true
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - "*"
+    - "+.lan"
+    - "+.local"
   default-nameserver:
     - 223.5.5.5
     - 119.29.29.29
+    - 8.8.8.8
   nameserver:
     - https://doh.pub/dns-query
     - https://dns.alidns.com/dns-query
+  direct-nameserver:
+    - https://doh.pub/dns-query
+    - https://dns.alidns.com/dns-query
+  proxy-server-nameserver:
+    - https://doh.pub/dns-query
+    - https://dns.alidns.com/dns-query
+  fallback:
+    - "tls://8.8.4.4:853"
+    - "tls://1.0.0.1:853"
+    - "https://1.0.0.1/dns-query"
+    - "https://8.8.4.4/dns-query"
+  fallback-filter:
+    geoip: true
+    geoip-code: CN
+    geosite:
+      - gfw
+    domain:
+      - "+.google.com"
+      - "+.facebook.com"
+      - "+.youtube.com"
+      - "+.github.com"
+      - "+.googleapis.com"
 
 proxies:
 

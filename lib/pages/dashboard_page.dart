@@ -1,12 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
+import 'dart:io';
 
+import '../constants.dart';
 import '../l10n/app_strings.dart';
 import '../main.dart';
 import '../providers/core_provider.dart';
@@ -70,13 +72,18 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     if (_ipLoading) return;
     setState(() { _ipLoading = true; _ip = null; _country = null; });
     try {
-      final client = http.Client();
+      // Route through mihomo's mixed-port proxy to get the proxy exit IP
+      final proxyHost = '127.0.0.1';
+      final proxyPort = AppConstants.defaultMixedPort;
+      final httpClient = HttpClient()
+        ..findProxy = (uri) => 'PROXY $proxyHost:$proxyPort';
       try {
-        final resp = await client
-            .get(Uri.parse('http://ip-api.com/json/?fields=query,country'))
-            .timeout(const Duration(seconds: 5));
-        if (resp.statusCode == 200) {
-          final body = resp.body;
+        final request = await httpClient
+            .getUrl(Uri.parse('http://ip-api.com/json/?fields=query,country'))
+            .timeout(const Duration(seconds: 8));
+        final response = await request.close().timeout(const Duration(seconds: 8));
+        if (response.statusCode == 200) {
+          final body = await response.transform(utf8.decoder).join();
           final qm = RegExp(r'"query"\s*:\s*"([^"]+)"').firstMatch(body);
           final cm = RegExp(r'"country"\s*:\s*"([^"]+)"').firstMatch(body);
           if (mounted) {
@@ -90,7 +97,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           return;
         }
       } finally {
-        client.close();
+        httpClient.close();
       }
     } catch (_) {}
     if (mounted) setState(() { _ipLoading = false; _ipQueried = true; });

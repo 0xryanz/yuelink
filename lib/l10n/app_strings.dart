@@ -120,6 +120,14 @@ class S {
   String get systemProxyOff => _e ? 'System proxy off' : '系统代理未启用';
   String get trafficActivity => _e ? 'Traffic activity' : '流量活动';
   String get last60s => _e ? 'Last 60 seconds' : '最近 60 秒';
+  String get dashReadyHint => _e
+      ? 'Ready to connect. Tap the power button to start.'
+      : '已就绪，点击电源按钮开始连接。';
+  String get dashNoProfileHint => _e
+      ? 'No profile selected. Add one in Profiles first.'
+      : '尚未选择配置，请先在「配置」页面添加。';
+  String get dashAutoConnectOn => _e ? 'Auto-connect: On' : '自动连接：开启';
+  String get dashAutoConnectOff => _e ? 'Auto-connect: Off' : '自动连接：关闭';
   String get noProfileHint =>
       _e ? 'Add a subscription in the Profiles page first' : '请先在「配置」页面添加订阅';
   String get snackNoProfile =>

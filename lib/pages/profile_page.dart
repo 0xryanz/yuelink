@@ -119,7 +119,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
           // ── Content ──────────────────────────────────────────────
           Expanded(
-            child: profilesAsync.when(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: profilesAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => YLEmptyState(
                 icon: Icons.error_outline,
@@ -147,7 +150,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 return RefreshIndicator(
                   onRefresh: () => ref.read(profilesProvider.notifier).load(),
                   child: ListView.builder(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
                     itemCount: sorted.length,
                     itemBuilder: (context, index) {
                       final profile = sorted[index];
@@ -181,6 +184,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   ),
                 );
               },
+            ),
+              ),
             ),
           ),
         ],
@@ -563,7 +568,7 @@ class _ProfileCard extends StatelessWidget {
     final sub = profile.subInfo;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 12),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: isActive
@@ -571,7 +576,7 @@ class _ProfileCard extends StatelessWidget {
                 ? YLColors.primary.withValues(alpha: 0.10)
                 : YLColors.primaryLight)
             : (isDark ? YLColors.zinc800 : Colors.white),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(YLRadius.xl),
         border: Border.all(
           color: isActive
               ? YLColors.primary.withValues(alpha: 0.20)
@@ -588,9 +593,9 @@ class _ProfileCard extends StatelessWidget {
       ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(YLRadius.xl),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

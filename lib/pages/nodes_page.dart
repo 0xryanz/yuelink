@@ -59,55 +59,57 @@ class _NodesPageState extends ConsumerState<NodesPage> {
     }
 
     return Scaffold(
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 100.0,
-            backgroundColor: Colors.transparent,
-            surfaceTintColor: Colors.transparent,
-            pinned: true,
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.symmetric(horizontal: YLSpacing.xl, vertical: YLSpacing.lg),
-              title: Text(
-                s.navProxies,
-                style: YLText.display.copyWith(
-                  color: isDark ? Colors.white : Colors.black,
-                  fontSize: 28,
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: CustomScrollView(
+            physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+            slivers: [
+              SliverAppBar(
+                expandedHeight: 100.0,
+                backgroundColor: Colors.transparent,
+                surfaceTintColor: Colors.transparent,
+                pinned: true,
+                flexibleSpace: FlexibleSpaceBar(
+                  titlePadding: const EdgeInsets.symmetric(horizontal: YLSpacing.xl, vertical: YLSpacing.lg),
+                  title: Text(
+                    s.navProxies,
+                    style: YLText.display.copyWith(
+                      color: isDark ? Colors.white : Colors.black,
+                      fontSize: 28,
+                    ),
+                  ),
+                ),
+                actions: [
+                  _CompactRoutingMode(),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    icon: const Icon(Icons.refresh_rounded),
+                    onPressed: () => ref.read(proxyGroupsProvider.notifier).refresh(),
+                  ),
+                  const SizedBox(width: YLSpacing.sm),
+                ],
+              ),
+
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(YLSpacing.xl, YLSpacing.sm, YLSpacing.xl, 0),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: YLSpacing.lg),
+                        child: _GroupCard(group: groups[index]),
+                      );
+                    },
+                    childCount: groups.length,
+                  ),
                 ),
               ),
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.refresh_rounded),
-                onPressed: () => ref.read(proxyGroupsProvider.notifier).refresh(),
-              ),
-              const SizedBox(width: YLSpacing.sm),
+
+              const SliverToBoxAdapter(child: SizedBox(height: 100)),
             ],
           ),
-          
-          // ── Routing Mode ─────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: _RoutingModeBar(),
-          ),
-
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: YLSpacing.xl, vertical: YLSpacing.sm),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: YLSpacing.lg),
-                    child: _GroupCard(group: groups[index]),
-                  );
-                },
-                childCount: groups.length,
-              ),
-            ),
-          ),
-          
-          const SliverToBoxAdapter(child: SizedBox(height: 100)),
-        ],
+        ),
       ),
     );
   }
@@ -299,30 +301,69 @@ class _NodeTile extends StatefulWidget {
   State<_NodeTile> createState() => _NodeTileState();
 }
 
-// ── Routing Mode Bar ────────────────────────────────────────────────────────
+// ── Compact Routing Mode (AppBar) ────────────────────────────────────────────
 
-class _RoutingModeBar extends ConsumerWidget {
+class _CompactRoutingMode extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = S.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final routingMode = ref.watch(routingModeProvider);
     final status = ref.watch(coreStatusProvider);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(YLSpacing.xl, 0, YLSpacing.xl, YLSpacing.sm),
-      child: YLPillSegmentedControl<String>(
-        values: const ['rule', 'global', 'direct'],
-        labels: [s.routeModeRule, s.routeModeGlobal, s.routeModeDirect],
-        selectedValue: routingMode,
-        onChanged: (mode) async {
-          ref.read(routingModeProvider.notifier).state = mode;
-          await SettingsService.setRoutingMode(mode);
-          if (status == CoreStatus.running) {
-            try {
-              await CoreManager.instance.api.setRoutingMode(mode);
-            } catch (_) {}
-          }
-        },
+    const modes = ['rule', 'global', 'direct'];
+    final labels = [s.routeModeRule, s.routeModeGlobal, s.routeModeDirect];
+
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : Colors.black.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(YLRadius.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(modes.length, (i) {
+          final isSelected = modes[i] == routingMode;
+          return GestureDetector(
+            onTap: () async {
+              ref.read(routingModeProvider.notifier).state = modes[i];
+              await SettingsService.setRoutingMode(modes[i]);
+              if (status == CoreStatus.running) {
+                try {
+                  await CoreManager.instance.api.setRoutingMode(modes[i]);
+                } catch (_) {}
+              }
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? (isDark ? YLColors.zinc700 : Colors.white)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(YLRadius.pill),
+                boxShadow: isSelected && !isDark
+                    ? [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4, offset: const Offset(0, 1))]
+                    : [],
+              ),
+              child: Text(
+                labels[i],
+                style: YLText.caption.copyWith(
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  color: isSelected
+                      ? (isDark ? Colors.white : Colors.black)
+                      : YLColors.zinc500,
+                ),
+              ),
+            ),
+          );
+        }),
       ),
     );
   }

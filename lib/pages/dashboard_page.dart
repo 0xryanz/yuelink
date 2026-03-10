@@ -166,7 +166,13 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                               onToggle: () => _toggle(context, ref),
                             ),
 
-                            // ── Layer 2: IP + Chart ───────────
+                            // ── Layer 2: Overview (disconnect only) ──
+                            if (!isRunning) ...[
+                              const SizedBox(height: 16),
+                              const _OverviewCard(),
+                            ],
+
+                            // ── Layer 3: IP + Chart ───────────
                             if (isRunning) ...[
                               const SizedBox(height: 16),
                               if (isWide)
@@ -604,7 +610,157 @@ class _Pill extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Layer 2 — Exit IP + Chart
+// Layer 2 — Overview Card (disconnect state only)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _OverviewCard extends ConsumerWidget {
+  const _OverviewCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = S.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final profiles = ref.watch(profilesProvider);
+    final activeId = ref.watch(activeProfileIdProvider);
+    final autoConnect = ref.watch(autoConnectProvider);
+
+    String? profileName;
+    String? lastUpdated;
+    profiles.whenData((list) {
+      final active = list.where((p) => p.id == activeId).firstOrNull;
+      if (active != null) {
+        profileName = active.name;
+        if (active.lastUpdated != null) {
+          final dt = active.lastUpdated!;
+          lastUpdated = '${dt.month}/${dt.day} '
+              '${dt.hour.toString().padLeft(2, '0')}:'
+              '${dt.minute.toString().padLeft(2, '0')}';
+        }
+      }
+    });
+
+    final hasProfile = profileName != null;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? YLColors.zinc800 : Colors.white,
+        borderRadius: BorderRadius.circular(YLRadius.xl),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.black.withValues(alpha: 0.08),
+          width: 0.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Profile row
+          Row(
+            children: [
+              Icon(
+                hasProfile ? Icons.description_outlined : Icons.warning_amber_rounded,
+                size: 14,
+                color: hasProfile ? YLColors.zinc400 : YLColors.connecting,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                s.navProfile,
+                style: YLText.caption.copyWith(color: YLColors.zinc500),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            profileName ?? s.dashNoProfileHint,
+            style: hasProfile
+                ? YLText.titleMedium.copyWith(fontSize: 14)
+                : YLText.body.copyWith(fontSize: 13, color: YLColors.zinc500),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+
+          if (lastUpdated != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              s.updatedAt(lastUpdated!),
+              style: YLText.caption.copyWith(color: YLColors.zinc400),
+            ),
+          ],
+
+          const SizedBox(height: 12),
+          Divider(
+            height: 1,
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.06)
+                : Colors.black.withValues(alpha: 0.06),
+          ),
+          const SizedBox(height: 12),
+
+          // Status pills
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              _OverviewPill(
+                icon: Icons.bolt_rounded,
+                label: autoConnect ? s.dashAutoConnectOn : s.dashAutoConnectOff,
+                isDark: isDark,
+              ),
+              if (hasProfile)
+                _OverviewPill(
+                  icon: Icons.check_circle_outline,
+                  label: s.dashReadyHint.split('.').first,
+                  isDark: isDark,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OverviewPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isDark;
+
+  const _OverviewPill({
+    required this.icon,
+    required this.label,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(YLRadius.pill),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.06)
+            : Colors.black.withValues(alpha: 0.04),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: YLColors.zinc400),
+          const SizedBox(width: 4),
+          Text(label,
+              style: YLText.caption.copyWith(
+                fontSize: 11,
+                color: isDark ? YLColors.zinc400 : YLColors.zinc600,
+              )),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Layer 3 — Exit IP + Chart
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class _ExitIpCard extends StatelessWidget {

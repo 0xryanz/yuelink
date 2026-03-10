@@ -135,6 +135,10 @@ class _HomePageState extends ConsumerState<HomePage> {
 
               // Active node info
               if (isRunning) _ActiveNodeInfo(),
+              if (isRunning) ...[
+                const SizedBox(height: 6),
+                _ActiveProfileName(),
+              ],
               const SizedBox(height: 24),
 
               // Traffic stats
@@ -255,6 +259,27 @@ class _ActiveNodeInfo extends ConsumerWidget {
         ],
       ),
     );
+  }
+}
+
+class _ActiveProfileName extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isMock = ref.watch(isMockModeProvider);
+    if (isMock) {
+      return Text('模拟模式',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant));
+    }
+    final profiles = ref.watch(profilesProvider);
+    final activeId = ref.watch(activeProfileIdProvider);
+    final name = profiles.whenOrNull(
+      data: (list) => list.where((p) => p.id == activeId).firstOrNull?.name,
+    );
+    if (name == null) return const SizedBox.shrink();
+    return Text(name,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant));
   }
 }
 

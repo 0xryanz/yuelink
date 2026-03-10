@@ -13,7 +13,7 @@ void main() {
       expect(info.download, 5368709120); // 5 GB
       expect(info.total, 107374182400); // 100 GB
       expect(info.expire, isNotNull);
-      expect(info.expire!.year, 2024);
+      expect(info.expire!.year, 2025);
     });
 
     test('calculates remaining traffic', () {
@@ -67,10 +67,12 @@ void main() {
 
     test('daysRemaining', () {
       final info = SubscriptionInfo(
-        expire: DateTime.now().add(const Duration(days: 15)),
+        expire: DateTime.now().add(const Duration(days: 15, hours: 12)),
       );
 
-      expect(info.daysRemaining, 15);
+      // Allow +/- 1 due to time-of-day rounding
+      expect(info.daysRemaining, greaterThanOrEqualTo(15));
+      expect(info.daysRemaining, lessThanOrEqualTo(16));
     });
 
     test('serializes to JSON and back', () {

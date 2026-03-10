@@ -362,6 +362,12 @@ class _ProfileCard extends StatelessWidget {
                     onSelected: (action) {
                       if (action == 'update') onUpdate();
                       if (action == 'edit') onEdit();
+                      if (action == 'copy') {
+                        Clipboard.setData(
+                            ClipboardData(text: profile.url));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('已复制订阅链接')));
+                      }
                       if (action == 'delete') onDelete();
                     },
                     itemBuilder: (_) => [
@@ -369,6 +375,8 @@ class _ProfileCard extends StatelessWidget {
                           value: 'update', child: Text('更新订阅')),
                       const PopupMenuItem(
                           value: 'edit', child: Text('编辑')),
+                      const PopupMenuItem(
+                          value: 'copy', child: Text('复制链接')),
                       const PopupMenuItem(
                           value: 'delete',
                           child: Text('删除',

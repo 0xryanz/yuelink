@@ -5,6 +5,8 @@ import '../models/proxy.dart';
 import '../providers/core_provider.dart';
 import '../providers/proxy_provider.dart';
 
+enum _SortMode { none, delay }
+
 class ProxyPage extends ConsumerStatefulWidget {
   const ProxyPage({super.key});
 
@@ -14,6 +16,7 @@ class ProxyPage extends ConsumerStatefulWidget {
 
 class _ProxyPageState extends ConsumerState<ProxyPage> {
   String _searchQuery = '';
+  _SortMode _sortMode = _SortMode.none;
   final _searchController = TextEditingController();
 
   @override
@@ -61,41 +64,61 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
       );
     }
 
-    // Filter groups/nodes by search query
     final filteredGroups = _filterGroups(groups);
 
     return Scaffold(
       body: Column(
         children: [
-          // Search bar
+          // Search bar + sort toggle
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: '搜索节点...',
-                prefixIcon: const Icon(Icons.search, size: 20),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _searchQuery = '');
-                        },
-                      )
-                    : null,
-                isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+            padding: const EdgeInsets.fromLTRB(12, 8, 4, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: '搜索节点...',
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                            )
+                          : null,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                    ),
+                    onChanged: (v) => setState(() => _searchQuery = v.trim()),
+                  ),
                 ),
-                filled: true,
-                fillColor:
-                    Theme.of(context).colorScheme.surfaceContainerHighest,
-              ),
-              onChanged: (v) => setState(() => _searchQuery = v.trim()),
+                IconButton(
+                  onPressed: () => setState(() {
+                    _sortMode = _sortMode == _SortMode.none
+                        ? _SortMode.delay
+                        : _SortMode.none;
+                  }),
+                  icon: Icon(
+                    Icons.sort,
+                    size: 20,
+                    color: _sortMode == _SortMode.delay
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                  ),
+                  tooltip: _sortMode == _SortMode.delay ? '取消排序' : '按延迟排序',
+                ),
+              ],
             ),
           ),
 
@@ -116,6 +139,7 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
                         return _ProxyGroupCard(
                           group: filteredGroups[index],
                           searchQuery: _searchQuery,
+                          sortMode: _sortMode,
                         );
                       },
                     ),
@@ -140,8 +164,13 @@ class _ProxyPageState extends ConsumerState<ProxyPage> {
 class _ProxyGroupCard extends ConsumerWidget {
   final ProxyGroup group;
   final String searchQuery;
+  final _SortMode sortMode;
 
-  const _ProxyGroupCard({required this.group, required this.searchQuery});
+  const _ProxyGroupCard({
+    required this.group,
+    required this.searchQuery,
+    required this.sortMode,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -149,12 +178,29 @@ class _ProxyGroupCard extends ConsumerWidget {
     final testing = ref.watch(delayTestingProvider);
 
     // Filter nodes if searching
-    final visibleNodes = searchQuery.isEmpty
-        ? group.all
+    var visibleNodes = searchQuery.isEmpty
+        ? List<String>.from(group.all)
         : group.all
             .where(
                 (n) => n.toLowerCase().contains(searchQuery.toLowerCase()))
             .toList();
+
+    // Sort by delay if enabled
+    if (sortMode == _SortMode.delay) {
+      visibleNodes.sort((a, b) {
+        final da = delays[a];
+        final db = delays[b];
+        // Untested nodes go to end
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        // Timeout (<=0) goes after valid delays
+        if (da <= 0 && db <= 0) return 0;
+        if (da <= 0) return 1;
+        if (db <= 0) return -1;
+        return da.compareTo(db);
+      });
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),

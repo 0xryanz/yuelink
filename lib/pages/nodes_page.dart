@@ -214,10 +214,9 @@ class _GroupCardState extends ConsumerState<_GroupCard>
   @override
   Widget build(BuildContext context) {
     final group = widget.group;
-    final s = S.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final delays = ref.watch(delayResultsProvider);
     final testing = ref.watch(delayTestingProvider);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       clipBehavior: Clip.antiAlias,

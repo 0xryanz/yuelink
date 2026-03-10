@@ -725,7 +725,6 @@ class _StatsRowState extends ConsumerState<_StatsRow> {
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final groups = ref.watch(proxyGroupsProvider);
     final delays = ref.watch(delayResultsProvider);
     final mainGroup = groups.isEmpty

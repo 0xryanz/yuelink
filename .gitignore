@@ -50,7 +50,7 @@ core/mihomo/
 
 # Installed native libraries
 android/app/src/main/jniLibs/
-ios/Runner/Frameworks/libclash.*
+ios/Frameworks/libclash.*
 macos/Frameworks/
 windows/libs/
 linux/libs/
@@ -69,3 +69,4 @@ android/local.properties
 .idea/
 *.iml
 android/local.properties
+.aider*

@@ -693,6 +693,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(SOURCE_ROOT)/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.yueto.yuelink.PacketTunnel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -715,6 +716,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(SOURCE_ROOT)/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.yueto.yuelink.PacketTunnel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -739,6 +741,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(SOURCE_ROOT)/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.yueto.yuelink.PacketTunnel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;

@@ -117,7 +117,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  s.navConnection.toUpperCase(),
+                  s.navConnections.toUpperCase(),
                   style: YLText.caption.copyWith(
                     letterSpacing: 2.0,
                     fontWeight: FontWeight.w700,
@@ -126,7 +126,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  s.navConnection,
+                  s.navConnections,
                   style: YLText.display.copyWith(
                     color: isDark ? YLColors.zinc50 : YLColors.zinc900,
                   ),

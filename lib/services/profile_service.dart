@@ -9,7 +9,6 @@ import 'package:path_provider/path_provider.dart';
 import '../constants.dart';
 import '../models/profile.dart';
 import 'config_template.dart';
-import 'settings_service.dart';
 import 'subscription_parser.dart';
 
 /// Manages subscription profiles: download, store, update.
@@ -178,23 +177,13 @@ class ProfileService {
   }
 
   /// Download config YAML from a subscription URL.
-  /// If a Sub-Store server URL is configured, automatically converts the URL
-  /// to Clash format via Sub-Store before downloading.
   /// Returns both the content and parsed subscription info from headers.
   static Future<_DownloadResult> _downloadConfig(String url) async {
-    String downloadUrl = url;
-
-    final subStoreBase = await SettingsService.getSubStoreUrl();
-    if (subStoreBase.isNotEmpty) {
-      final encoded = Uri.encodeComponent(url);
-      downloadUrl = '$subStoreBase/sub?target=clash&url=$encoded';
-    }
-
     http.Response response;
     try {
       response = await http
           .get(
-            Uri.parse(downloadUrl),
+            Uri.parse(url),
             headers: {'User-Agent': AppConstants.userAgent},
           )
           .timeout(const Duration(seconds: 30));

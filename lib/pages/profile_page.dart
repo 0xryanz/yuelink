@@ -63,7 +63,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   children: [
                     Expanded(
                       child: Text(
-                        s.navConfigurations.toUpperCase(),
+                        s.navProfile.toUpperCase(),
                         style: YLText.caption.copyWith(
                           letterSpacing: 2.0,
                           fontWeight: FontWeight.w600,
@@ -100,7 +100,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  s.navConfigurations,
+                  s.navProfile,
                   style: const TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.w600,

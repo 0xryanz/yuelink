@@ -14,7 +14,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'constants.dart';
 import 'l10n/app_strings.dart';
-import 'pages/home_page.dart';
+import 'pages/dashboard_page.dart';
 import 'pages/nodes_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/settings_page.dart';
@@ -475,13 +475,11 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
 class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key = const ValueKey('mainShell')});
 
-  static const tabHome     = 0;
-  static const tabNodes    = 1;
-  static const tabProfiles = 2;
-  static const tabSettings = 3;
-  // Keep old names as aliases for compatibility
-  static const tabConfigurations = 2;
-  static const tabConnection     = 0;
+  /// Tab indices for programmatic navigation.
+  static const tabDashboard = 0;
+  static const tabProxies   = 1;
+  static const tabProfiles  = 2;
+  static const tabSettings  = 3;
 
   static void switchToTab(BuildContext context, int index) {
     context.findAncestorStateOfType<_MainShellState>()?.switchTab(index);
@@ -495,13 +493,11 @@ class _MainShellState extends ConsumerState<MainShell> {
   int _currentIndex = 0;
 
   void switchTab(int index) {
-    if (index >= 0 && index < _pages.length) {
-      setState(() => _currentIndex = index);
-    }
+    setState(() => _currentIndex = index);
   }
 
   static const _pages = [
-    HomePage(),
+    DashboardPage(),
     NodesPage(),
     ProfilePage(),
     SettingsPage(),
@@ -529,17 +525,27 @@ class _MainShellState extends ConsumerState<MainShell> {
       return Scaffold(
         body: Row(
           children: [
+            // ── Sidebar ────────────────────────────────────────
             _Sidebar(
               currentIndex: _currentIndex,
               onSelect: (i) => setState(() => _currentIndex = i),
             ),
+
+            // ── Sidebar / content divider ──────────────────────
             Container(
               width: 0.5,
               color: isDark
                   ? Colors.white.withValues(alpha: 0.06)
                   : Colors.black.withValues(alpha: 0.06),
             ),
-            Expanded(child: _pages[_currentIndex]),
+
+            // ── Content ────────────────────────────────────────
+            Expanded(
+              child: IndexedStack(
+                index: _currentIndex,
+                children: _pages,
+              ),
+            ),
           ],
         ),
       );
@@ -547,38 +553,36 @@ class _MainShellState extends ConsumerState<MainShell> {
 
     // ── Mobile bottom navigation ─────────────────────────────────
     final s = S.of(context);
+    final mobileItems = [
+      (const Icon(Icons.home_outlined, size: 20),
+       const Icon(Icons.home_filled, size: 20), s.navHome),
+      (const Icon(Icons.public_outlined, size: 20),
+       const Icon(Icons.public, size: 20), s.navProxies),
+      (const Icon(Icons.folder_outlined, size: 20),
+       const Icon(Icons.folder, size: 20), s.navProfile),
+      (const Icon(Icons.settings_outlined, size: 20),
+       const Icon(Icons.settings, size: 20), s.navSettings),
+    ];
 
     return Scaffold(
-      body: _pages[_currentIndex],
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _pages,
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (i) => setState(() => _currentIndex = i),
-        height: 64,
-        elevation: 0,
-        indicatorColor: YLColors.primary.withOpacity(0.1),
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.dashboard_outlined, size: 22),
-            selectedIcon: Icon(Icons.dashboard_rounded, size: 22, color: YLColors.primary),
-            label: s.navHome,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.dns_outlined, size: 22),
-            selectedIcon: Icon(Icons.dns_rounded, size: 22, color: YLColors.primary),
-            label: s.navNodes,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.folder_outlined, size: 22),
-            selectedIcon: Icon(Icons.folder_rounded, size: 22, color: YLColors.primary),
-            label: s.navProfile,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.tune_outlined, size: 22),
-            selectedIcon: Icon(Icons.tune_rounded, size: 22, color: YLColors.primary),
-            label: s.navSettings,
-          ),
-        ],
+        onDestinationSelected: (i) =>
+            setState(() => _currentIndex = i),
+        destinations: mobileItems
+            .map((item) => NavigationDestination(
+                  icon: item.$1,
+                  selectedIcon: item.$2,
+                  label: item.$3,
+                ))
+            .toList(),
+        height: 60,
+        labelBehavior:
+            NavigationDestinationLabelBehavior.onlyShowSelected,
       ),
     );
   }
@@ -598,37 +602,45 @@ class _Sidebar extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final navItems = [
-      (Icons.dashboard_outlined, Icons.dashboard_rounded, s.navHome),
-      (Icons.dns_outlined, Icons.dns_rounded, s.navNodes),
-      (Icons.folder_outlined, Icons.folder_rounded, s.navProfile),
+      (Icons.home_outlined, Icons.home_filled, s.navHome),
+      (Icons.public_outlined, Icons.public, s.navProxies),
+      (Icons.folder_outlined, Icons.folder, s.navProfile),
     ];
 
     return Container(
-      width: 220,
-      color: isDark ? YLColors.zinc950 : YLColors.zinc50,
+      width: 230,
+      color: isDark ? YLColors.zinc900 : YLColors.zinc50,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // ── Brand ────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
             child: Row(
               children: [
                 Container(
-                  width: 36, height: 36,
+                  width: 40, height: 40,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF007AFF), Color(0xFF5856D6)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(10),
+                    color: YLColors.primary,
+                    borderRadius: BorderRadius.circular(YLRadius.xl),
                   ),
-                  child: const Icon(Icons.bolt_rounded, size: 20, color: Colors.white),
+                  child: const Icon(Icons.link_rounded, size: 20, color: Colors.white),
                 ),
                 const SizedBox(width: 12),
-                Text('YueLink',
-                    style: YLText.titleMedium.copyWith(fontWeight: FontWeight.w700)),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('YueLink',
+                        style: YLText.titleMedium.copyWith(
+                          fontWeight: FontWeight.w700,
+                        )),
+                    Text('Proxy Client',
+                        style: YLText.caption.copyWith(
+                          color: YLColors.zinc400,
+                        )),
+                  ],
+                ),
               ],
             ),
           ),
@@ -653,11 +665,11 @@ class _Sidebar extends StatelessWidget {
 
           // ── Settings at bottom ────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
             child: _SidebarItem(
               icon: currentIndex == MainShell.tabSettings
-                  ? Icons.tune_rounded
-                  : Icons.tune_outlined,
+                  ? Icons.settings
+                  : Icons.settings_outlined,
               label: s.navSettings,
               isActive: currentIndex == MainShell.tabSettings,
               onTap: () => onSelect(MainShell.tabSettings),
@@ -692,30 +704,43 @@ class _SidebarItem extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(YLRadius.md),
+          borderRadius: BorderRadius.circular(YLRadius.xl),
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             decoration: BoxDecoration(
               color: isActive
-                  ? (isDark
-                      ? Colors.white.withValues(alpha: 0.08)
-                      : Colors.black.withValues(alpha: 0.04))
+                  ? (isDark ? YLColors.zinc800 : Colors.white)
                   : Colors.transparent,
-              borderRadius: BorderRadius.circular(YLRadius.md),
+              borderRadius: BorderRadius.circular(YLRadius.xl),
+              border: isActive
+                  ? Border.all(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : Colors.black.withValues(alpha: 0.08),
+                      width: 0.5,
+                    )
+                  : null,
+              boxShadow: isActive
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: isDark ? 0.1 : 0.03),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ]
+                  : null,
             ),
             child: Row(
               children: [
                 Icon(icon,
-                    size: 18,
+                    size: 16,
                     color: isActive
-                        ? YLColors.primary
-                        : YLColors.zinc400),
+                        ? (isDark ? Colors.white : YLColors.zinc900)
+                        : YLColors.zinc500),
                 const SizedBox(width: 10),
                 Text(label,
                     style: YLText.body.copyWith(
-                      fontSize: 14,
                       fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                       color: isActive
                           ? (isDark ? Colors.white : YLColors.zinc900)

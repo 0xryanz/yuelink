@@ -29,14 +29,11 @@ class S {
 
   // ── Navigation ──────────────────────────────────────────────────
   String get navHome => _e ? 'Dashboard' : '仪表盘';
-  String get navProxy => _e ? 'Proxy' : '代理';
-  String get navConnections => _e ? 'Connections' : '连接';
+  String get navProxies => _e ? 'Proxies' : '代理';
   String get navProfile => _e ? 'Profiles' : '配置';
+  String get navConnections => _e ? 'Connections' : '连接';
   String get navLog => _e ? 'Logs' : '日志';
   String get navSettings => _e ? 'Settings' : '设置';
-  String get navNodes => _e ? 'Nodes' : '节点';
-  String get navConnection => _e ? 'Connection' : '连接';
-  String get navConfigurations => _e ? 'Configs' : '配置';
 
   // ── Tray ─────────────────────────────────────────────────────────
   String get trayConnect => _e ? 'Connect' : '连接';
@@ -77,6 +74,7 @@ class S {
   String get statusConnected => _e ? 'Connected' : '已连接';
   String get statusDisconnected => _e ? 'Disconnected' : '未连接';
   String get statusConnecting => _e ? 'Connecting...' : '连接中...';
+  String get statusProcessing => _e ? 'Processing...' : '处理中...';
   String get statusDisconnecting => _e ? 'Disconnecting...' : '断开中...';
   String get btnConnect => _e ? 'Connect' : '连接';
   String get btnDisconnect => _e ? 'Disconnect' : '断开连接';
@@ -104,8 +102,8 @@ class S {
   String get switchNode => _e ? 'Switch node' : '切换节点';
   String get liveConnection => _e ? 'Live connection' : '实时连接';
   String get dashConnectedDesc => _e
-      ? 'Your traffic is routed through a healthy node with low latency. System proxy is active and traffic is flowing normally.'
-      : '流量正通过低延迟节点转发，系统代理已启用，流量正常运行。';
+      ? 'Your traffic is routed through a healthy node with low latency.'
+      : '流量正通过低延迟节点转发，运行正常。';
   String get dashDisconnectedTitle => _e ? 'Not connected' : '未连接';
   String get dashDisconnectedDesc => _e
       ? 'Click Connect to start routing traffic through a proxy node.'
@@ -117,6 +115,7 @@ class S {
   String get exitIpTapToQuery => _e ? 'Tap to query' : '点击查询';
   String get exitIpQuerying => _e ? 'Querying...' : '查询中...';
   String get exitIpFailed => _e ? 'Query failed' : '查询失败';
+  String get systemProxy => _e ? 'System Proxy' : '系统代理';
   String get systemProxyOn => _e ? 'System proxy enabled' : '系统代理已启用';
   String get systemProxyOff => _e ? 'System proxy off' : '系统代理未启用';
   String get trafficActivity => _e ? 'Traffic activity' : '流量活动';
@@ -133,6 +132,14 @@ class S {
   // ── Proxy page ────────────────────────────────────────────────────
   String get notConnectedHintProxy =>
       _e ? 'Connect first to view proxy nodes' : '请先连接以查看代理节点';
+  String get connectToViewProxiesDesc =>
+      _e ? 'Connect to the core to view and manage proxies.' : '连接内核以查看和管理代理节点。';
+  String nodesCountLabel(int n) => _e ? '$n Nodes' : '$n 个节点';
+  String switchedTo(String name) => _e ? 'Switched to $name' : '已切换至 $name';
+  String get switchFailed => _e ? 'Failed to switch node' : '切换节点失败';
+  String testingGroup(String name) =>
+      _e ? 'Testing $name...' : '正在测试 $name...';
+  String get directAuto => _e ? 'Direct / Auto' : '直连 / 自动';
   String get searchNodesHint => _e ? 'Search nodes...' : '搜索节点...';
   String get sortByDelay => _e ? 'Sort by delay' : '按延迟排序';
   String get cancelSort => _e ? 'Cancel sort' : '取消排序';

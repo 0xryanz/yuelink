@@ -18,6 +18,7 @@ import '../services/vpn_service.dart';
 import '../services/webdav_service.dart';
 import '../services/update_checker.dart';
 import '../theme.dart';
+import 'connections_page.dart';
 import 'log_page.dart';
 import 'overwrite_page.dart';
 import 'proxy_provider_page.dart';
@@ -311,8 +312,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 ),
               ),
               const SizedBox(height: 8),
-              const _SubStoreSection(),
-              const SizedBox(height: 8),
               const _WebDavSection(),
 
               // ══ 4. Core ═══════════════════════════════════════════
@@ -329,7 +328,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           YLStatusDot(
                             color: status == CoreStatus.running
                                 ? YLColors.connected
-                                : YLColors.zinc400,
+                                : YLColors.disconnected,
                           ),
                           const SizedBox(width: 6),
                           Text(
@@ -412,6 +411,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               _SettingsCard(
                 child: Column(
                   children: [
+                    // Live connections
+                    YLInfoRow(
+                      label: s.navConnections,
+                      trailing: const Icon(Icons.chevron_right, size: 18,
+                          color: YLColors.zinc400),
+                      enabled: status == CoreStatus.running,
+                      onTap: status == CoreStatus.running
+                          ? () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => const ConnectionsPage()),
+                              )
+                          : null,
+                    ),
+                    Divider(height: 1, thickness: 0.5, color: dividerColor),
                     // Logs
                     YLInfoRow(
                       label: s.tabLogs,
@@ -630,72 +644,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
-  }
-}
-
-// ── Sub-Store Section ─────────────────────────────────────────────────────────
-
-class _SubStoreSection extends StatefulWidget {
-  const _SubStoreSection();
-
-  @override
-  State<_SubStoreSection> createState() => _SubStoreSectionState();
-}
-
-class _SubStoreSectionState extends State<_SubStoreSection> {
-  final _ctrl = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    SettingsService.getSubStoreUrl().then((url) {
-      if (mounted) _ctrl.text = url;
-    });
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return _SettingsCard(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(s.subStoreUrlSub,
-                style: YLText.caption.copyWith(
-                    color: isDark ? YLColors.zinc500 : YLColors.zinc400)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _ctrl,
-              decoration: InputDecoration(
-                labelText: s.subStoreUrlLabel,
-                hintText: s.subStoreUrlHint,
-                isDense: true,
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.save_outlined, size: 18),
-                  tooltip: s.save,
-                  onPressed: _save,
-                ),
-              ),
-              onSubmitted: (_) => _save(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _save() async {
-    await SettingsService.setSubStoreUrl(_ctrl.text.trim());
-    if (mounted) AppNotifier.success(S.of(context).subStoreUrlSaved);
   }
 }
 

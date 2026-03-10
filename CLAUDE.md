@@ -38,7 +38,7 @@ Flutter UI (Dart, Riverpod) → CoreController (dart:ffi) → hub.go (CGO //expo
 - **`lib/providers/`** — Riverpod state management. `core_provider.dart` (lifecycle, traffic, heartbeat), `proxy_provider.dart` (nodes, groups, delay tests), `profile_provider.dart` (subscriptions), `proxy_provider_provider.dart` (remote proxy providers).
 - **`lib/pages/`** — Pages: home (connect/traffic), proxy/nodes (node selection + routing mode), connections, profile (subscriptions), settings. Plus `proxy_provider_page.dart` (accessed from Settings → Tools).
 - **`lib/services/`** — `VpnService` (MethodChannel), `MihomoApi` (REST on port 9090), `MihomoStream` (WebSocket for traffic/logs), `CoreManager` (lifecycle singleton), `ProfileService` (static methods for profile CRUD + config loading), `OverwriteService` (config merging), `SettingsService` (SharedPreferences wrapper).
-- **`lib/theme.dart`** — Design system: `YLColors` (zinc palette + semantic colors), `YLText` (typography), `YLSpacing`/`YLRadius` (spacing/radius scales), reusable widgets (`YLSurface`, `YLGlassSurface`, `YLStatusDot`, `YLSectionLabel`, `YLEmptyState`, `YLChip`, `YLDelayBadge`).
+- **`lib/theme.dart`** — Design system: `YLColors` (zinc palette + semantic colors + legacy aliases), `YLText` (typography), `YLSpacing`/`YLRadius` (spacing/radius scales), reusable widgets (`YLSurface`, `YLGlassSurface`, `YLStatusDot`, `YLSectionLabel`, `YLEmptyState`, `YLChip`, `YLDelayBadge`, `YLPillSegmentedControl`, `YLGroupedListItem`).
 - **`lib/constants.dart`** — `AppConstants` (ports, version, config file names).
 - **`lib/l10n/app_strings.dart`** — Hand-written `S` class for i18n. Both Chinese and English via `_e ? 'en' : 'zh'` ternaries. No code generation.
 

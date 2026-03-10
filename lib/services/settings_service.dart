@@ -111,7 +111,7 @@ class SettingsService {
   // ── Auto connect ─────────────────────────────────────────────────────────
 
   static Future<bool> getAutoConnect() async {
-    return (await get<bool>('autoConnect')) ?? false;
+    return (await get<bool>('autoConnect')) ?? true;
   }
 
   static Future<void> setAutoConnect(bool value) async {
@@ -182,16 +182,6 @@ class SettingsService {
     settings['traffic_up_$key'] = up;
     settings['traffic_down_$key'] = down;
     await save(settings);
-  }
-
-  // ── Sub-Store 订阅转换服务 ────────────────────────────────────────────────
-
-  static Future<String> getSubStoreUrl() async {
-    return (await get<String>('subStoreUrl')) ?? '';
-  }
-
-  static Future<void> setSubStoreUrl(String url) async {
-    await set('subStoreUrl', url);
   }
 
   // ── Android 分应用代理（Split Tunneling）────────────────────────────────

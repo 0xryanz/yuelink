@@ -299,8 +299,8 @@ class ConnectionPage extends ConsumerWidget {
               ButtonSegment(value: 'direct', label: Text('Direct')),
             ],
             selected: {routingMode},
-            onSelectionChanged: (set) {
-              ref.read(routingModeProvider.notifier).state = set.first;
+            onSelectionChanged: (Set<String> newSelection) {
+              ref.read(routingModeProvider.notifier).state = newSelection.first;
               // TODO: Apply to core if running
             },
             showSelectedIcon: false,

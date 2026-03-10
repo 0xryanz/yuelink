@@ -46,6 +46,9 @@ class ConfigTemplate {
     // Inject TUN fd (Android VpnService mode)
     if (tunFd != null && tunFd > 0) {
       config = _injectTunFd(config, tunFd);
+      // TUN mode requires DNS to be enabled for fake-ip / domain resolution.
+      // Most subscriptions already have dns.enable: true, but ensure it.
+      config = _ensureDns(config);
     }
 
     return config;
@@ -55,12 +58,17 @@ class ConfigTemplate {
   ///
   /// On Android, VpnService owns the TUN device and handles routing.
   /// mihomo must use the provided fd without trying to create routes itself.
-  /// Key settings:
+  ///
+  /// Critical settings:
   /// - `file-descriptor: <fd>` — use VpnService's TUN device
+  /// - `inet4-address: [172.19.0.1/30]` — **required** by sing-tun stack init,
+  ///   must match VpnService builder's `addAddress("172.19.0.1", 30)`
+  /// - `stack: mixed` — gvisor for UDP + system for TCP; `system` alone fails
+  ///   with "missing interface address" if inet4-address parsing has issues
   /// - `auto-route: false` — VpnService handles routing (netlink banned on Android 14+)
   /// - `auto-detect-interface: false` — avoid NetworkUpdateMonitor (netlink)
-  /// - `enable: true` + `stack: system` — enable TUN with system stack
   /// - `dns-hijack: [any:53]` — intercept DNS for fake-ip/redir
+  /// - `mtu: 9000` — match VpnService builder's `setMtu(9000)`
   static String _injectTunFd(String config, int fd) {
     // Remove existing tun section entirely and replace with Android-safe config.
     // This avoids partial merges where subscription settings (auto-route: true)
@@ -70,14 +78,37 @@ class ConfigTemplate {
     }
 
     // Append clean Android TUN section
+    // inet4-address MUST match VpnService's addAddress() — without it,
+    // sing-tun's system/mixed stack fails with "missing interface address"
+    // and mihomo silently skips TUN (only logs the error, doesn't fail startup).
     return '$config\ntun:\n'
         '  enable: true\n'
-        '  stack: system\n'
+        '  stack: mixed\n'
         '  file-descriptor: $fd\n'
+        '  inet4-address:\n'
+        '    - 172.19.0.1/30\n'
+        '  mtu: 9000\n'
         '  auto-route: false\n'
         '  auto-detect-interface: false\n'
         '  dns-hijack:\n'
         '    - any:53\n';
+  }
+
+  /// Ensure DNS is enabled (required for TUN mode to resolve domains via fake-ip).
+  /// If the subscription config already has a dns section, leave it alone.
+  /// Only injects a minimal DNS config when completely missing.
+  static String _ensureDns(String config) {
+    if (_hasKey(config, 'dns')) return config;
+    return '$config\ndns:\n'
+        '  enable: true\n'
+        '  enhanced-mode: fake-ip\n'
+        '  fake-ip-range: 198.18.0.1/16\n'
+        '  default-nameserver:\n'
+        '    - 223.5.5.5\n'
+        '    - 8.8.8.8\n'
+        '  nameserver:\n'
+        '    - https://doh.pub/dns-query\n'
+        '    - https://dns.alidns.com/dns-query\n';
   }
 
   /// Remove a top-level YAML section (key + all indented content below it).

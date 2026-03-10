@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,8 +8,7 @@ import '../services/app_notifier.dart';
 import '../services/profile_service.dart';
 import '../theme.dart';
 
-/// Modern Configuration Management Page (Vercel/Tailwind style)
-/// Acts as the "Subscription Management Center".
+/// Modern Configuration Management Page
 class ConfigurationsPage extends ConsumerWidget {
   const ConfigurationsPage({super.key});
 
@@ -22,23 +22,26 @@ class ConfigurationsPage extends ConsumerWidget {
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
         slivers: [
-          SliverAppBar.large(
-            expandedHeight: 120.0,
+          SliverAppBar(
+            expandedHeight: 100.0,
             backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
-            title: Text(
-              'Profiles',
-              style: YLText.display.copyWith(
-                color: isDark ? YLColors.zinc50 : YLColors.zinc900,
-                fontSize: 28,
+            pinned: true,
+            flexibleSpace: FlexibleSpaceBar(
+              titlePadding: const EdgeInsets.symmetric(horizontal: YLSpacing.xl, vertical: YLSpacing.lg),
+              title: Text(
+                'Profiles',
+                style: YLText.display.copyWith(
+                  color: isDark ? Colors.white : Colors.black,
+                  fontSize: 28,
+                ),
               ),
             ),
             actions: [
               IconButton(
-                icon: const Icon(Icons.add_rounded),
+                icon: const Icon(Icons.add_circle_outline_rounded),
                 onPressed: () {
-                  // TODO: Show import options (URL, File, Clipboard)
-                  AppNotifier.info('添加订阅功能即将上线');
+                  AppNotifier.info('Add profile coming soon');
                 },
               ),
               const SizedBox(width: YLSpacing.sm),
@@ -49,10 +52,10 @@ class ConfigurationsPage extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: YLSpacing.xl, vertical: YLSpacing.sm),
             sliver: profilesAsync.when(
               loading: () => const SliverToBoxAdapter(
-                child: Center(child: CircularProgressIndicator()),
+                child: Center(child: CupertinoActivityIndicator()),
               ),
               error: (err, stack) => SliverToBoxAdapter(
-                child: Center(child: Text('加载失败: $err', style: YLText.body.copyWith(color: YLColors.error))),
+                child: Center(child: Text('Error: $err', style: YLText.body.copyWith(color: YLColors.error))),
               ),
               data: (profiles) {
                 if (profiles.isEmpty) {
@@ -65,22 +68,36 @@ class ConfigurationsPage extends ConsumerWidget {
                 return SliverList(
                   delegate: SliverChildListDelegate([
                     
-                    // Quick Import Input
-                    TextField(
-                      decoration: InputDecoration(
-                        hintText: 'Paste subscription URL here...',
-                        prefixIcon: const Icon(Icons.link_rounded, size: 20),
-                        suffixIcon: Padding(
-                          padding: const EdgeInsets.all(4.0),
-                          child: FilledButton(
-                            onPressed: () {
-                              AppNotifier.info('导入功能即将上线');
-                            },
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: YLSpacing.lg),
-                              minimumSize: const Size(0, 32),
+                    // Quick Import Input (Premium Style)
+                    Container(
+                      decoration: BoxDecoration(
+                        color: isDark ? YLColors.surfaceDark : YLColors.surfaceLight,
+                        borderRadius: BorderRadius.circular(YLRadius.lg),
+                        border: Border.all(
+                          color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.04),
+                          width: 0.5,
+                        ),
+                      ),
+                      child: TextField(
+                        decoration: InputDecoration(
+                          hintText: 'Paste subscription URL...',
+                          hintStyle: YLText.body.copyWith(color: YLColors.zinc500),
+                          prefixIcon: const Icon(Icons.link_rounded, size: 20, color: YLColors.zinc400),
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          suffixIcon: Padding(
+                            padding: const EdgeInsets.all(6.0),
+                            child: FilledButton(
+                              onPressed: () => AppNotifier.info('Import coming soon'),
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                minimumSize: const Size(0, 32),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(YLRadius.sm)),
+                              ),
+                              child: const Text('Import'),
                             ),
-                            child: const Text('Import'),
                           ),
                         ),
                       ),
@@ -88,7 +105,8 @@ class ConfigurationsPage extends ConsumerWidget {
                     
                     if (activeProfile != null) ...[
                       const SizedBox(height: YLSpacing.xxl),
-                      const YLSectionLabel('Active Profile'),
+                      Text('ACTIVE PROFILE', style: YLText.caption.copyWith(color: YLColors.zinc500, letterSpacing: 1.2)),
+                      const SizedBox(height: YLSpacing.sm),
                       _ProfileCard(
                         id: activeProfile.id,
                         name: activeProfile.name,
@@ -101,9 +119,10 @@ class ConfigurationsPage extends ConsumerWidget {
                     
                     if (otherProfiles.isNotEmpty) ...[
                       const SizedBox(height: YLSpacing.xxl),
-                      const YLSectionLabel('All Profiles'),
+                      Text('ALL PROFILES', style: YLText.caption.copyWith(color: YLColors.zinc500, letterSpacing: 1.2)),
+                      const SizedBox(height: YLSpacing.sm),
                       ...otherProfiles.map((p) => Padding(
-                        padding: const EdgeInsets.only(bottom: YLSpacing.lg),
+                        padding: const EdgeInsets.only(bottom: YLSpacing.md),
                         child: _ProfileCard(
                           id: p.id,
                           name: p.name,
@@ -127,20 +146,12 @@ class ConfigurationsPage extends ConsumerWidget {
   }
 
   Widget _buildEmptyState(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.only(top: 60.0),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            padding: const EdgeInsets.all(YLSpacing.xl),
-            decoration: BoxDecoration(
-              color: isDark ? YLColors.zinc900 : YLColors.zinc100,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(Icons.inbox_rounded, size: 48, color: YLColors.zinc400),
-          ),
+          Icon(Icons.inbox_outlined, size: 64, color: YLColors.zinc300),
           const SizedBox(height: YLSpacing.xl),
           Text('No Profiles Found', style: YLText.titleLarge),
           const SizedBox(height: YLSpacing.sm),
@@ -148,14 +159,6 @@ class ConfigurationsPage extends ConsumerWidget {
             'Add a subscription URL or import a local config\nto get started.',
             style: YLText.body.copyWith(color: YLColors.zinc500),
             textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: YLSpacing.xxl),
-          FilledButton.icon(
-            onPressed: () {
-              AppNotifier.info('添加订阅功能即将上线');
-            },
-            icon: const Icon(Icons.add_rounded, size: 18),
-            label: const Text('Add Profile'),
           ),
         ],
       ),
@@ -200,10 +203,9 @@ class _ProfileCardState extends ConsumerState<_ProfileCard> {
     if (_isApplying) return;
     setState(() => _isApplying = true);
 
-    // 真实状态闭环：如果内核正在运行，需要重启内核并等待结果
     final status = ref.read(coreStatusProvider);
     if (status == CoreStatus.running) {
-      AppNotifier.info('正在重启内核以应用新配置...');
+      AppNotifier.info('Restarting core to apply profile...');
       await ref.read(coreActionsProvider).stop();
       
       final config = await ProfileService.loadConfig(widget.id);
@@ -211,21 +213,17 @@ class _ProfileCardState extends ConsumerState<_ProfileCard> {
         final ok = await ref.read(coreActionsProvider).start(config);
         if (ok) {
           ref.read(activeProfileIdProvider.notifier).select(widget.id);
-          AppNotifier.success('已成功应用配置: ${widget.name}');
+          AppNotifier.success('Profile applied: ${widget.name}');
         }
-        // 如果失败，coreActionsProvider.start 内部已经抛出了具体的错误提示，
-        // 且内核会停留在 stopped 状态，不会出现假同步。
       } else {
-        AppNotifier.error('无法读取配置文件');
+        AppNotifier.error('Failed to read config file');
       }
     } else {
       ref.read(activeProfileIdProvider.notifier).select(widget.id);
-      AppNotifier.success('已切换至配置: ${widget.name}');
+      AppNotifier.success('Profile selected: ${widget.name}');
     }
 
-    if (mounted) {
-      setState(() => _isApplying = false);
-    }
+    if (mounted) setState(() => _isApplying = false);
   }
 
   @override
@@ -275,13 +273,11 @@ class _ProfileCardState extends ConsumerState<_ProfileCard> {
               
               // Actions Menu
               IconButton(
-                icon: const Icon(Icons.more_vert_rounded, size: 20),
+                icon: const Icon(Icons.more_horiz_rounded, size: 20),
                 color: YLColors.zinc400,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                onPressed: () {
-                  AppNotifier.info('配置菜单即将上线');
-                },
+                onPressed: () => AppNotifier.info('Menu coming soon'),
               ),
             ],
           ),
@@ -300,7 +296,7 @@ class _ProfileCardState extends ConsumerState<_ProfileCard> {
               ),
               const SizedBox(width: 6),
               Text(
-                widget.isExpired ? 'Subscription Expired' : 'Updated ${widget.updatedAt}',
+                widget.isExpired ? 'Expired' : 'Updated ${widget.updatedAt}',
                 style: YLText.caption.copyWith(
                   color: widget.isExpired ? YLColors.error : YLColors.zinc500,
                 ),
@@ -310,11 +306,12 @@ class _ProfileCardState extends ConsumerState<_ProfileCard> {
                 OutlinedButton(
                   onPressed: _isApplying ? null : _handleUse,
                   style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 28),
-                    padding: const EdgeInsets.symmetric(horizontal: YLSpacing.md),
+                    minimumSize: const Size(0, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: YLSpacing.lg),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(YLRadius.sm)),
                   ),
                   child: _isApplying 
-                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const CupertinoActivityIndicator(radius: 7)
                       : const Text('Use'),
                 ),
               ],

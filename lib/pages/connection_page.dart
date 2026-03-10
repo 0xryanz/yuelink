@@ -1,5 +1,5 @@
 import 'dart:ui';
-
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,7 +13,7 @@ import '../services/profile_service.dart';
 import '../theme.dart';
 
 /// The main Dashboard page.
-/// Priority: Connection Status > Current Node > Real-time Speed > Quick Actions.
+/// Redesigned with a premium "Control Center" aesthetic.
 class ConnectionPage extends ConsumerWidget {
   const ConnectionPage({super.key});
 
@@ -22,192 +22,72 @@ class ConnectionPage extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final status = ref.watch(coreStatusProvider);
     final isConnected = status == CoreStatus.running;
-    // 真实状态闭环：启动和停止过程中，都视为 Connecting/Loading 态，防止重复点击
-    final isConnecting = status == CoreStatus.starting || status == CoreStatus.stopping;
 
     return Scaffold(
-      body: Stack(
-        children: [
-          // Subtle background glow when connected
-          if (isConnected)
-            Positioned(
-              top: -100,
-              left: -50,
-              right: -50,
-              child: AnimatedOpacity(
-                opacity: isConnected ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 800),
-                child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 100, sigmaY: 100),
-                  child: Container(
-                    height: 400,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: YLColors.connected.withOpacity(isDark ? 0.15 : 0.08),
-                    ),
-                  ),
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          // Premium Header
+          SliverAppBar(
+            expandedHeight: 100.0,
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            pinned: true,
+            flexibleSpace: FlexibleSpaceBar(
+              titlePadding: const EdgeInsets.symmetric(horizontal: YLSpacing.xl, vertical: YLSpacing.lg),
+              title: Text(
+                'Dashboard',
+                style: YLText.display.copyWith(
+                  color: isDark ? Colors.white : Colors.black,
+                  fontSize: 28,
                 ),
               ),
             ),
+          ),
 
-          CustomScrollView(
-            physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-            slivers: [
-              // Minimalist Header
-              SliverAppBar(
-                expandedHeight: 80.0,
-                backgroundColor: Colors.transparent,
-                surfaceTintColor: Colors.transparent,
-                pinned: true,
-                flexibleSpace: FlexibleSpaceBar(
-                  titlePadding: const EdgeInsets.symmetric(horizontal: YLSpacing.xl, vertical: YLSpacing.lg),
-                  title: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      YLStatusDot(
-                        color: isConnected 
-                            ? YLColors.connected 
-                            : (isConnecting ? YLColors.connecting : YLColors.disconnected),
-                        glow: isConnected,
-                      ),
-                      const SizedBox(width: YLSpacing.sm),
-                      Text(
-                        isConnected 
-                            ? 'YueLink Active' 
-                            : (status == CoreStatus.starting 
-                                ? 'Connecting...' 
-                                : (status == CoreStatus.stopping ? 'Disconnecting...' : 'Disconnected')),
-                        style: YLText.titleMedium.copyWith(
-                          color: isDark ? YLColors.zinc50 : YLColors.zinc900,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: YLSpacing.xl),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. Hero Status Card
+                  _buildHeroCard(context, ref, status),
+                  
+                  const SizedBox(height: YLSpacing.xl),
+
+                  // 2. Traffic Stats Grid
+                  _buildTrafficGrid(context, ref),
+
+                  const SizedBox(height: YLSpacing.xxl),
+
+                  // 3. Quick Settings (Grouped List)
+                  Text('SETTINGS', style: YLText.caption.copyWith(color: YLColors.zinc500, letterSpacing: 1.2)),
+                  const SizedBox(height: YLSpacing.sm),
+                  _buildSettingsGroup(context, ref),
+
+                  const SizedBox(height: YLSpacing.massive),
+                ],
               ),
-
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: YLSpacing.xl),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      const SizedBox(height: YLSpacing.xxl),
-                      
-                      // 1. Massive Power Button (The Visual Center)
-                      _buildPowerButton(context, ref, status),
-                      
-                      const SizedBox(height: YLSpacing.massive),
-
-                      // 2. Current Node Info Card (Real State)
-                      _buildCurrentNodeCard(context, ref, isConnected),
-
-                      const SizedBox(height: YLSpacing.xl),
-
-                      // 3. Real-time Traffic Stats
-                      _buildTrafficStats(context, ref),
-
-                      const SizedBox(height: YLSpacing.xl),
-
-                      // 4. Quick Actions / Modes
-                      _buildQuickActions(context, ref),
-
-                      const SizedBox(height: YLSpacing.massive),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildPowerButton(BuildContext context, WidgetRef ref, CoreStatus status) {
+  Widget _buildHeroCard(BuildContext context, WidgetRef ref, CoreStatus status) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isConnected = status == CoreStatus.running;
     final isConnecting = status == CoreStatus.starting || status == CoreStatus.stopping;
 
-    final buttonColor = isConnected 
-        ? YLColors.connected 
-        : (isDark ? YLColors.zinc800 : Colors.white);
-        
-    final iconColor = isConnected 
-        ? Colors.white 
-        : (isDark ? YLColors.zinc300 : YLColors.zinc700);
-
-    return GestureDetector(
-      onTap: isConnecting ? null : () async {
-        final actions = ref.read(coreActionsProvider);
-        if (isConnected) {
-          await actions.stop();
-        } else {
-          final activeId = ref.read(activeProfileIdProvider);
-          if (activeId == null) {
-            AppNotifier.warning('请先在配置页选择或添加一个订阅');
-            MainShell.switchToTab(context, MainShell.tabConfigurations);
-            return;
-          }
-          final config = await ProfileService.loadConfig(activeId);
-          if (config == null) {
-            AppNotifier.error('无法读取配置文件');
-            return;
-          }
-          await actions.start(config);
-        }
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeOutCubic,
-        width: 140,
-        height: 140,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: buttonColor,
-          border: Border.all(
-            color: isConnected 
-                ? YLColors.connected.withOpacity(0.5) 
-                : (isDark ? YLColors.zinc700 : YLColors.zinc200),
-            width: isConnected ? 0 : 1,
-          ),
-          boxShadow: [
-            if (isConnected)
-              BoxShadow(
-                color: YLColors.connected.withOpacity(0.4),
-                blurRadius: 40,
-                spreadRadius: 10,
-              )
-            else if (!isDark)
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-          ],
-        ),
-        child: Center(
-          child: isConnecting
-              ? const CircularProgressIndicator(color: YLColors.primary)
-              : Icon(
-                  Icons.power_settings_new_rounded,
-                  size: 64,
-                  color: iconColor,
-                ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCurrentNodeCard(BuildContext context, WidgetRef ref, bool isConnected) {
-    String activeNodeName = 'No Active Node';
-    String activeNodeGroup = 'Connect to see details';
-
+    // Determine active node info
+    String activeNodeName = 'Not Connected';
+    String activeNodeGroup = 'Tap the switch to start';
     if (isConnected) {
       final groups = ref.watch(proxyGroupsProvider);
       if (groups.isNotEmpty) {
         try {
-          // Try to find the main PROXIES or GLOBAL group, or fallback to the first Selector
           final mainGroup = groups.firstWhere(
             (g) => g.name == 'PROXIES' || g.name == 'GLOBAL' || g.name == '节点选择' || g.name == 'Proxy',
             orElse: () => groups.firstWhere((g) => g.type == 'Selector', orElse: () => groups.first),
@@ -216,58 +96,125 @@ class ConnectionPage extends ConsumerWidget {
           activeNodeGroup = mainGroup.name;
         } catch (_) {
           activeNodeName = 'Connected';
-          activeNodeGroup = 'Unknown Group';
+          activeNodeGroup = 'Active';
         }
       }
     }
 
-    return YLSurface(
-      padding: const EdgeInsets.all(YLSpacing.lg),
-      onTap: () {
-        MainShell.switchToTab(context, MainShell.tabNodes);
-      },
+    return Container(
+      padding: const EdgeInsets.all(YLSpacing.xl),
+      decoration: BoxDecoration(
+        gradient: isConnected 
+            ? LinearGradient(
+                colors: [YLColors.connected.withOpacity(0.15), YLColors.connected.withOpacity(0.05)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : null,
+        color: isConnected ? null : (isDark ? YLColors.surfaceDark : YLColors.surfaceLight),
+        borderRadius: BorderRadius.circular(YLRadius.xxl),
+        border: Border.all(
+          color: isConnected 
+              ? YLColors.connected.withOpacity(0.3) 
+              : (isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.04)),
+          width: 0.5,
+        ),
+        boxShadow: isDark ? [] : [
+          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 20, offset: const Offset(0, 8)),
+        ],
+      ),
       child: Row(
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: isConnected ? YLColors.connected.withOpacity(0.1) : YLColors.zinc100,
-              borderRadius: BorderRadius.circular(YLRadius.lg),
-            ),
-            child: Icon(
-              Icons.public_rounded,
-              color: isConnected ? YLColors.connected : YLColors.zinc400,
-            ),
-          ),
-          const SizedBox(width: YLSpacing.lg),
+          // Left: Info
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Row(
+                  children: [
+                    YLStatusDot(
+                      color: isConnected ? YLColors.connected : (isConnecting ? YLColors.connecting : YLColors.zinc400),
+                      glow: isConnected,
+                    ),
+                    const SizedBox(width: YLSpacing.sm),
+                    Text(
+                      isConnected ? 'Active' : (isConnecting ? 'Processing...' : 'Disconnected'),
+                      style: YLText.label.copyWith(
+                        color: isConnected ? YLColors.connected : YLColors.zinc500,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: YLSpacing.md),
                 Text(
                   activeNodeName,
-                  style: YLText.titleMedium,
+                  style: YLText.titleLarge.copyWith(fontSize: 22),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(
                   activeNodeGroup,
-                  style: YLText.caption.copyWith(color: YLColors.zinc500),
+                  style: YLText.body.copyWith(color: YLColors.zinc500),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-          const SizedBox(width: YLSpacing.sm),
-          Icon(Icons.chevron_right_rounded, color: YLColors.zinc400),
+          
+          // Right: Premium Power Toggle
+          GestureDetector(
+            onTap: isConnecting ? null : () async {
+              final actions = ref.read(coreActionsProvider);
+              if (isConnected) {
+                await actions.stop();
+              } else {
+                final activeId = ref.read(activeProfileIdProvider);
+                if (activeId == null) {
+                  AppNotifier.warning('请先在配置页选择或添加一个订阅');
+                  MainShell.switchToTab(context, MainShell.tabConfigurations);
+                  return;
+                }
+                final config = await ProfileService.loadConfig(activeId);
+                if (config == null) {
+                  AppNotifier.error('无法读取配置文件');
+                  return;
+                }
+                await actions.start(config);
+              }
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isConnected ? YLColors.connected : (isDark ? YLColors.zinc800 : YLColors.bgLight),
+                boxShadow: isConnected ? [
+                  BoxShadow(color: YLColors.connected.withOpacity(0.4), blurRadius: 16, offset: const Offset(0, 4))
+                ] : [],
+              ),
+              child: Center(
+                child: isConnecting
+                    ? const CupertinoActivityIndicator(color: Colors.white)
+                    : Icon(
+                        Icons.power_settings_new_rounded,
+                        size: 32,
+                        color: isConnected ? Colors.white : (isDark ? YLColors.zinc400 : YLColors.zinc400),
+                      ),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildTrafficStats(BuildContext context, WidgetRef ref) {
+  Widget _buildTrafficGrid(BuildContext context, WidgetRef ref) {
     final traffic = ref.watch(trafficProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Row(
       children: [
@@ -279,12 +226,19 @@ class ConnectionPage extends ConsumerWidget {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.arrow_downward_rounded, size: 16, color: YLColors.connected),
-                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: YLColors.connected.withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.arrow_downward_rounded, size: 14, color: YLColors.connected),
+                    ),
+                    const SizedBox(width: YLSpacing.sm),
                     Text('Download', style: YLText.caption.copyWith(color: YLColors.zinc500)),
                   ],
                 ),
-                const SizedBox(height: YLSpacing.sm),
+                const SizedBox(height: YLSpacing.md),
                 Text(
                   _formatSpeed(traffic.down),
                   style: YLText.titleLarge.copyWith(
@@ -295,7 +249,7 @@ class ConnectionPage extends ConsumerWidget {
             ),
           ),
         ),
-        const SizedBox(width: YLSpacing.lg),
+        const SizedBox(width: YLSpacing.md),
         Expanded(
           child: YLSurface(
             padding: const EdgeInsets.all(YLSpacing.lg),
@@ -304,12 +258,19 @@ class ConnectionPage extends ConsumerWidget {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.arrow_upward_rounded, size: 16, color: YLColors.accent),
-                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: YLColors.primary.withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.arrow_upward_rounded, size: 14, color: YLColors.primary),
+                    ),
+                    const SizedBox(width: YLSpacing.sm),
                     Text('Upload', style: YLText.caption.copyWith(color: YLColors.zinc500)),
                   ],
                 ),
-                const SizedBox(height: YLSpacing.sm),
+                const SizedBox(height: YLSpacing.md),
                 Text(
                   _formatSpeed(traffic.up),
                   style: YLText.titleLarge.copyWith(
@@ -324,82 +285,92 @@ class ConnectionPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildQuickActions(BuildContext context, WidgetRef ref) {
+  Widget _buildSettingsGroup(BuildContext context, WidgetRef ref) {
     final routingMode = ref.watch(routingModeProvider);
     final status = ref.watch(coreStatusProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Routing Mode', style: YLText.label.copyWith(color: YLColors.zinc500)),
-        const SizedBox(height: YLSpacing.md),
-        SizedBox(
-          width: double.infinity,
-          child: SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'rule', label: Text('Rule')),
-              ButtonSegment(value: 'global', label: Text('Global')),
-              ButtonSegment(value: 'direct', label: Text('Direct')),
-            ],
-            selected: {routingMode},
-            onSelectionChanged: (Set<String> newSelection) async {
-              final mode = newSelection.first;
-              ref.read(routingModeProvider.notifier).state = mode;
-              
-              if (status == CoreStatus.running) {
-                final ok = await CoreManager.instance.api.setRoutingMode(mode);
-                if (ok) {
-                  AppNotifier.success('已切换至 ${mode.toUpperCase()} 模式');
-                } else {
-                  AppNotifier.error('模式切换失败');
-                }
-              }
-            },
-            showSelectedIcon: false,
-          ),
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? YLColors.surfaceDark : YLColors.surfaceLight,
+        borderRadius: BorderRadius.circular(YLRadius.lg),
+        border: Border.all(
+          color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.04),
+          width: 0.5,
         ),
-        const SizedBox(height: YLSpacing.xl),
-        
-        YLSurface(
-          child: Column(
-            children: [
-              SwitchListTile.adaptive(
-                title: const Text('System Proxy', style: YLText.body),
-                subtitle: Text('Set as system default proxy', style: YLText.caption.copyWith(color: YLColors.zinc500)),
-                value: ref.watch(systemProxyOnConnectProvider),
-                onChanged: (val) async {
-                  ref.read(systemProxyOnConnectProvider.notifier).state = val;
-                  
-                  if (status == CoreStatus.running) {
-                    if (val) {
-                      await ref.read(coreActionsProvider).applySystemProxy();
-                      AppNotifier.success('系统代理已开启');
-                    } else {
-                      await ref.read(coreActionsProvider).clearSystemProxy();
-                      AppNotifier.info('系统代理已关闭');
+      ),
+      child: Column(
+        children: [
+          // Routing Mode (Custom Pill Segmented Control)
+          Padding(
+            padding: const EdgeInsets.all(YLSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Routing Mode', style: YLText.body),
+                const SizedBox(height: YLSpacing.md),
+                YLPillSegmentedControl<String>(
+                  values: const ['rule', 'global', 'direct'],
+                  labels: const ['Rule', 'Global', 'Direct'],
+                  selectedValue: routingMode,
+                  onChanged: (mode) async {
+                    ref.read(routingModeProvider.notifier).state = mode;
+                    if (status == CoreStatus.running) {
+                      final ok = await CoreManager.instance.api.setRoutingMode(mode);
+                      if (ok) {
+                        AppNotifier.success('已切换至 ${mode.toUpperCase()} 模式');
+                      } else {
+                        AppNotifier.error('模式切换失败');
+                      }
                     }
-                  }
-                },
-                contentPadding: const EdgeInsets.symmetric(horizontal: YLSpacing.lg, vertical: YLSpacing.xs),
-              ),
-              const Divider(height: 1),
-              SwitchListTile.adaptive(
-                title: const Text('TUN Mode', style: YLText.body),
-                subtitle: Text('Route all traffic via virtual network', style: YLText.caption.copyWith(color: YLColors.zinc500)),
-                value: ref.watch(connectionModeProvider) == 'tun',
-                onChanged: (val) {
-                  ref.read(connectionModeProvider.notifier).state = val ? 'tun' : 'systemProxy';
-                  
-                  if (status == CoreStatus.running) {
-                    AppNotifier.warning('切换 TUN 模式将在下次连接时生效');
-                  }
-                },
-                contentPadding: const EdgeInsets.symmetric(horizontal: YLSpacing.lg, vertical: YLSpacing.xs),
-              ),
-            ],
+                  },
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+          
+          Divider(height: 1, indent: YLSpacing.lg),
+          
+          // System Proxy
+          YLGroupedListItem(
+            title: const Text('System Proxy'),
+            subtitle: const Text('Set as system default proxy'),
+            trailing: CupertinoSwitch(
+              activeColor: YLColors.connected,
+              value: ref.watch(systemProxyOnConnectProvider),
+              onChanged: (val) async {
+                ref.read(systemProxyOnConnectProvider.notifier).state = val;
+                if (status == CoreStatus.running) {
+                  if (val) {
+                    await ref.read(coreActionsProvider).applySystemProxy();
+                    AppNotifier.success('系统代理已开启');
+                  } else {
+                    await ref.read(coreActionsProvider).clearSystemProxy();
+                    AppNotifier.info('系统代理已关闭');
+                  }
+                }
+              },
+            ),
+          ),
+          
+          // TUN Mode
+          YLGroupedListItem(
+            title: const Text('TUN Mode'),
+            subtitle: const Text('Route all traffic via virtual network'),
+            isLast: true,
+            trailing: CupertinoSwitch(
+              activeColor: YLColors.connected,
+              value: ref.watch(connectionModeProvider) == 'tun',
+              onChanged: (val) {
+                ref.read(connectionModeProvider.notifier).state = val ? 'tun' : 'systemProxy';
+                if (status == CoreStatus.running) {
+                  AppNotifier.warning('切换 TUN 模式将在下次连接时生效');
+                }
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 

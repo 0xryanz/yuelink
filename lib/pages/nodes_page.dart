@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,8 +21,7 @@ class _NodesPageState extends ConsumerState<NodesPage> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(
-        () => ref.read(proxyGroupsProvider.notifier).refresh());
+    Future.microtask(() => ref.read(proxyGroupsProvider.notifier).refresh());
   }
 
   @override
@@ -37,14 +37,7 @@ class _NodesPageState extends ConsumerState<NodesPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                padding: const EdgeInsets.all(YLSpacing.xl),
-                decoration: BoxDecoration(
-                  color: isDark ? YLColors.zinc900 : YLColors.zinc100,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.router_outlined, size: 48, color: YLColors.zinc400),
-              ),
+              Icon(Icons.router_outlined, size: 64, color: YLColors.zinc300),
               const SizedBox(height: YLSpacing.xl),
               Text(s.notConnectedHintProxy, style: YLText.titleLarge),
               const SizedBox(height: YLSpacing.sm),
@@ -59,129 +52,60 @@ class _NodesPageState extends ConsumerState<NodesPage> {
     }
 
     if (groups.isEmpty) {
-      return Scaffold(
-        body: const Center(child: CircularProgressIndicator()),
-        floatingActionButton: FloatingActionButton.small(
-          onPressed: () => ref.read(proxyGroupsProvider.notifier).refresh(),
-          backgroundColor: Theme.of(context).colorScheme.primary,
-          foregroundColor: isDark ? Colors.black : Colors.white,
-          elevation: 0,
-          child: const Icon(Icons.refresh_rounded),
-        ),
+      return const Scaffold(
+        body: Center(child: CupertinoActivityIndicator(radius: 14)),
       );
     }
 
     return Scaffold(
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Top bar ──────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(YLSpacing.xl, YLSpacing.xxl, YLSpacing.xl, YLSpacing.lg),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  s.navNodes.toUpperCase(),
-                  style: YLText.caption.copyWith(
-                    letterSpacing: 2.0,
-                    fontWeight: FontWeight.w700,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 100.0,
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            pinned: true,
+            flexibleSpace: FlexibleSpaceBar(
+              titlePadding: const EdgeInsets.symmetric(horizontal: YLSpacing.xl, vertical: YLSpacing.lg),
+              title: Text(
+                s.navNodes,
+                style: YLText.display.copyWith(
+                  color: isDark ? Colors.white : Colors.black,
+                  fontSize: 28,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  s.navNodes,
-                  style: YLText.display.copyWith(
-                    color: isDark ? YLColors.zinc50 : YLColors.zinc900,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-
-          // Routing mode bar
-          _RoutingModeBar(),
-          
-          Divider(
-            height: 1,
-            thickness: 0.5,
-            color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.refresh_rounded),
+                onPressed: () => ref.read(proxyGroupsProvider.notifier).refresh(),
+              ),
+              const SizedBox(width: YLSpacing.sm),
+            ],
           ),
           
-          // Group list
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: () async => ref.read(proxyGroupsProvider.notifier).refresh(),
-              color: Theme.of(context).colorScheme.primary,
-              backgroundColor: isDark ? YLColors.zinc800 : Colors.white,
-              child: ListView.separated(
-                physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-                padding: const EdgeInsets.fromLTRB(YLSpacing.lg, YLSpacing.lg, YLSpacing.lg, YLSpacing.massive),
-                itemCount: groups.length,
-                separatorBuilder: (_, __) => const SizedBox(height: YLSpacing.lg),
-                itemBuilder: (context, i) => _GroupCard(group: groups[i]),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: YLSpacing.xl, vertical: YLSpacing.sm),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: YLSpacing.lg),
+                    child: _GroupCard(group: groups[index]),
+                  );
+                },
+                childCount: groups.length,
               ),
             ),
           ),
+          
+          const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
       ),
     );
   }
 }
-
-// ── Routing Mode Bar ──────────────────────────────────────────────────────────
-
-class _RoutingModeBar extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final s = S.of(context);
-    final mode = ref.watch(routingModeProvider);
-    final isRunning = ref.watch(coreStatusProvider) == CoreStatus.running;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: YLSpacing.lg, vertical: YLSpacing.md),
-      child: SizedBox(
-        width: double.infinity,
-        child: SegmentedButton<String>(
-          segments: [
-            ButtonSegment(
-                value: 'rule',
-                label: Text(s.routeModeRule),
-                icon: const Icon(Icons.rule_rounded, size: 16)),
-            ButtonSegment(
-                value: 'global',
-                label: Text(s.routeModeGlobal),
-                icon: const Icon(Icons.public_rounded, size: 16)),
-            ButtonSegment(
-                value: 'direct',
-                label: Text(s.routeModeDirect),
-                icon: const Icon(Icons.wifi_tethering_rounded, size: 16)),
-          ],
-          selected: {mode},
-          onSelectionChanged: (Set<String> newSelection) async {
-            final newMode = newSelection.first;
-            ref.read(routingModeProvider.notifier).state = newMode;
-            await SettingsService.setRoutingMode(newMode);
-            if (isRunning) {
-              try {
-                final ok = await ref.read(mihomoApiProvider).setRoutingMode(newMode);
-                if (ok) {
-                  AppNotifier.success('已切换至 ${newMode.toUpperCase()} 模式');
-                }
-              } catch (_) {
-                AppNotifier.error('模式切换失败');
-              }
-            }
-          },
-          showSelectedIcon: false,
-        ),
-      ),
-    );
-  }
-}
-
-// ── Group Card ────────────────────────────────────────────────────────────────
 
 class _GroupCard extends ConsumerStatefulWidget {
   final ProxyGroup group;
@@ -191,8 +115,7 @@ class _GroupCard extends ConsumerStatefulWidget {
   ConsumerState<_GroupCard> createState() => _GroupCardState();
 }
 
-class _GroupCardState extends ConsumerState<_GroupCard>
-    with SingleTickerProviderStateMixin {
+class _GroupCardState extends ConsumerState<_GroupCard> with SingleTickerProviderStateMixin {
   bool _expanded = true;
   late AnimationController _animController;
   late Animation<double> _expandAnim;
@@ -204,12 +127,9 @@ class _GroupCardState extends ConsumerState<_GroupCard>
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 250),
-      value: 1.0, // start expanded
+      value: 1.0,
     );
-    _expandAnim = CurvedAnimation(
-      parent: _animController,
-      curve: Curves.easeOutCubic,
-    );
+    _expandAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic);
     _chevronAnim = Tween<double>(begin: 0, end: 0.5).animate(_expandAnim);
   }
 
@@ -235,12 +155,22 @@ class _GroupCardState extends ConsumerState<_GroupCard>
     final delays = ref.watch(delayResultsProvider);
     final testing = ref.watch(delayTestingProvider);
 
-    return YLSurface(
-      padding: EdgeInsets.zero,
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? YLColors.surfaceDark : YLColors.surfaceLight,
+        borderRadius: BorderRadius.circular(YLRadius.xl),
+        border: Border.all(
+          color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.04),
+          width: 0.5,
+        ),
+        boxShadow: isDark ? [] : [
+          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Group header (tappable to collapse) ──────────────────
+          // Header
           InkWell(
             onTap: _toggle,
             borderRadius: BorderRadius.vertical(
@@ -251,119 +181,86 @@ class _GroupCardState extends ConsumerState<_GroupCard>
               padding: const EdgeInsets.all(YLSpacing.md),
               child: Row(
                 children: [
-                  // Chevron
                   RotationTransition(
                     turns: _chevronAnim,
-                    child: Icon(Icons.expand_more_rounded,
-                        size: 20,
-                        color: isDark ? YLColors.zinc500 : YLColors.zinc400),
+                    child: Icon(Icons.expand_more_rounded, size: 20, color: YLColors.zinc400),
                   ),
-                  const SizedBox(width: YLSpacing.xs),
-                  Icon(_groupIcon(group.name),
-                      size: 18,
-                      color: Theme.of(context).colorScheme.primary),
                   const SizedBox(width: YLSpacing.sm),
                   Text(group.name, style: YLText.titleMedium),
                   const SizedBox(width: YLSpacing.sm),
-                  _TypeChip(type: group.type),
-                  const SizedBox(width: YLSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      group.now,
-                      style: YLText.caption.copyWith(
-                        color: isDark ? YLColors.zinc500 : YLColors.zinc500,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                      textAlign: TextAlign.right,
-                    ),
-                  ),
-                  const SizedBox(width: YLSpacing.sm),
-                  // Node count badge
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: isDark ? YLColors.zinc800 : YLColors.zinc100,
+                      color: isDark ? YLColors.zinc800 : YLColors.bgLight,
                       borderRadius: BorderRadius.circular(YLRadius.sm),
                     ),
                     child: Text(
-                      '${group.all.length}',
-                      style: YLText.caption.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? YLColors.zinc400 : YLColors.zinc600,
-                      ),
+                      group.type,
+                      style: YLText.caption.copyWith(fontSize: 10, color: YLColors.zinc500, fontWeight: FontWeight.w600),
                     ),
                   ),
-                  const SizedBox(width: YLSpacing.xs),
-                  // Test all button
+                  const Spacer(),
+                  Text(
+                    '${group.all.length} Nodes',
+                    style: YLText.caption.copyWith(color: YLColors.zinc500),
+                  ),
+                  const SizedBox(width: YLSpacing.sm),
                   IconButton(
                     onPressed: testing.isNotEmpty
                         ? null
                         : () {
                             ref.read(delayTestProvider).testGroup(group.name, group.all);
-                            AppNotifier.info('开始测速: ${group.name}');
+                            AppNotifier.info('Testing ${group.name}...');
                           },
                     icon: testing.isNotEmpty
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2))
+                        ? const CupertinoActivityIndicator(radius: 7)
                         : const Icon(Icons.bolt_rounded),
                     iconSize: 18,
-                    color: isDark ? YLColors.zinc400 : YLColors.zinc500,
+                    color: YLColors.primary,
                     visualDensity: VisualDensity.compact,
-                    tooltip: 'Test All',
                   ),
                 ],
               ),
             ),
           ),
 
-          // ── Collapsible node list ──────────────────────────────
+          // List
           SizeTransition(
             sizeFactor: _expandAnim,
             axisAlignment: -1.0,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Divider(
-                  height: 0.5,
-                  thickness: 0.5,
-                  color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05),
-                ),
+                Divider(height: 0.5),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: YLSpacing.xs),
                   child: Column(
-                    children: [
-                      for (int i = 0; i < group.all.length; i++) ...[
-                        _NodeTile(
-                          name: group.all[i],
-                          isSelected: group.all[i] == group.now,
-                          delay: delays[group.all[i]],
-                          isTesting: testing.contains(group.all[i]),
-                          onSelect: () async {
-                            // 真实状态闭环：等待 API 返回结果
-                            final ok = await ref.read(proxyGroupsProvider.notifier).changeProxy(group.name, group.all[i]);
-                            if (ok) {
-                              AppNotifier.success('已切换至: ${group.all[i]}');
-                              // 强制刷新全局状态，确保 Dashboard 等其他页面同步更新
-                              ref.read(proxyGroupsProvider.notifier).refresh();
-                            } else {
-                              AppNotifier.error('切换失败，请检查内核状态');
-                            }
-                            return ok;
-                          },
-                          onTest: () => ref.read(delayTestProvider).testDelay(group.all[i]),
-                        ),
-                        if (i < group.all.length - 1)
-                          Divider(
-                            height: 1,
-                            thickness: 0.5,
-                            indent: 40, // Align with text
-                            color: isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.03),
+                    children: List.generate(group.all.length, (i) {
+                      final nodeName = group.all[i];
+                      final isSelected = nodeName == group.now;
+                      return Column(
+                        children: [
+                          _NodeTile(
+                            name: nodeName,
+                            isSelected: isSelected,
+                            delay: delays[nodeName],
+                            isTesting: testing.contains(nodeName),
+                            onSelect: () async {
+                              final ok = await ref.read(proxyGroupsProvider.notifier).changeProxy(group.name, nodeName);
+                              if (ok) {
+                                AppNotifier.success('Switched to $nodeName');
+                                ref.read(proxyGroupsProvider.notifier).refresh();
+                              } else {
+                                AppNotifier.error('Failed to switch node');
+                              }
+                              return ok;
+                            },
+                            onTest: () => ref.read(delayTestProvider).testDelay(nodeName),
                           ),
-                      ],
-                    ],
+                          if (i < group.all.length - 1)
+                            Divider(height: 1, indent: 48),
+                        ],
+                      );
+                    }),
                   ),
                 ),
               ],
@@ -373,29 +270,7 @@ class _GroupCardState extends ConsumerState<_GroupCard>
       ),
     );
   }
-
-  IconData _groupIcon(String name) {
-    final n = name.toLowerCase();
-    if (n.contains('youtube')) return Icons.play_circle_outline_rounded;
-    if (n.contains('tiktok')) return Icons.music_note_rounded;
-    if (n.contains('ai') || n.contains('openai') || n.contains('claude')) return Icons.auto_awesome_rounded;
-    if (n.contains('google')) return Icons.search_rounded;
-    if (n.contains('telegram')) return Icons.send_rounded;
-    if (n.contains('github')) return Icons.code_rounded;
-    if (n.contains('流媒体') || n.contains('netflix') || n.contains('disney')) return Icons.movie_outlined;
-    if (n.contains('社交') || n.contains('twitter') || n.contains('facebook')) return Icons.people_outline_rounded;
-    if (n.contains('游戏') || n.contains('game') || n.contains('steam')) return Icons.sports_esports_rounded;
-    if (n.contains('兜底') || n.contains('fallback') || n.contains('漏网')) return Icons.catching_pokemon;
-    if (n.contains('自动') || n.contains('url-test') || n.contains('auto')) return Icons.speed_rounded;
-    if (n.contains('故障') || n.contains('转移')) return Icons.swap_horiz_rounded;
-    if (n.contains('香港') || n.contains('🇭🇰')) return Icons.location_on_rounded;
-    if (n.contains('聚合') || n.contains('balance')) return Icons.balance_rounded;
-    if (n.contains('更多')) return Icons.language_rounded;
-    return Icons.dns_outlined;
-  }
 }
-
-// ── Node Tile (Compact & Interactive) ─────────────────────────────────────────
 
 class _NodeTile extends StatefulWidget {
   final String name;
@@ -425,56 +300,47 @@ class _NodeTileState extends State<_NodeTile> {
     if (_isSwitching || widget.isSelected) return;
     setState(() => _isSwitching = true);
     await widget.onSelect();
-    if (mounted) {
-      setState(() => _isSwitching = false);
-    }
+    if (mounted) setState(() => _isSwitching = false);
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primary = Theme.of(context).colorScheme.primary;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: _handleSelect,
-        child: Padding(
+        child: Container(
           padding: const EdgeInsets.symmetric(horizontal: YLSpacing.md, vertical: YLSpacing.sm),
+          color: widget.isSelected 
+              ? (isDark ? YLColors.primary.withOpacity(0.1) : YLColors.primary.withOpacity(0.05))
+              : Colors.transparent,
           child: Row(
             children: [
-              // Selection Indicator with Loading State
               SizedBox(
                 width: 24,
                 child: _isSwitching
-                    ? const SizedBox(
-                        width: 16, height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const CupertinoActivityIndicator(radius: 7)
                     : (widget.isSelected
-                        ? Icon(Icons.check_circle_rounded, color: primary, size: 18)
-                        : Icon(Icons.circle_outlined, color: isDark ? YLColors.zinc700 : YLColors.zinc300, size: 18)),
+                        ? const Icon(Icons.check_rounded, color: YLColors.primary, size: 18)
+                        : null),
               ),
               const SizedBox(width: YLSpacing.xs),
-              
-              // Node Name
               Expanded(
                 child: Text(
                   widget.name,
                   style: YLText.body.copyWith(
                     fontWeight: widget.isSelected ? FontWeight.w600 : FontWeight.w400,
                     color: widget.isSelected 
-                        ? (isDark ? Colors.white : YLColors.zinc900) 
-                        : (isDark ? YLColors.zinc300 : YLColors.zinc700),
+                        ? YLColors.primary 
+                        : (isDark ? Colors.white : Colors.black),
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              
               const SizedBox(width: YLSpacing.sm),
-              
-              // Delay Badge (Tappable for single test)
               InkWell(
                 onTap: widget.isTesting ? null : widget.onTest,
                 borderRadius: BorderRadius.circular(YLRadius.sm),
@@ -488,56 +354,5 @@ class _NodeTileState extends State<_NodeTile> {
         ),
       ),
     );
-  }
-}
-
-// ── Type Chip ─────────────────────────────────────────────────────────────────
-
-class _TypeChip extends StatelessWidget {
-  final String type;
-  const _TypeChip({required this.type});
-
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    final color = _color(type);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withOpacity(isDark ? 0.15 : 0.1),
-        borderRadius: BorderRadius.circular(YLRadius.sm),
-        border: Border.all(color: color.withOpacity(0.2), width: 0.5),
-      ),
-      child: Text(
-        _label(type, s),
-        style: YLText.caption.copyWith(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: color,
-        ),
-      ),
-    );
-  }
-
-  String _label(String type, S s) {
-    switch (type) {
-      case 'Selector': return s.typeManual;
-      case 'URLTest':  return s.typeAuto;
-      case 'Fallback': return s.typeFallback;
-      case 'LoadBalance': return s.typeLoadBalance;
-      default: return type;
-    }
-  }
-
-  Color _color(String type) {
-    switch (type) {
-      case 'Selector':    return Colors.blue.shade500;
-      case 'URLTest':     return YLColors.connected;
-      case 'Fallback':    return YLColors.connecting;
-      case 'LoadBalance': return Colors.purple.shade500;
-      default:            return YLColors.zinc500;
-    }
   }
 }

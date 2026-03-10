@@ -93,7 +93,7 @@ class ConfigurationsPage extends ConsumerWidget {
                         id: activeProfile.id,
                         name: activeProfile.name,
                         url: activeProfile.url ?? 'Local File',
-                        updatedAt: _formatDate(activeProfile.updatedAt),
+                        updatedAt: _formatDate(activeProfile.lastUpdated),
                         isActive: true,
                         isExpired: activeProfile.subInfo?.isExpired ?? false,
                       ),
@@ -108,7 +108,7 @@ class ConfigurationsPage extends ConsumerWidget {
                           id: p.id,
                           name: p.name,
                           url: p.url ?? 'Local File',
-                          updatedAt: _formatDate(p.updatedAt),
+                          updatedAt: _formatDate(p.lastUpdated),
                           isActive: false,
                           isExpired: p.subInfo?.isExpired ?? false,
                         ),
@@ -206,7 +206,7 @@ class _ProfileCardState extends ConsumerState<_ProfileCard> {
       AppNotifier.info('正在重启内核以应用新配置...');
       await ref.read(coreActionsProvider).stop();
       
-      final config = await ref.read(profileServiceProvider).loadConfig(widget.id);
+      final config = await ProfileService.loadConfig(widget.id);
       if (config != null) {
         final ok = await ref.read(coreActionsProvider).start(config);
         if (ok) {

@@ -1249,3 +1249,93 @@ class _SplitTunnelSectionState extends ConsumerState<_SplitTunnelSection> {
   }
 }
 
+/// A single settings row with a label on the left and a value or trailing widget on the right.
+class YLInfoRow extends StatelessWidget {
+  final String label;
+  final String? value;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+  final bool enabled;
+
+  const YLInfoRow({
+    super.key,
+    required this.label,
+    this.value,
+    this.trailing,
+    this.onTap,
+    this.enabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final labelColor = enabled
+        ? (isDark ? YLColors.zinc200 : YLColors.zinc700)
+        : YLColors.zinc400;
+    final valueColor = enabled
+        ? (isDark ? YLColors.zinc400 : YLColors.zinc500)
+        : YLColors.zinc300;
+
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label, style: YLText.body.copyWith(color: labelColor)),
+          ),
+          if (value != null)
+            Text(value!, style: YLText.body.copyWith(color: valueColor)),
+          if (trailing != null) trailing!,
+        ],
+      ),
+    );
+
+    if (onTap != null && enabled) {
+      return InkWell(onTap: onTap, child: content);
+    }
+    return Opacity(opacity: enabled ? 1.0 : 0.5, child: content);
+  }
+}
+
+/// A settings row with a title, optional description, and a trailing widget.
+class YLSettingsRow extends StatelessWidget {
+  final String title;
+  final String? description;
+  final Widget trailing;
+
+  const YLSettingsRow({
+    super.key,
+    required this.title,
+    this.description,
+    required this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? YLColors.zinc200 : YLColors.zinc700;
+    final descColor = isDark ? YLColors.zinc500 : YLColors.zinc400;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: YLText.body.copyWith(color: titleColor)),
+                if (description != null) ...[
+                  const SizedBox(height: 2),
+                  Text(description!,
+                      style: YLText.caption.copyWith(color: descColor)),
+                ],
+              ],
+            ),
+          ),
+          trailing,
+        ],
+      ),
+    );
+  }
+}

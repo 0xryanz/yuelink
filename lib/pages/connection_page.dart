@@ -37,12 +37,14 @@ class ConnectionPage extends ConsumerWidget {
               child: AnimatedOpacity(
                 opacity: isConnected ? 1.0 : 0.0,
                 duration: const Duration(milliseconds: 800),
-                child: Container(
-                  height: 400,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: YLColors.connected.withOpacity(isDark ? 0.15 : 0.08),
-                    filter: ImageFilter.blur(sigmaX: 100, sigmaY: 100),
+                child: ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: 100, sigmaY: 100),
+                  child: Container(
+                    height: 400,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: YLColors.connected.withOpacity(isDark ? 0.15 : 0.08),
+                    ),
                   ),
                 ),
               ),

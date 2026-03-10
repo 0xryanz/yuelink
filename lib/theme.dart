@@ -24,6 +24,7 @@ class YLColors {
   static const primary = Color(0xFF000000);     // Default to sleek black in light mode
   static const primaryDark = Color(0xFFFFFFFF); // White in dark mode
   static const accent = Color(0xFF3B82F6);      // Blue-500 for active states
+  static const primaryLight = Color(0xFFF5F5F5); // Light primary background
 
   // ── Status semantics (Clear, accessible) ──────────────────────────────────
   static const connected    = Color(0xFF10B981); // Emerald-500
@@ -321,6 +322,7 @@ class YLGlassSurface extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
   final double blurSigma;
   final double borderRadius;
+  final Color? customColor;
 
   const YLGlassSurface({
     super.key,
@@ -329,6 +331,7 @@ class YLGlassSurface extends StatelessWidget {
     this.padding,
     this.blurSigma = 20,
     this.borderRadius = YLRadius.xl,
+    this.customColor,
   });
 
   @override
@@ -343,7 +346,7 @@ class YLGlassSurface extends StatelessWidget {
           child: Container(
             padding: padding,
             decoration: BoxDecoration(
-              color: isDark ? Colors.white.withOpacity(0.03) : Colors.white.withOpacity(0.6),
+              color: customColor ?? (isDark ? Colors.white.withOpacity(0.03) : Colors.white.withOpacity(0.6)),
               borderRadius: BorderRadius.circular(borderRadius),
               border: Border.all(
                 color: isDark ? Colors.white.withOpacity(0.08) : Colors.white.withOpacity(0.4),
@@ -391,6 +394,69 @@ class YLDelayBadge extends StatelessWidget {
         fontWeight: FontWeight.w600,
         color: c,
         fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+    );
+  }
+}
+
+/// A centered empty state with icon, message, and optional action.
+class YLEmptyState extends StatelessWidget {
+  final IconData icon;
+  final String message;
+  final Widget? action;
+
+  const YLEmptyState({
+    super.key,
+    required this.icon,
+    required this.message,
+    this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(YLSpacing.xxl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 48, color: isDark ? YLColors.zinc600 : YLColors.zinc300),
+            const SizedBox(height: YLSpacing.lg),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: YLText.body.copyWith(color: YLColors.zinc400),
+            ),
+            if (action != null) ...[
+              const SizedBox(height: YLSpacing.lg),
+              action!,
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A small colored chip label.
+class YLChip extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const YLChip(this.label, {super.key, this.color = YLColors.primary});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(YLRadius.sm),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color),
       ),
     );
   }

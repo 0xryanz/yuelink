@@ -18,7 +18,13 @@ class CoreBindings {
     if (Platform.isAndroid || Platform.isLinux) {
       return DynamicLibrary.open('libclash.so');
     } else if (Platform.isMacOS) {
-      return DynamicLibrary.open('libclash.dylib');
+      // Try arch-specific name first (from setup.dart install)
+      try {
+        return DynamicLibrary.open('libclash.dylib');
+      } catch (_) {}
+      // Try arch-specific variants
+      final arch = _getMacArch();
+      return DynamicLibrary.open('libclash-$arch.dylib');
     } else if (Platform.isWindows) {
       return DynamicLibrary.open('libclash.dll');
     } else if (Platform.isIOS) {
@@ -26,6 +32,13 @@ class CoreBindings {
       return DynamicLibrary.process();
     }
     throw UnsupportedError('Unsupported platform: ${Platform.operatingSystem}');
+  }
+
+  static String _getMacArch() {
+    // Detect host architecture
+    final result = Process.runSync('uname', ['-m']);
+    final arch = (result.stdout as String).trim();
+    return arch == 'x86_64' ? 'amd64' : 'arm64';
   }
 
   // ------------------------------------------------------------------

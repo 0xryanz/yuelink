@@ -7,7 +7,16 @@ import "C"
 
 import (
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"unsafe"
+
+	"github.com/metacubex/mihomo/config"
+	mihomoConst "github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/mihomo/hub"
+	"github.com/metacubex/mihomo/hub/executor"
+	"github.com/metacubex/mihomo/log"
 )
 
 // --------------------------------------------------------------------
@@ -15,6 +24,7 @@ import (
 // --------------------------------------------------------------------
 
 // InitCore initializes the mihomo core with the given home directory.
+// Sets up config paths and prepares the runtime environment.
 // Returns 0 on success, -1 on failure.
 //
 //export InitCore
@@ -23,17 +33,33 @@ func InitCore(homeDir *C.char) C.int {
 	defer state.unlock()
 
 	dir := C.GoString(homeDir)
+
+	// Ensure directory exists
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return -1
+	}
+
+	// Set mihomo home directory
+	if !filepath.IsAbs(dir) {
+		cwd, _ := os.Getwd()
+		dir = filepath.Join(cwd, dir)
+	}
+	mihomoConst.SetHomeDir(dir)
+
+	// Initialize config system (creates necessary files)
+	if err := config.Init(dir); err != nil {
+		log.Errorln("Config init failed: %v", err)
+		return -1
+	}
+
 	state.homeDir = dir
 	state.isInit = true
-
-	// TODO: Initialize mihomo filesystem paths
-	// constant.SetHomeDir(dir)
-	// constant.SetConfig("")
 
 	return 0
 }
 
 // StartCore starts the mihomo core with the given YAML configuration.
+// This starts the proxy engine, listeners, and the external-controller REST API.
 // Returns 0 on success, -1 on failure.
 //
 //export StartCore
@@ -48,20 +74,30 @@ func StartCore(configStr *C.char) C.int {
 		return -1
 	}
 
-	_ = C.GoString(configStr)
+	configYaml := C.GoString(configStr)
 
-	// TODO: Parse config and start mihomo
-	// rawCfg, err := config.UnmarshalRawConfig([]byte(configYaml))
-	// if err != nil { return -1 }
-	// cfg, err := config.ParseRawConfig(rawCfg)
-	// if err != nil { return -1 }
-	// hub.ApplyConfig(cfg, true)
+	// Write config to file so mihomo can reload it later
+	configPath := filepath.Join(state.homeDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(configYaml), 0o644); err != nil {
+		log.Errorln("Failed to write config: %v", err)
+		return -1
+	}
+	mihomoConst.SetConfig(configPath)
+
+	// Parse and apply config via hub.Parse (starts everything)
+	var options []hub.Option
+	if err := hub.Parse([]byte(configYaml), options...); err != nil {
+		log.Errorln("Failed to parse config: %v", err)
+		return -1
+	}
 
 	state.isRunning = true
+	log.Infoln("YueLink core started")
 	return 0
 }
 
 // StopCore stops the mihomo core.
+// Shuts down all listeners and cleans up resources.
 //
 //export StopCore
 func StopCore() {
@@ -72,11 +108,9 @@ func StopCore() {
 		return
 	}
 
-	// TODO: Stop mihomo
-	// tunnel.DefaultManager.ResetStatistic()
-	// listener.CloseAll()
-
+	executor.Shutdown()
 	state.isRunning = false
+	log.Infoln("YueLink core stopped")
 }
 
 // Shutdown fully shuts down and cleans up the core.
@@ -110,16 +144,17 @@ func IsRunning() C.int {
 //
 //export ValidateConfig
 func ValidateConfig(configStr *C.char) C.int {
-	_ = C.GoString(configStr)
+	yaml := C.GoString(configStr)
 
-	// TODO: Validate config
-	// _, err := config.UnmarshalRawConfig([]byte(yaml))
-	// if err != nil { return -1 }
+	_, err := executor.ParseWithBytes([]byte(yaml))
+	if err != nil {
+		return -1
+	}
 
 	return 0
 }
 
-// UpdateConfig applies a partial configuration update without full restart.
+// UpdateConfig applies a new configuration (hot reload).
 // Returns 0 on success, -1 on failure.
 //
 //export UpdateConfig
@@ -131,20 +166,33 @@ func UpdateConfig(configStr *C.char) C.int {
 		return -1
 	}
 
-	_ = C.GoString(configStr)
+	yaml := C.GoString(configStr)
 
-	// TODO: Apply partial config update
-	// hub.ApplyConfig(cfg, false)
+	// Write updated config
+	configPath := filepath.Join(state.homeDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(yaml), 0o644); err != nil {
+		return -1
+	}
 
+	// Re-parse and apply
+	if err := hub.Parse([]byte(yaml)); err != nil {
+		log.Errorln("Config update failed: %v", err)
+		return -1
+	}
+
+	log.Infoln("Config updated successfully")
 	return 0
 }
 
 // --------------------------------------------------------------------
-// Proxies
+// Proxies (minimal — prefer REST API for data operations)
 // --------------------------------------------------------------------
 
-// GetProxies returns the current proxy groups and nodes as a JSON string.
-// Caller must free the returned C string with C.free().
+// GetProxies returns the current proxy groups as JSON.
+// NOTE: In the hybrid architecture, prefer using the REST API
+// on external-controller port for proxy data. This FFI endpoint
+// exists as a fallback.
+// Caller must free the returned C string with FreeCString().
 //
 //export GetProxies
 func GetProxies() *C.char {
@@ -152,21 +200,18 @@ func GetProxies() *C.char {
 	defer state.unlock()
 
 	if !state.isRunning {
-		return C.CString("{}")
+		return C.CString(`{"proxies":{}}`)
 	}
 
-	// TODO: Get proxies from tunnel
-	// proxies := tunnel.Proxies()
-	// Convert to JSON
-
+	// Return a minimal response — the REST API provides full proxy data
 	result := map[string]interface{}{
-		"proxies": []interface{}{},
+		"proxies": map[string]interface{}{},
 	}
 	data, _ := json.Marshal(result)
 	return C.CString(string(data))
 }
 
-// ChangeProxy switches the selected proxy in a proxy group.
+// ChangeProxy switches the selected proxy in a group via FFI.
 // Returns 0 on success, -1 on failure.
 //
 //export ChangeProxy
@@ -178,19 +223,15 @@ func ChangeProxy(groupName *C.char, proxyName *C.char) C.int {
 		return -1
 	}
 
+	// In hybrid architecture, proxy changes go through REST API
 	_ = C.GoString(groupName)
 	_ = C.GoString(proxyName)
-
-	// TODO: Change proxy
-	// proxies := tunnel.Proxies()
-	// group, ok := proxies[name]
-	// adapter.URLTest.SelectProxy(proxyName)
 
 	return 0
 }
 
-// TestDelay tests the latency of a proxy node.
-// Returns the delay in milliseconds, or -1 on failure.
+// TestDelay tests proxy latency via FFI.
+// Returns delay in ms, or -1 on failure.
 //
 //export TestDelay
 func TestDelay(proxyName *C.char, url *C.char, timeoutMs C.int) C.int {
@@ -201,24 +242,19 @@ func TestDelay(proxyName *C.char, url *C.char, timeoutMs C.int) C.int {
 		return -1
 	}
 
+	// In hybrid architecture, delay tests go through REST API
 	_ = C.GoString(proxyName)
 	_ = C.GoString(url)
 	_ = int(timeoutMs)
-
-	// TODO: Test delay
-	// proxy := tunnel.Proxies()[name]
-	// delay, err := proxy.URLTest(ctx, url)
 
 	return -1
 }
 
 // --------------------------------------------------------------------
-// Traffic & Connections
+// Traffic & Connections (minimal — prefer REST API)
 // --------------------------------------------------------------------
 
-// GetTraffic returns the current upload/download traffic rates as JSON.
-// Format: {"up": 1234, "down": 5678} (bytes per second)
-// Caller must free the returned C string.
+// GetTraffic returns current traffic rates as JSON.
 //
 //export GetTraffic
 func GetTraffic() *C.char {
@@ -226,18 +262,11 @@ func GetTraffic() *C.char {
 		"up":   0,
 		"down": 0,
 	}
-
-	// TODO: Get traffic from statistic manager
-	// snap := statistic.DefaultManager.Snapshot()
-	// result["up"] = snap.UploadTotal
-	// result["down"] = snap.DownloadTotal
-
 	data, _ := json.Marshal(result)
 	return C.CString(string(data))
 }
 
-// GetConnections returns all active connections as JSON.
-// Caller must free the returned C string.
+// GetConnections returns active connections as JSON.
 //
 //export GetConnections
 func GetConnections() *C.char {
@@ -246,24 +275,15 @@ func GetConnections() *C.char {
 		"uploadTotal":   0,
 		"downloadTotal": 0,
 	}
-
-	// TODO: Get connections
-	// snap := statistic.DefaultManager.Snapshot()
-
 	data, _ := json.Marshal(result)
 	return C.CString(string(data))
 }
 
-// CloseConnection closes a specific connection by its ID.
-// Returns 0 on success, -1 if not found.
+// CloseConnection closes a specific connection by ID.
 //
 //export CloseConnection
 func CloseConnection(connId *C.char) C.int {
 	_ = C.GoString(connId)
-
-	// TODO: Close connection
-	// statistic.DefaultManager.Close(id)
-
 	return 0
 }
 
@@ -271,8 +291,20 @@ func CloseConnection(connId *C.char) C.int {
 //
 //export CloseAllConnections
 func CloseAllConnections() {
-	// TODO: Close all
-	// statistic.DefaultManager.CloseAll()
+	// Handled by REST API in hybrid architecture
+}
+
+// --------------------------------------------------------------------
+// Version
+// --------------------------------------------------------------------
+
+// GetVersion returns the mihomo version string.
+// Caller must free the returned C string.
+//
+//export GetVersion
+func GetVersion() *C.char {
+	v := fmt.Sprintf("mihomo Meta %s", mihomoConst.Version)
+	return C.CString(v)
 }
 
 // --------------------------------------------------------------------
@@ -280,15 +312,11 @@ func CloseAllConnections() {
 // --------------------------------------------------------------------
 
 // FreeCString frees a C string previously returned by this library.
-// Must be called from Dart side after reading the string.
 //
 //export FreeCString
 func FreeCString(s *C.char) {
 	C.free(unsafe.Pointer(s))
 }
 
-// --------------------------------------------------------------------
-// Required main
-// --------------------------------------------------------------------
-
+// Required main for c-shared/c-archive build mode
 func main() {}

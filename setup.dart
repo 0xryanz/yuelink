@@ -383,14 +383,14 @@ Future<void> installLibraries(String platform) async {
 
     case 'ios':
       final src = '$outputDir/ios-arm64/libclash.a';
-      final dst = 'ios/Runner/Frameworks/libclash.a';
+      final dst = 'ios/Frameworks/libclash.a';
       if (File(src).existsSync()) {
         File(dst).parent.createSync(recursive: true);
         File(src).copySync(dst);
         print('Installed: $dst');
       }
       final hSrc = '$outputDir/ios-arm64/libclash.h';
-      final hDst = 'ios/Runner/Frameworks/libclash.h';
+      final hDst = 'ios/Frameworks/libclash.h';
       if (File(hSrc).existsSync()) {
         File(hSrc).copySync(hDst);
         print('Installed: $hDst');
@@ -456,7 +456,7 @@ void cleanBuild() {
 
   final installDirs = [
     'android/app/src/main/jniLibs',
-    'ios/Runner/Frameworks',
+    'ios/Frameworks',
     'macos/Frameworks',
     'windows/libs',
   ];

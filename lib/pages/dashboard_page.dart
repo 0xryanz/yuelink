@@ -471,22 +471,30 @@ class _HeroCard extends ConsumerWidget {
                 Icon(Icons.arrow_downward_rounded,
                     size: 13, color: YLColors.connected),
                 const SizedBox(width: 4),
-                Text(
-                  traffic.downFormatted,
-                  style: YLText.mono.copyWith(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                Flexible(
+                  child: Text(
+                    traffic.downFormatted,
+                    style: YLText.mono.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(width: 20),
+                const SizedBox(width: 16),
                 Icon(Icons.arrow_upward_rounded,
                     size: 13, color: YLColors.accent),
                 const SizedBox(width: 4),
-                Text(
-                  traffic.upFormatted,
-                  style: YLText.mono.copyWith(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                Flexible(
+                  child: Text(
+                    traffic.upFormatted,
+                    style: YLText.mono.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -593,6 +601,8 @@ class _Pill extends StatelessWidget {
                 : Colors.black.withValues(alpha: 0.04)),
       ),
       child: Text(label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: YLText.caption.copyWith(
             fontWeight: primary ? FontWeight.w600 : FontWeight.w500,
             color: primary
@@ -743,11 +753,15 @@ class _OverviewPill extends StatelessWidget {
         children: [
           Icon(icon, size: 12, color: YLColors.zinc400),
           const SizedBox(width: 4),
-          Text(label,
-              style: YLText.caption.copyWith(
-                fontSize: 11,
-                color: isDark ? YLColors.zinc400 : YLColors.zinc600,
-              )),
+          Flexible(
+            child: Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: YLText.caption.copyWith(
+                  fontSize: 11,
+                  color: isDark ? YLColors.zinc400 : YLColors.zinc600,
+                )),
+          ),
         ],
       ),
     );
@@ -882,9 +896,13 @@ class _ChartCard extends ConsumerWidget {
           // Header
           Row(
             children: [
-              Text(s.trafficActivity,
-                  style: YLText.caption.copyWith(color: YLColors.zinc500)),
-              const Spacer(),
+              Expanded(
+                child: Text(s.trafficActivity,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: YLText.caption.copyWith(color: YLColors.zinc500)),
+              ),
+              const SizedBox(width: 8),
               _LegendDot(color: YLColors.accent, label: '↓'),
               const SizedBox(width: 10),
               _LegendDot(color: YLColors.connected, label: '↑'),
@@ -939,7 +957,7 @@ class _ChartCard extends ConsumerWidget {
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 36,
+              reservedSize: 42,
               getTitlesWidget: (value, meta) {
                 if (value == 0) return const SizedBox.shrink();
                 return Text(

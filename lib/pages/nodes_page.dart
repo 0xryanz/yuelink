@@ -242,7 +242,6 @@ class _GroupCardState extends ConsumerState<_GroupCard> with SingleTickerProvide
                               final ok = await ref.read(proxyGroupsProvider.notifier).changeProxy(group.name, nodeName);
                               if (ok) {
                                 AppNotifier.success(S.of(context).switchedTo(nodeName));
-                                ref.read(proxyGroupsProvider.notifier).refresh();
                               } else {
                                 AppNotifier.error(S.of(context).switchFailed);
                               }
@@ -300,54 +299,61 @@ class _CompactRoutingMode extends ConsumerWidget {
     const modes = ['rule', 'global', 'direct'];
     final labels = [s.routeModeRule, s.routeModeGlobal, s.routeModeDirect];
 
-    return Container(
-      height: 32,
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.08)
-            : Colors.black.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(YLRadius.pill),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(modes.length, (i) {
-          final isSelected = modes[i] == routingMode;
-          return GestureDetector(
-            onTap: () async {
-              ref.read(routingModeProvider.notifier).state = modes[i];
-              await SettingsService.setRoutingMode(modes[i]);
-              if (status == CoreStatus.running) {
-                try {
-                  await CoreManager.instance.api.setRoutingMode(modes[i]);
-                } catch (_) {}
-              }
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOutCubic,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? (isDark ? YLColors.zinc700 : Colors.white)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(YLRadius.pill),
-                boxShadow: isSelected ? YLShadow.sm(context) : [],
-              ),
-              child: Text(
-                labels[i],
-                style: YLText.caption.copyWith(
-                  fontSize: 11,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  color: isSelected
-                      ? (isDark ? Colors.white : Colors.black)
-                      : YLColors.zinc500,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 200),
+      child: Container(
+        height: 32,
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.black.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(YLRadius.pill),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(modes.length, (i) {
+            final isSelected = modes[i] == routingMode;
+            return Flexible(
+              child: GestureDetector(
+                onTap: () async {
+                  ref.read(routingModeProvider.notifier).state = modes[i];
+                  await SettingsService.setRoutingMode(modes[i]);
+                  if (status == CoreStatus.running) {
+                    try {
+                      await CoreManager.instance.api.setRoutingMode(modes[i]);
+                    } catch (_) {}
+                  }
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOutCubic,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? (isDark ? YLColors.zinc700 : Colors.white)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(YLRadius.pill),
+                    boxShadow: isSelected ? YLShadow.sm(context) : [],
+                  ),
+                  child: Text(
+                    labels[i],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: YLText.caption.copyWith(
+                      fontSize: 11,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      color: isSelected
+                          ? (isDark ? Colors.white : Colors.black)
+                          : YLColors.zinc500,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          );
-        }),
+            );
+          }),
+        ),
       ),
     );
   }

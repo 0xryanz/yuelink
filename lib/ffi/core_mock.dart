@@ -178,4 +178,69 @@ class CoreMock {
 
   bool closeConnection(String connId) => true;
   void closeAllConnections() {}
+
+  // ------------------------------------------------------------------
+  // Rules
+  // ------------------------------------------------------------------
+
+  Map<String, dynamic> getRules() {
+    if (!_isRunning) return {'rules': []};
+
+    return {
+      'rules': [
+        {'type': 'DOMAIN-SUFFIX', 'payload': 'google.com', 'proxy': '节点选择'},
+        {'type': 'DOMAIN-SUFFIX', 'payload': 'github.com', 'proxy': '节点选择'},
+        {'type': 'DOMAIN-SUFFIX', 'payload': 'openai.com', 'proxy': 'AI 服务'},
+        {'type': 'DOMAIN-SUFFIX', 'payload': 'claude.ai', 'proxy': 'AI 服务'},
+        {'type': 'DOMAIN-SUFFIX', 'payload': 'youtube.com', 'proxy': '流媒体'},
+        {'type': 'DOMAIN-SUFFIX', 'payload': 'netflix.com', 'proxy': '流媒体'},
+        {'type': 'DOMAIN-SUFFIX', 'payload': 'spotify.com', 'proxy': '流媒体'},
+        {'type': 'DOMAIN-KEYWORD', 'payload': 'twitter', 'proxy': '节点选择'},
+        {'type': 'DOMAIN-KEYWORD', 'payload': 'telegram', 'proxy': '节点选择'},
+        {'type': 'GEOIP', 'payload': 'CN', 'proxy': 'DIRECT'},
+        {'type': 'GEOIP', 'payload': 'LAN', 'proxy': 'DIRECT'},
+        {
+          'type': 'RULE-SET',
+          'payload': 'cncidr',
+          'proxy': 'DIRECT',
+          'size': 8520
+        },
+        {
+          'type': 'RULE-SET',
+          'payload': 'proxy-domain',
+          'proxy': '节点选择',
+          'size': 3200
+        },
+        {'type': 'MATCH', 'payload': '', 'proxy': '节点选择'},
+      ],
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Logs
+  // ------------------------------------------------------------------
+
+  List<Map<String, String>> getLogs() {
+    if (!_isRunning) return [];
+
+    return [
+      {'type': 'info', 'payload': '[TCP] google.com:443 → 🇭🇰 香港 01 match Domain'},
+      {'type': 'info', 'payload': '[TCP] github.com:443 → 🇯🇵 日本 01 match Domain'},
+      {
+        'type': 'info',
+        'payload': '[TCP] api.openai.com:443 → 🇺🇸 美国 01 match Domain'
+      },
+      {'type': 'warning', 'payload': '[UDP] dns query timeout: 8.8.8.8'},
+      {'type': 'info', 'payload': '[TCP] cdn.jsdelivr.net:443 → DIRECT match Domain'},
+      {
+        'type': 'info',
+        'payload': '[TCP] registry.npmjs.org:443 → 🇭🇰 香港 02 match Domain'
+      },
+      {
+        'type': 'debug',
+        'payload': '[DNS] resolved google.com to 142.250.80.14 (6ms)'
+      },
+      {'type': 'info', 'payload': '[TCP] 114.114.114.114:443 → DIRECT match GeoIP'},
+    ];
+  }
 }

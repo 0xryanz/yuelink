@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../constants.dart';
 import '../providers/core_provider.dart';
+import '../services/core_manager.dart';
 import '../services/settings_service.dart';
 
 // ------------------------------------------------------------------
@@ -24,7 +25,6 @@ class SettingsPage extends ConsumerWidget {
     final proxyMode = ref.watch(proxyModeProvider);
     final theme = ref.watch(themeProvider);
     final autoConnect = ref.watch(autoConnectProvider);
-    final isMock = ref.watch(isMockModeProvider);
     final status = ref.watch(coreStatusProvider);
 
     return Scaffold(
@@ -161,21 +161,25 @@ class SettingsPage extends ConsumerWidget {
                     ],
                   ),
                 ),
-                if (isMock)
-                  ListTile(
-                    title: const Text('运行模式'),
-                    trailing: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(4),
+                ListTile(
+                  title: const Text('运行模式'),
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: _modeColor(CoreManager.instance.mode)
+                          .withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      _modeName(CoreManager.instance.mode),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _modeColor(CoreManager.instance.mode),
                       ),
-                      child: Text('模拟',
-                          style: TextStyle(
-                              fontSize: 12, color: Colors.amber.shade700)),
                     ),
                   ),
+                ),
               ],
             ),
           ),
@@ -232,6 +236,28 @@ class SettingsPage extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String _modeName(CoreMode mode) {
+    switch (mode) {
+      case CoreMode.mock:
+        return '模拟';
+      case CoreMode.ffi:
+        return 'FFI';
+      case CoreMode.subprocess:
+        return '子进程';
+    }
+  }
+
+  Color _modeColor(CoreMode mode) {
+    switch (mode) {
+      case CoreMode.mock:
+        return Colors.amber.shade700;
+      case CoreMode.ffi:
+        return Colors.green;
+      case CoreMode.subprocess:
+        return Colors.blue;
+    }
   }
 
   Future<void> _launchUrl(String url) async {

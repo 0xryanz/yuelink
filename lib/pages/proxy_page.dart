@@ -287,8 +287,9 @@ class _ProxyGroupCard extends ConsumerWidget {
               children: [
                 OutlinedButton.icon(
                   onPressed: testing.isEmpty
-                      ? () =>
-                          ref.read(delayTestProvider).testGroup(visibleNodes)
+                      ? () => ref
+                          .read(delayTestProvider)
+                          .testGroup(group.name, visibleNodes)
                       : null,
                   icon: const Icon(Icons.speed, size: 16),
                   label: Text(testing.isEmpty

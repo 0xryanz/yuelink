@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -202,6 +204,18 @@ class SettingsPage extends ConsumerWidget {
                   ),
                 ),
                 ListTile(
+                  leading: const Icon(Icons.settings_applications_outlined),
+                  title: const Text('运行配置'),
+                  subtitle: const Text('查看当前生效的配置参数'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  enabled: status == CoreStatus.running,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const _RunningConfigPage()),
+                  ),
+                ),
+                ListTile(
                   leading: const Icon(Icons.cleaning_services_outlined),
                   title: const Text('清除 DNS 缓存'),
                   enabled: status == CoreStatus.running,
@@ -316,6 +330,107 @@ class SettingsPage extends ConsumerWidget {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+}
+
+// ==================================================================
+// Running Config Page
+// ==================================================================
+
+class _RunningConfigPage extends StatefulWidget {
+  const _RunningConfigPage();
+
+  @override
+  State<_RunningConfigPage> createState() => _RunningConfigPageState();
+}
+
+class _RunningConfigPageState extends State<_RunningConfigPage> {
+  Map<String, dynamic>? _config;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final config = await CoreManager.instance.api.getConfig();
+      if (mounted) setState(() => _config = config);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('运行配置'),
+        actions: [
+          IconButton(
+            onPressed: _load,
+            icon: const Icon(Icons.refresh),
+            tooltip: '刷新',
+          ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+              : _config == null
+                  ? const Center(child: Text('无数据'))
+                  : ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: _config!.entries.map((e) {
+                        final value = e.value;
+                        final display = value is Map || value is List
+                            ? const JsonEncoder.withIndent('  ')
+                                .convert(value)
+                            : '$value';
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(e.key,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Theme.of(context).colorScheme.primary,
+                                  )),
+                              const SizedBox(height: 4),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: SelectableText(
+                                  display,
+                                  style: const TextStyle(
+                                      fontFamily: 'monospace', fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+    );
   }
 }
 

@@ -114,10 +114,50 @@ class DelayTestActions {
   }
 
   /// Test all proxies in a group.
-  Future<void> testGroup(List<String> proxyNames) async {
-    for (final name in proxyNames) {
-      await testDelay(name);
-      await Future.delayed(const Duration(milliseconds: 50));
+  ///
+  /// In real mode, uses the REST API group delay test (parallel).
+  /// In mock mode, falls back to sequential testing.
+  Future<void> testGroup(String groupName, List<String> proxyNames) async {
+    final manager = CoreManager.instance;
+
+    if (!manager.isMockMode) {
+      // Mark all as testing
+      final testing = Set<String>.from(ref.read(delayTestingProvider));
+      testing.addAll(proxyNames);
+      ref.read(delayTestingProvider.notifier).state = testing;
+
+      try {
+        final results = await manager.api.testGroupDelay(groupName);
+        // Results: {proxyName: {delay: int}, ...} or {proxyName: int}
+        final current = Map<String, int>.from(ref.read(delayResultsProvider));
+        for (final entry in results.entries) {
+          final value = entry.value;
+          if (value is int) {
+            current[entry.key] = value;
+          } else if (value is Map) {
+            current[entry.key] = (value['delay'] as num?)?.toInt() ?? -1;
+          }
+        }
+        ref.read(delayResultsProvider.notifier).state = current;
+      } catch (_) {
+        // API error, mark all as failed
+        final current = Map<String, int>.from(ref.read(delayResultsProvider));
+        for (final name in proxyNames) {
+          current[name] = -1;
+        }
+        ref.read(delayResultsProvider.notifier).state = current;
+      }
+
+      // Unmark all
+      final doneSet = Set<String>.from(ref.read(delayTestingProvider));
+      doneSet.removeAll(proxyNames);
+      ref.read(delayTestingProvider.notifier).state = doneSet;
+    } else {
+      // Mock: test sequentially
+      for (final name in proxyNames) {
+        await testDelay(name);
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
     }
   }
 }

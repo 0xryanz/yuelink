@@ -185,6 +185,39 @@ class SettingsPage extends ConsumerWidget {
           ),
           const SizedBox(height: 16),
 
+          // Tools
+          _SectionHeader(title: '工具'),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.dns_outlined),
+                  title: const Text('DNS 查询'),
+                  subtitle: const Text('查询域名解析结果'),
+                  trailing: const Icon(Icons.chevron_right, size: 20),
+                  enabled: status == CoreStatus.running,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const _DnsQueryPage()),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.cleaning_services_outlined),
+                  title: const Text('清除 DNS 缓存'),
+                  enabled: status == CoreStatus.running,
+                  onTap: () => _flushDns(context),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.delete_sweep_outlined),
+                  title: const Text('清除 Fake-IP 缓存'),
+                  enabled: status == CoreStatus.running,
+                  onTap: () => _flushFakeIp(context),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
           // About
           _SectionHeader(title: '关于'),
           Card(
@@ -260,11 +293,242 @@ class SettingsPage extends ConsumerWidget {
     }
   }
 
+  Future<void> _flushDns(BuildContext context) async {
+    final ok = await CoreManager.instance.api.flushDnsCache();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ok ? 'DNS 缓存已清除' : '操作失败')),
+      );
+    }
+  }
+
+  Future<void> _flushFakeIp(BuildContext context) async {
+    final ok = await CoreManager.instance.api.flushFakeIpCache();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ok ? 'Fake-IP 缓存已清除' : '操作失败')),
+      );
+    }
+  }
+
   Future<void> _launchUrl(String url) async {
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+}
+
+// ==================================================================
+// DNS Query Page
+// ==================================================================
+
+class _DnsQueryPage extends StatefulWidget {
+  const _DnsQueryPage();
+
+  @override
+  State<_DnsQueryPage> createState() => _DnsQueryPageState();
+}
+
+class _DnsQueryPageState extends State<_DnsQueryPage> {
+  final _controller = TextEditingController();
+  String _queryType = 'A';
+  Map<String, dynamic>? _result;
+  bool _loading = false;
+  String? _error;
+
+  static const _queryTypes = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SOA'];
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _query() async {
+    final name = _controller.text.trim();
+    if (name.isEmpty) return;
+
+    setState(() {
+      _loading = true;
+      _error = null;
+      _result = null;
+    });
+
+    try {
+      final result =
+          await CoreManager.instance.api.queryDns(name, type: _queryType);
+      if (mounted) setState(() => _result = result);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('DNS 查询')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Input row
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    decoration: InputDecoration(
+                      hintText: '输入域名，如 google.com',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
+                    ),
+                    onSubmitted: (_) => _query(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Record type dropdown
+                DropdownButton<String>(
+                  value: _queryType,
+                  items: _queryTypes
+                      .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) setState(() => _queryType = v);
+                  },
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _loading ? null : _query,
+                  child: _loading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('查询'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Error
+            if (_error != null)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(_error!,
+                    style: const TextStyle(color: Colors.red, fontSize: 13)),
+              ),
+
+            // Result
+            if (_result != null)
+              Expanded(
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: _buildResult(),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResult() {
+    final status = _result!['Status'] as int? ?? -1;
+    final answers = _result!['Answer'] as List? ?? [];
+
+    return ListView(
+      children: [
+        // Status
+        Row(
+          children: [
+            Icon(
+              status == 0 ? Icons.check_circle : Icons.error,
+              size: 18,
+              color: status == 0 ? Colors.green : Colors.red,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              status == 0 ? 'NOERROR' : 'Status: $status',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: status == 0 ? Colors.green : Colors.red,
+              ),
+            ),
+          ],
+        ),
+        const Divider(height: 24),
+
+        // Answers
+        if (answers.isEmpty)
+          const Text('无记录', style: TextStyle(color: Colors.grey))
+        else
+          ...answers.map((a) {
+            final answer = a as Map<String, dynamic>;
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primaryContainer,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      '${answer['type'] ?? _queryType}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SelectableText(
+                          '${answer['data'] ?? ''}',
+                          style: const TextStyle(
+                              fontFamily: 'monospace', fontSize: 13),
+                        ),
+                        if (answer['TTL'] != null)
+                          Text('TTL: ${answer['TTL']}',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+      ],
+    );
   }
 }
 

@@ -48,12 +48,7 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
       });
     } else {
       // Connect to real WebSocket log stream
-      final stream = MihomoStream(
-        host: '127.0.0.1',
-        port: 9090,
-        secret: null, // TODO: get from settings
-      );
-      _sub = stream.logStream().listen((entry) {
+      _sub = manager.stream.logStream().listen((entry) {
         if (mounted) _addEntry(entry);
       });
     }

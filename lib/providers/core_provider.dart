@@ -95,37 +95,52 @@ class CoreActions {
 }
 
 // ------------------------------------------------------------------
-// Traffic polling (uses REST API in real mode, FFI mock in mock mode)
+// Traffic streaming (WebSocket in real mode, polling in mock mode)
 // ------------------------------------------------------------------
 
 final trafficProvider = StateProvider<Traffic>((ref) => const Traffic());
 
-final trafficPollingProvider = Provider<Timer?>((ref) {
+final trafficStreamProvider = Provider<void>((ref) {
   final status = ref.watch(coreStatusProvider);
-  if (status != CoreStatus.running) return null;
+  if (status != CoreStatus.running) return;
 
   final manager = CoreManager.instance;
 
-  final timer = Timer.periodic(const Duration(seconds: 1), (_) async {
-    if (manager.isMockMode) {
-      // Mock mode: use direct FFI mock
+  if (manager.isMockMode) {
+    // Mock mode: poll every second
+    final timer = Timer.periodic(const Duration(seconds: 1), (_) {
       final t = CoreController.instance.getTraffic();
       ref.read(trafficProvider.notifier).state =
           Traffic(up: t.up, down: t.down);
-    } else {
-      // Real mode: use REST API
-      try {
-        final t = await manager.api.getTraffic();
-        ref.read(trafficProvider.notifier).state =
-            Traffic(up: t.up, down: t.down);
-      } catch (_) {
-        // API temporarily unavailable, skip this tick
-      }
-    }
-  });
+    });
+    ref.onDispose(() => timer.cancel());
+  } else {
+    // Real mode: WebSocket stream (push-based, no polling)
+    final sub = manager.stream.trafficStream().listen((t) {
+      ref.read(trafficProvider.notifier).state =
+          Traffic(up: t.up, down: t.down);
+    });
+    ref.onDispose(() => sub.cancel());
+  }
+});
 
-  ref.onDispose(() => timer.cancel());
-  return timer;
+// ------------------------------------------------------------------
+// Memory usage streaming
+// ------------------------------------------------------------------
+
+final memoryUsageProvider = StateProvider<int>((ref) => 0);
+
+final memoryStreamProvider = Provider<void>((ref) {
+  final status = ref.watch(coreStatusProvider);
+  if (status != CoreStatus.running) return;
+
+  final manager = CoreManager.instance;
+  if (manager.isMockMode) return; // No memory data in mock mode
+
+  final sub = manager.stream.memoryStream().listen((bytes) {
+    ref.read(memoryUsageProvider.notifier).state = bytes;
+  });
+  ref.onDispose(() => sub.cancel());
 });
 
 // ------------------------------------------------------------------

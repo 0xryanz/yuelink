@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import '../constants.dart';
 import '../ffi/core_controller.dart';
 import 'mihomo_api.dart';
+import 'mihomo_stream.dart';
 import 'process_manager.dart';
 
 /// How mihomo is managed.
@@ -42,6 +43,7 @@ class CoreManager {
   late final CoreController _core;
   late CoreMode _mode;
   MihomoApi? _api;
+  MihomoStream? _stream;
   bool _running = false;
 
   /// The REST API client for the running mihomo instance.
@@ -54,6 +56,13 @@ class CoreManager {
   int _apiPort = 9090;
   String? _apiSecret;
 
+  /// The WebSocket stream client for real-time data.
+  MihomoStream get stream => _stream ??= MihomoStream(
+        host: '127.0.0.1',
+        port: _apiPort,
+        secret: _apiSecret,
+      );
+
   CoreMode get mode => _mode;
   bool get isMockMode => _mode == CoreMode.mock;
   bool get isRunning => _running;
@@ -64,6 +73,7 @@ class CoreManager {
     _apiSecret = secret;
     if (mode != null) _mode = mode;
     _api = null; // Reset so next access uses new config
+    _stream = null;
   }
 
   /// Start the mihomo core with the given config.

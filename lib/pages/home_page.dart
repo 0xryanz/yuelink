@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/traffic.dart';
 import '../providers/core_provider.dart';
 import '../providers/profile_provider.dart';
 import '../providers/proxy_provider.dart';
@@ -55,14 +54,16 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   Widget build(BuildContext context) {
     final status = ref.watch(coreStatusProvider);
-    final traffic = ref.watch(trafficProvider);
     final isMock = ref.watch(isMockModeProvider);
     final isRunning = status == CoreStatus.running;
     final isTransitioning =
         status == CoreStatus.starting || status == CoreStatus.stopping;
 
-    // Keep traffic polling alive
-    if (isRunning) ref.watch(trafficPollingProvider);
+    // Keep traffic & memory streams alive
+    if (isRunning) {
+      ref.watch(trafficStreamProvider);
+      ref.watch(memoryStreamProvider);
+    }
 
     // Track uptime
     ref.listen(coreStatusProvider, (prev, next) {
@@ -147,7 +148,7 @@ class _HomePageState extends ConsumerState<HomePage> {
               const SizedBox(height: 24),
 
               // Traffic stats
-              if (isRunning) _TrafficCard(traffic: traffic),
+              if (isRunning) const _TrafficCard(),
 
               const Spacer(),
 
@@ -389,13 +390,14 @@ class _StatusOrb extends StatelessWidget {
   }
 }
 
-class _TrafficCard extends StatelessWidget {
-  final Traffic traffic;
-
-  const _TrafficCard({required this.traffic});
+class _TrafficCard extends ConsumerWidget {
+  const _TrafficCard();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final traffic = ref.watch(trafficProvider);
+    final memoryBytes = ref.watch(memoryUsageProvider);
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
@@ -408,17 +410,34 @@ class _TrafficCard extends StatelessWidget {
               value: traffic.upFormatted,
               label: '上传',
             ),
-            const SizedBox(width: 48),
+            const SizedBox(width: 36),
             _TrafficColumn(
               icon: Icons.arrow_downward,
               iconColor: Colors.green,
               value: traffic.downFormatted,
               label: '下载',
             ),
+            if (memoryBytes > 0) ...[
+              const SizedBox(width: 36),
+              _TrafficColumn(
+                icon: Icons.memory,
+                iconColor: Colors.orange,
+                value: _formatMemory(memoryBytes),
+                label: '内存',
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  String _formatMemory(int bytes) {
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 }
 

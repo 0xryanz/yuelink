@@ -102,28 +102,49 @@ class _ConnectionsTabState extends ConsumerState<_ConnectionsTab> {
   int _uploadTotal = 0;
   int _downloadTotal = 0;
   Timer? _refreshTimer;
+  StreamSubscription? _streamSub;
   String _searchQuery = '';
   final _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _refresh();
-    _startAutoRefresh();
+    _startListening();
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _streamSub?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
-  void _startAutoRefresh() {
-    _refreshTimer?.cancel();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      if (mounted) _refresh();
-    });
+  void _startListening() {
+    final manager = CoreManager.instance;
+
+    if (manager.isMockMode) {
+      // Mock mode: poll every 2 seconds
+      _refresh();
+      _refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        if (mounted) _refresh();
+      });
+    } else {
+      // Real mode: WebSocket stream
+      _streamSub = manager.stream.connectionsStream().listen((data) {
+        if (!mounted) return;
+        final conns = (data['connections'] as List?)
+                ?.map((e) =>
+                    ConnectionInfo.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            [];
+        setState(() {
+          _connections = conns;
+          _uploadTotal = (data['uploadTotal'] as num?)?.toInt() ?? 0;
+          _downloadTotal = (data['downloadTotal'] as num?)?.toInt() ?? 0;
+        });
+      });
+    }
   }
 
   Future<void> _refresh() async {

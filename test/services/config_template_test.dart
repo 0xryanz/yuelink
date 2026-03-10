@@ -61,12 +61,12 @@ void main() {
     });
   });
 
-  group('ConfigTemplate.mergeWithTemplate', () {
+  group('ConfigTemplate.mergeIfNeeded', () {
     test('uses subscription config directly if it has proxy-groups and rules',
         () {
       const template = 'mixed-port: 7890\nproxies:\n';
       const sub = 'proxies:\n  - name: test\nproxy-groups:\n  - name: g\nrules:\n  - MATCH,DIRECT';
-      final result = ConfigTemplate.mergeWithTemplate(template, sub);
+      final result = ConfigTemplate.mergeIfNeeded(template, sub);
       expect(result, equals(sub));
     });
 
@@ -74,7 +74,7 @@ void main() {
       const template =
           'mixed-port: 7890\nproxies:\n\nproxy-groups:\n  - name: g\n';
       const sub = 'proxies:\n  - name: node1\n    type: ss\n';
-      final result = ConfigTemplate.mergeWithTemplate(template, sub);
+      final result = ConfigTemplate.mergeIfNeeded(template, sub);
       expect(result, contains('name: node1'));
       expect(result, contains('proxy-groups:'));
     });

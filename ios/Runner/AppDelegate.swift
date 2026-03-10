@@ -4,6 +4,7 @@ import NetworkExtension
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
+    private let appGroup = "group.com.yueto.yuelink"
     private var vpnManager: NETunnelProviderManager?
 
     override func application(
@@ -13,16 +14,21 @@ import NetworkExtension
         GeneratedPluginRegistrant.register(with: self)
 
         let controller = window?.rootViewController as! FlutterViewController
-        let channel = FlutterMethodChannel(name: "com.yueto.yuelink/vpn", binaryMessenger: controller.binaryMessenger)
+        let channel = FlutterMethodChannel(
+            name: "com.yueto.yuelink/vpn",
+            binaryMessenger: controller.binaryMessenger
+        )
 
         channel.setMethodCallHandler { [weak self] call, result in
             switch call.method {
             case "startVpn":
-                self?.startVpn(result: result)
+                let configYaml = call.arguments as? String
+                self?.startVpn(configYaml: configYaml, result: result)
             case "stopVpn":
                 self?.stopVpn(result: result)
             case "requestPermission":
-                result(true) // iOS handles permission via system VPN prompt
+                // iOS shows the system VPN prompt automatically on first startVpn
+                result(true)
             default:
                 result(FlutterMethodNotImplemented)
             }
@@ -31,10 +37,18 @@ import NetworkExtension
         return super.application(application, didFinishLaunchingWithOptions: launchOptions)
     }
 
-    private func startVpn(result: @escaping FlutterResult) {
+    // MARK: - VPN control
+
+    private func startVpn(configYaml: String?, result: @escaping FlutterResult) {
+        // Write config to App Group so PacketTunnel extension can read it
+        if let yaml = configYaml {
+            writeConfigToAppGroup(yaml)
+        }
+
         NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in
             if let error = error {
-                result(FlutterError(code: "VPN_ERROR", message: error.localizedDescription, details: nil))
+                result(FlutterError(code: "VPN_LOAD_ERROR",
+                                    message: error.localizedDescription, details: nil))
                 return
             }
 
@@ -52,13 +66,15 @@ import NetworkExtension
 
             manager.saveToPreferences { error in
                 if let error = error {
-                    result(FlutterError(code: "VPN_SAVE_ERROR", message: error.localizedDescription, details: nil))
+                    result(FlutterError(code: "VPN_SAVE_ERROR",
+                                        message: error.localizedDescription, details: nil))
                     return
                 }
 
                 manager.loadFromPreferences { error in
                     if let error = error {
-                        result(FlutterError(code: "VPN_LOAD_ERROR", message: error.localizedDescription, details: nil))
+                        result(FlutterError(code: "VPN_RELOAD_ERROR",
+                                            message: error.localizedDescription, details: nil))
                         return
                     }
 
@@ -67,7 +83,8 @@ import NetworkExtension
                         try session.startTunnel()
                         result(true)
                     } catch {
-                        result(FlutterError(code: "VPN_START_ERROR", message: error.localizedDescription, details: nil))
+                        result(FlutterError(code: "VPN_START_ERROR",
+                                            message: error.localizedDescription, details: nil))
                     }
                 }
             }
@@ -77,5 +94,25 @@ import NetworkExtension
     private func stopVpn(result: @escaping FlutterResult) {
         vpnManager?.connection.stopVPNTunnel()
         result(true)
+    }
+
+    // MARK: - App Group config sharing
+
+    /// Write config YAML to the shared App Group container so the
+    /// PacketTunnel extension can read it on startup.
+    private func writeConfigToAppGroup(_ yaml: String) {
+        guard let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroup
+        ) else { return }
+
+        let mihomoDir = containerURL.appendingPathComponent("mihomo")
+        try? FileManager.default.createDirectory(
+            atPath: mihomoDir.path, withIntermediateDirectories: true
+        )
+        try? yaml.write(
+            to: mihomoDir.appendingPathComponent("config.yaml"),
+            atomically: true,
+            encoding: .utf8
+        )
     }
 }

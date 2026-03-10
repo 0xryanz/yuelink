@@ -5,14 +5,57 @@ import 'package:flutter/services.dart';
 /// Platform-specific VPN service abstraction.
 ///
 /// Handles starting/stopping the OS-level VPN tunnel:
-/// - Android: VpnService
-/// - iOS/macOS: NEPacketTunnelProvider
-/// - Windows: wintun / system proxy
-/// - Linux: TUN device / system proxy
+/// - Android: VpnService → returns TUN fd for injection into config YAML
+/// - iOS: NEPacketTunnelProvider (Go core runs inside the extension)
+/// - macOS: system proxy via networksetup
+/// - Windows: system proxy via registry
 class VpnService {
   static const _channel = MethodChannel('com.yueto.yuelink/vpn');
 
-  /// Start the platform VPN tunnel.
+  /// Start the Android VPN service and obtain the TUN file descriptor.
+  ///
+  /// Returns the fd integer (> 0) on success, or -1 on failure.
+  /// The fd must be injected into the mihomo config YAML as `tun.file-descriptor`
+  /// before calling [CoreManager.start].
+  static Future<int> startAndroidVpn({int mixedPort = 7890}) async {
+    assert(Platform.isAndroid);
+    try {
+      final fd = await _channel.invokeMethod<int>('startVpn', {
+        'mixedPort': mixedPort,
+      });
+      return fd ?? -1;
+    } on PlatformException catch (_) {
+      return -1;
+    }
+  }
+
+  /// Get the current TUN fd without starting a new tunnel.
+  /// Returns -1 if the VPN is not running.
+  static Future<int> getTunFd() async {
+    assert(Platform.isAndroid);
+    try {
+      final fd = await _channel.invokeMethod<int>('getTunFd');
+      return fd ?? -1;
+    } on PlatformException catch (_) {
+      return -1;
+    }
+  }
+
+  /// Start the iOS VPN tunnel.
+  ///
+  /// [configYaml] is written to the App Group container so the
+  /// PacketTunnel extension can load it on startup.
+  static Future<bool> startIosVpn({required String configYaml}) async {
+    assert(Platform.isIOS);
+    try {
+      final result = await _channel.invokeMethod<bool>('startVpn', configYaml);
+      return result ?? false;
+    } on PlatformException catch (_) {
+      return false;
+    }
+  }
+
+  /// Start the platform VPN tunnel (iOS / generic path).
   static Future<bool> startVpn() async {
     try {
       final result = await _channel.invokeMethod<bool>('startVpn');
@@ -33,7 +76,6 @@ class VpnService {
   }
 
   /// Request VPN permission (Android only).
-  /// Returns true if permission is already granted or successfully obtained.
   static Future<bool> requestPermission() async {
     if (!Platform.isAndroid) return true;
     try {

@@ -1,36 +1,47 @@
 import NetworkExtension
 
+// libclash.a is statically linked — declare the C functions directly.
+// These symbols come from core/hub.go (exported via CGo).
+@_silgen_name("InitCore")
+func InitCore(_ homeDir: UnsafePointer<CChar>!) -> Int32
+
+@_silgen_name("StartCore")
+func StartCore(_ configYaml: UnsafePointer<CChar>!) -> Int32
+
+@_silgen_name("StopCore")
+func StopCore()
+
 class PacketTunnelProvider: NEPacketTunnelProvider {
+
+    private let appGroup = "group.com.yueto.yuelink"
 
     override func startTunnel(
         options: [String: NSObject]?,
         completionHandler: @escaping (Error?) -> Void
     ) {
+        // Network settings match what VpnService sets on Android:
+        // fake-ip range 198.18.0.1/16 with default route
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "254.1.1.1")
 
-        // IPv4 configuration
         let ipv4 = NEIPv4Settings(addresses: ["198.18.0.1"], subnetMasks: ["255.255.0.0"])
         ipv4.includedRoutes = [NEIPv4Route.default()]
         settings.ipv4Settings = ipv4
 
-        // DNS
         settings.dnsSettings = NEDNSSettings(servers: ["223.5.5.5", "8.8.8.8"])
-
-        // MTU
         settings.mtu = 9000
 
-        setTunnelNetworkSettings(settings) { error in
+        setTunnelNetworkSettings(settings) { [weak self] error in
             if let error = error {
                 completionHandler(error)
                 return
             }
 
-            // TODO: Start mihomo Go core (linked as static library)
-            // let configPath = self.appGroupConfigPath()
-            // InitCore(configPath)
-            // StartCore(configYaml)
+            guard let self = self else {
+                completionHandler(nil)
+                return
+            }
 
-            completionHandler(nil)
+            self.startMihomoCore(completionHandler: completionHandler)
         }
     }
 
@@ -38,23 +49,104 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         with reason: NEProviderStopReason,
         completionHandler: @escaping () -> Void
     ) {
-        // TODO: Stop mihomo Go core
-        // StopCore()
-
+        StopCore()
         completionHandler()
     }
 
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
-        // IPC between main app and tunnel extension
-        // Used for sending config updates, getting status, etc.
-        completionHandler?(nil)
+        // IPC: main app sends updated config → hot-reload
+        // Message format: raw UTF-8 config YAML bytes
+        guard let configYaml = String(data: messageData, encoding: .utf8) else {
+            completionHandler?(nil)
+            return
+        }
+
+        // Write new config to app group and reload
+        writeConfig(configYaml)
+
+        let result = configYaml.withCString { ptr in
+            StartCore(ptr)
+        }
+        let response = Data([result == 0 ? 1 : 0])
+        completionHandler?(response)
     }
 
-    /// Get the shared App Group container path for config files.
-    private func appGroupConfigPath() -> String {
-        let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: "group.com.yueto.yuelink"
+    // MARK: - Private
+
+    private func startMihomoCore(completionHandler: @escaping (Error?) -> Void) {
+        guard let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroup
+        ) else {
+            completionHandler(TunnelError.noAppGroup)
+            return
+        }
+
+        let homeDir = containerURL.appendingPathComponent("mihomo").path
+        let configPath = containerURL.appendingPathComponent("mihomo/config.yaml").path
+
+        // Ensure home directory exists
+        try? FileManager.default.createDirectory(
+            atPath: homeDir,
+            withIntermediateDirectories: true
         )
-        return container?.appendingPathComponent("yuelink.yaml").path ?? ""
+
+        // Read config written by the main app
+        guard let configYaml = try? String(contentsOfFile: configPath, encoding: .utf8),
+              !configYaml.isEmpty else {
+            completionHandler(TunnelError.noConfig)
+            return
+        }
+
+        // Initialize Go core with home directory
+        let initResult = homeDir.withCString { ptr in
+            InitCore(ptr)
+        }
+        guard initResult == 0 else {
+            completionHandler(TunnelError.initFailed)
+            return
+        }
+
+        // Start Go core with config
+        let startResult = configYaml.withCString { ptr in
+            StartCore(ptr)
+        }
+        guard startResult == 0 else {
+            completionHandler(TunnelError.startFailed)
+            return
+        }
+
+        completionHandler(nil)
+    }
+
+    private func writeConfig(_ yaml: String) {
+        guard let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroup
+        ) else { return }
+
+        let dir = containerURL.appendingPathComponent("mihomo")
+        try? FileManager.default.createDirectory(
+            atPath: dir.path, withIntermediateDirectories: true
+        )
+        try? yaml.write(
+            to: dir.appendingPathComponent("config.yaml"),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+}
+
+enum TunnelError: LocalizedError {
+    case noAppGroup
+    case noConfig
+    case initFailed
+    case startFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .noAppGroup:  return "Cannot access App Group container"
+        case .noConfig:    return "No config found in App Group — start from main app first"
+        case .initFailed:  return "mihomo InitCore failed"
+        case .startFailed: return "mihomo StartCore failed"
+        }
     }
 }

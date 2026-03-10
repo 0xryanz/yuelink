@@ -7,20 +7,22 @@
 //
 // Commands:
 //   build   Build the Go core for a specific platform
+//   install Copy built libraries to Flutter platform directories
 //   clean   Remove all compiled core artifacts
 //
 // Build options:
-//   --platform, -p   Target platform: android, ios, macos, windows, linux
-//   --arch, -a       Target architecture: arm64, amd64, arm (default: host arch)
+//   --platform, -p   Target platform: android, ios, macos, windows
+//   --arch, -a       Target architecture: arm64, amd64, arm (default: all)
 //   --debug          Build with debug symbols (default: release)
 //
 // Examples:
-//   dart setup.dart build -p android
-//   dart setup.dart build -p android -a arm64
-//   dart setup.dart build -p ios
-//   dart setup.dart build -p macos -a arm64
-//   dart setup.dart build -p windows -a amd64
-//   dart setup.dart clean
+//   dart setup.dart build -p android               # Build all Android arches
+//   dart setup.dart build -p android -a arm64       # Build Android arm64 only
+//   dart setup.dart build -p ios                    # Build iOS (arm64 only)
+//   dart setup.dart build -p macos                  # Build macOS universal
+//   dart setup.dart build -p windows -a amd64       # Build Windows x64
+//   dart setup.dart install -p macos                # Copy + lipo universal
+//   dart setup.dart clean                           # Remove all artifacts
 
 import 'dart:io';
 
@@ -51,10 +53,6 @@ const Map<String, Map<String, String>> outputNames = {
   'windows': {
     'amd64': 'windows-amd64/libclash.dll',
     'arm64': 'windows-arm64/libclash.dll',
-  },
-  'linux': {
-    'amd64': 'linux-amd64/libclash.so',
-    'arm64': 'linux-arm64/libclash.so',
   },
 };
 
@@ -110,7 +108,6 @@ String resolveAndroidNdk() {
   if (sdkRoot != null) {
     final ndkDir = Directory('$sdkRoot/ndk');
     if (ndkDir.existsSync()) {
-      // Pick the latest installed NDK version
       final versions = ndkDir
           .listSync()
           .whereType<Directory>()
@@ -186,7 +183,7 @@ Future<void> buildCore({
   final goArch = goArchMap[arch] ?? arch;
   final platformArchNames = outputNames[platform];
   if (platformArchNames == null) {
-    throw Exception('Unsupported platform: $platform');
+    throw Exception('Unsupported platform: $platform. Supported: android, ios, macos, windows');
   }
   final outName = platformArchNames[arch];
   if (outName == null) {
@@ -237,8 +234,13 @@ Future<void> buildCore({
       if (arch != 'arm64') {
         throw Exception('iOS only supports arm64');
       }
-      // Find the iOS SDK clang
       final sdkResult = Process.runSync('xcrun', ['--sdk', 'iphoneos', '--show-sdk-path']);
+      if (sdkResult.exitCode != 0) {
+        throw Exception(
+          'Cannot find iOS SDK. Install Xcode from the App Store.\n'
+          'Command Line Tools alone are not enough — Xcode.app with iOS SDK is required.',
+        );
+      }
       final sdkPath = (sdkResult.stdout as String).trim();
       final ccResult = Process.runSync('xcrun', ['--sdk', 'iphoneos', '--find', 'clang']);
       final cc = (ccResult.stdout as String).trim();
@@ -257,9 +259,7 @@ Future<void> buildCore({
     case 'macos':
       env['GOOS'] = 'darwin';
       env['GOARCH'] = goArch;
-      // Use system clang
       if (arch == 'amd64' && hostArch == 'arm64') {
-        // Cross-compile on Apple Silicon → Intel
         env['CC'] = 'clang -arch x86_64';
       } else if (arch == 'arm64' && hostArch == 'amd64') {
         env['CC'] = 'clang -arch arm64';
@@ -274,27 +274,19 @@ Future<void> buildCore({
       env['GOOS'] = 'windows';
       env['GOARCH'] = goArch;
       if (hostOS != 'windows') {
-        // Cross-compile from macOS/Linux
         if (arch == 'amd64') {
           env['CC'] = 'x86_64-w64-mingw32-gcc';
         } else if (arch == 'arm64') {
           env['CC'] = 'aarch64-w64-mingw32-gcc';
         }
-      }
-      buildMode = 'c-shared';
-      break;
-
-    // -----------------------------------------------------------------
-    // Linux
-    // -----------------------------------------------------------------
-    case 'linux':
-      env['GOOS'] = 'linux';
-      env['GOARCH'] = goArch;
-      if (arch != hostArch) {
-        if (arch == 'arm64') {
-          env['CC'] = 'aarch64-linux-gnu-gcc';
-        } else if (arch == 'amd64') {
-          env['CC'] = 'x86_64-linux-gnu-gcc';
+        // Verify cross-compiler exists
+        final cc = env['CC']!;
+        final check = Process.runSync('which', [cc.split(' ').first]);
+        if (check.exitCode != 0) {
+          throw Exception(
+            'Cross-compiler "$cc" not found.\n'
+            'Install: brew install mingw-w64',
+          );
         }
       }
       buildMode = 'c-shared';
@@ -332,7 +324,7 @@ Future<void> buildCore({
 
   final fileSize = File(outPath).lengthSync();
   final sizeMb = (fileSize / 1024 / 1024).toStringAsFixed(1);
-  print('\n✅ Built successfully: $outPath ($sizeMb MB)');
+  print('\n Built successfully: $outPath ($sizeMb MB)');
 }
 
 /// Build all architectures for a given platform.
@@ -343,11 +335,36 @@ Future<void> buildPlatformAll(String platform, {required bool debug}) async {
   }
 }
 
+/// Create a macOS universal binary from arm64 + amd64 dylibs using lipo.
+Future<void> _createMacOSUniversal() async {
+  final arm64 = '$outputDir/macos-arm64/libclash.dylib';
+  final amd64 = '$outputDir/macos-amd64/libclash.dylib';
+  final universal = '$outputDir/macos-universal/libclash.dylib';
+
+  if (!File(arm64).existsSync() || !File(amd64).existsSync()) {
+    print('Skipping universal binary: need both arm64 and amd64 builds.');
+    return;
+  }
+
+  File(universal).parent.createSync(recursive: true);
+
+  await run('lipo', [
+    '-create',
+    arm64,
+    amd64,
+    '-output',
+    universal,
+  ]);
+
+  final fileSize = File(universal).lengthSync();
+  final sizeMb = (fileSize / 1024 / 1024).toStringAsFixed(1);
+  print('\n Created universal binary: $universal ($sizeMb MB)');
+}
+
 /// Copy built libraries to the correct Flutter platform directories.
 Future<void> installLibraries(String platform) async {
   switch (platform) {
     case 'android':
-      // Copy .so files to android/app/src/main/jniLibs/
       final archDirMap = {
         'arm64': 'arm64-v8a',
         'arm': 'armeabi-v7a',
@@ -359,7 +376,7 @@ Future<void> installLibraries(String platform) async {
         if (File(src).existsSync()) {
           File(dst).parent.createSync(recursive: true);
           File(src).copySync(dst);
-          print('📦 Installed: $dst');
+          print('Installed: $dst');
         }
       }
       break;
@@ -370,25 +387,45 @@ Future<void> installLibraries(String platform) async {
       if (File(src).existsSync()) {
         File(dst).parent.createSync(recursive: true);
         File(src).copySync(dst);
-        print('📦 Installed: $dst');
+        print('Installed: $dst');
       }
-      // Also copy the header
       final hSrc = '$outputDir/ios-arm64/libclash.h';
       final hDst = 'ios/Runner/Frameworks/libclash.h';
       if (File(hSrc).existsSync()) {
         File(hSrc).copySync(hDst);
-        print('📦 Installed: $hDst');
+        print('Installed: $hDst');
       }
       break;
 
     case 'macos':
-      for (final arch in ['arm64', 'amd64']) {
-        final src = '$outputDir/macos-$arch/libclash.dylib';
-        final dst = 'macos/Frameworks/libclash-$arch.dylib';
-        if (File(src).existsSync()) {
-          File(dst).parent.createSync(recursive: true);
-          File(src).copySync(dst);
-          print('📦 Installed: $dst');
+      // Prefer universal binary if both arches were built
+      final arm64 = '$outputDir/macos-arm64/libclash.dylib';
+      final amd64 = '$outputDir/macos-amd64/libclash.dylib';
+
+      if (File(arm64).existsSync() && File(amd64).existsSync()) {
+        // Create universal binary via lipo and install that
+        await _createMacOSUniversal();
+        final universalSrc = '$outputDir/macos-universal/libclash.dylib';
+        final dst = 'macos/Frameworks/libclash.dylib';
+        File(dst).parent.createSync(recursive: true);
+        File(universalSrc).copySync(dst);
+        print('Installed universal: $dst');
+
+        // Also install per-arch for fallback loading
+        File(arm64).copySync('macos/Frameworks/libclash-arm64.dylib');
+        File(amd64).copySync('macos/Frameworks/libclash-amd64.dylib');
+        print('Installed: macos/Frameworks/libclash-arm64.dylib');
+        print('Installed: macos/Frameworks/libclash-amd64.dylib');
+      } else {
+        // Only one arch available
+        for (final arch in ['arm64', 'amd64']) {
+          final src = '$outputDir/macos-$arch/libclash.dylib';
+          final dst = 'macos/Frameworks/libclash-$arch.dylib';
+          if (File(src).existsSync()) {
+            File(dst).parent.createSync(recursive: true);
+            File(src).copySync(dst);
+            print('Installed: $dst');
+          }
         }
       }
       break;
@@ -400,19 +437,7 @@ Future<void> installLibraries(String platform) async {
         if (File(src).existsSync()) {
           File(dst).parent.createSync(recursive: true);
           File(src).copySync(dst);
-          print('📦 Installed: $dst');
-        }
-      }
-      break;
-
-    case 'linux':
-      for (final arch in ['amd64', 'arm64']) {
-        final src = '$outputDir/linux-$arch/libclash.so';
-        final dst = 'linux/libs/$arch/libclash.so';
-        if (File(src).existsSync()) {
-          File(dst).parent.createSync(recursive: true);
-          File(src).copySync(dst);
-          print('📦 Installed: $dst');
+          print('Installed: $dst');
         }
       }
       break;
@@ -424,26 +449,95 @@ void cleanBuild() {
   final dir = Directory(outputDir);
   if (dir.existsSync()) {
     dir.deleteSync(recursive: true);
-    print('🧹 Cleaned: $outputDir');
+    print('Cleaned: $outputDir');
   } else {
     print('Nothing to clean.');
   }
 
-  // Also clean installed libraries
   final installDirs = [
     'android/app/src/main/jniLibs',
     'ios/Runner/Frameworks',
     'macos/Frameworks',
     'windows/libs',
-    'linux/libs',
   ];
   for (final path in installDirs) {
     final d = Directory(path);
     if (d.existsSync()) {
       d.deleteSync(recursive: true);
-      print('🧹 Cleaned: $path');
+      print('Cleaned: $path');
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Dependency check
+// ---------------------------------------------------------------------------
+
+/// Print what toolchains are available and what's missing.
+void checkDeps() {
+  print('YueLink Build Dependencies\n');
+
+  // Go
+  final goCheck = Process.runSync('go', ['version']);
+  if (goCheck.exitCode == 0) {
+    print('  [OK] Go: ${(goCheck.stdout as String).trim()}');
+  } else {
+    print('  [MISSING] Go — install from https://go.dev/dl/');
+  }
+
+  // Host info
+  print('  [INFO] Host: $hostOS $hostArch');
+
+  // macOS SDK (for macOS build)
+  if (Platform.isMacOS) {
+    final macSdk = Process.runSync('xcrun', ['--sdk', 'macosx', '--show-sdk-path']);
+    if (macSdk.exitCode == 0) {
+      print('  [OK] macOS SDK: ${(macSdk.stdout as String).trim()}');
+    } else {
+      print('  [MISSING] macOS SDK — install Xcode Command Line Tools');
+    }
+
+    // iOS SDK (for iOS build)
+    final iosSdk = Process.runSync('xcrun', ['--sdk', 'iphoneos', '--show-sdk-path']);
+    if (iosSdk.exitCode == 0) {
+      print('  [OK] iOS SDK: ${(iosSdk.stdout as String).trim()}');
+    } else {
+      print('  [MISSING] iOS SDK — install Xcode from App Store');
+    }
+
+    // lipo (for universal binary)
+    final lipo = Process.runSync('which', ['lipo']);
+    if (lipo.exitCode == 0) {
+      print('  [OK] lipo: ${(lipo.stdout as String).trim()}');
+    }
+  }
+
+  // Android NDK
+  try {
+    final ndk = resolveAndroidNdk();
+    print('  [OK] Android NDK: $ndk');
+  } catch (_) {
+    print('  [MISSING] Android NDK — set ANDROID_HOME or install via Android Studio');
+  }
+
+  // MinGW (for Windows cross-compile)
+  if (!Platform.isWindows) {
+    final mingw64 = Process.runSync('which', ['x86_64-w64-mingw32-gcc']);
+    if (mingw64.exitCode == 0) {
+      print('  [OK] MinGW x86_64: ${(mingw64.stdout as String).trim()}');
+    } else {
+      print('  [MISSING] MinGW x86_64 — brew install mingw-w64');
+    }
+  }
+
+  // Core submodule
+  if (Directory('$corePath/mihomo').existsSync()) {
+    print('  [OK] mihomo submodule: core/mihomo/');
+  } else {
+    print('  [MISSING] mihomo submodule — git submodule update --init');
+  }
+
+  print('');
 }
 
 // ---------------------------------------------------------------------------
@@ -460,20 +554,22 @@ Usage:
 Commands:
   build     Build the Go core library
   install   Copy built libraries to Flutter platform directories
+  check     Check build dependencies and toolchains
   clean     Remove all build artifacts
 
 Build options:
-  -p, --platform   android | ios | macos | windows | linux | all
+  -p, --platform   android | ios | macos | windows | all
   -a, --arch       arm64 | amd64 | arm (default: all arches for the platform)
   --debug          Include debug symbols
 
 Examples:
+  dart setup.dart check                           # Check toolchain status
   dart setup.dart build -p android               # Build all Android arches
   dart setup.dart build -p android -a arm64       # Build Android arm64 only
   dart setup.dart build -p ios                    # Build iOS (arm64 only)
   dart setup.dart build -p macos                  # Build macOS (arm64 + amd64)
   dart setup.dart build -p windows -a amd64       # Build Windows x64
-  dart setup.dart install -p android              # Copy .so to jniLibs/
+  dart setup.dart install -p macos                # lipo universal + copy
   dart setup.dart clean                           # Remove all artifacts
 ''');
 }
@@ -512,6 +608,10 @@ Future<void> main(List<String> args) async {
   }
 
   switch (command) {
+    case 'check':
+      checkDeps();
+      break;
+
     case 'build':
       if (platform == null) {
         print('Error: --platform is required for build command.');
@@ -536,7 +636,11 @@ Future<void> main(List<String> args) async {
 
       if (platform == 'all') {
         for (final p in outputNames.keys) {
-          await buildPlatformAll(p, debug: debug);
+          try {
+            await buildPlatformAll(p, debug: debug);
+          } catch (e) {
+            print('\n[WARN] Skipping $p: $e');
+          }
         }
       } else if (arch != null) {
         await buildCore(platform: platform, arch: arch, debug: debug);

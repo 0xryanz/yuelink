@@ -58,16 +58,19 @@ class ProfileService {
     final result = await _downloadConfig(url);
     final id = DateTime.now().millisecondsSinceEpoch.toString();
 
-    // Merge with default template if subscription only has proxies
-    final template = await ConfigTemplate.loadDefaultTemplate();
-    final mergedContent =
-        ConfigTemplate.mergeWithTemplate(template, result.content);
+    // Use subscription config directly if complete (normal case).
+    // Only merge with fallback template if subscription has no groups/rules.
+    String finalContent = result.content;
+    if (!ConfigTemplate.isCompleteConfig(result.content)) {
+      final fallback = await ConfigTemplate.loadFallbackTemplate();
+      finalContent = ConfigTemplate.mergeIfNeeded(fallback, result.content);
+    }
 
     final profile = Profile(
       id: id,
       name: name,
       url: url,
-      configContent: mergedContent,
+      configContent: finalContent,
       lastUpdated: DateTime.now(),
       subInfo: result.subInfo,
       updateInterval: result.subInfo.updateInterval != null
@@ -76,7 +79,7 @@ class ProfileService {
     );
 
     final dir = await _getProfilesDir();
-    await File('${dir.path}/$id.yaml').writeAsString(mergedContent);
+    await File('${dir.path}/$id.yaml').writeAsString(finalContent);
 
     final profiles = await loadProfiles();
     profiles.add(profile);
@@ -89,18 +92,21 @@ class ProfileService {
   static Future<Profile> updateProfile(Profile profile) async {
     final result = await _downloadConfig(profile.url);
 
-    // Merge with default template if subscription only has proxies
-    final template = await ConfigTemplate.loadDefaultTemplate();
-    final mergedContent =
-        ConfigTemplate.mergeWithTemplate(template, result.content);
+    // Use subscription config directly if complete (normal case).
+    // Only merge with fallback template if subscription has no groups/rules.
+    String finalContent = result.content;
+    if (!ConfigTemplate.isCompleteConfig(result.content)) {
+      final fallback = await ConfigTemplate.loadFallbackTemplate();
+      finalContent = ConfigTemplate.mergeIfNeeded(fallback, result.content);
+    }
 
-    profile.configContent = mergedContent;
+    profile.configContent = finalContent;
     profile.lastUpdated = DateTime.now();
     profile.subInfo = result.subInfo;
 
     final dir = await _getProfilesDir();
     await File('${dir.path}/${profile.id}.yaml')
-        .writeAsString(mergedContent);
+        .writeAsString(finalContent);
 
     final profiles = await loadProfiles();
     final idx = profiles.indexWhere((p) => p.id == profile.id);

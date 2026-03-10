@@ -9,6 +9,7 @@ import 'config_template.dart';
 import 'mihomo_api.dart';
 import 'mihomo_stream.dart';
 import 'process_manager.dart';
+import 'vpn_service.dart' as vpn;
 
 /// How mihomo is managed.
 enum CoreMode {
@@ -81,14 +82,47 @@ class CoreManager {
   ///
   /// Automatically processes the config template (replaces `$app_name`,
   /// ensures external-controller, extracts port/secret settings).
+  ///
+  /// On Android, also starts the VpnService to obtain the TUN fd and injects
+  /// it into the config so mihomo uses the OS-managed TUN interface.
   Future<bool> start(String configYaml) async {
     if (_running) return true;
 
-    // Process template variables and ensure API access
+    // iOS: Go core runs inside the PacketTunnel extension process.
+    // Pass the config to the extension and let it manage the core lifecycle.
+    if (Platform.isIOS && !isMockMode) {
+      final processed = ConfigTemplate.process(
+        configYaml,
+        apiPort: _apiPort,
+        secret: _apiSecret,
+      );
+      _apiPort = ConfigTemplate.getApiPort(processed);
+      _apiSecret ??= ConfigTemplate.getSecret(processed);
+      _api = null;
+      _stream = null;
+
+      final ok = await vpn.VpnService.startIosVpn(configYaml: processed);
+      if (ok) _running = true;
+      return ok;
+    }
+
+    // On Android, start VpnService first to get the TUN fd
+    int? tunFd;
+    if (Platform.isAndroid && !isMockMode) {
+      final mixedPort = ConfigTemplate.getMixedPort(configYaml);
+      tunFd = await vpn.VpnService.startAndroidVpn(mixedPort: mixedPort);
+      if (tunFd <= 0) {
+        // VPN permission denied or service failed
+        return false;
+      }
+    }
+
+    // Process template variables, ensure API access, inject TUN fd
     final processed = ConfigTemplate.process(
       configYaml,
       apiPort: _apiPort,
       secret: _apiSecret,
+      tunFd: tunFd,
     );
 
     // Extract actual port/secret from processed config
@@ -126,6 +160,11 @@ class CoreManager {
       case CoreMode.subprocess:
         try { await api.closeAllConnections(); } catch (_) {}
         await ProcessManager.instance.stop();
+    }
+
+    // Tear down OS VPN tunnel on mobile platforms
+    if (Platform.isAndroid || Platform.isIOS) {
+      await vpn.VpnService.stopVpn();
     }
 
     _running = false;

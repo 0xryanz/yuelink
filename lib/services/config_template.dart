@@ -2,14 +2,16 @@ import 'package:flutter/services.dart';
 
 import '../constants.dart';
 
-/// Processes mihomo config templates from subscription providers.
+/// Processes mihomo configs from subscription providers.
 ///
-/// Subscription configs typically use template variables like `$app_name`
-/// which need to be replaced with the actual app name. The `proxies:` section
-/// is usually empty and gets filled by the subscription's proxy list.
+/// Subscriptions (机场) typically deliver a **complete** config with
+/// proxies, proxy-groups, rules, rule-providers, DNS, etc.
+/// The app only needs to:
+/// 1. Replace template variables (`$app_name` -> `YueLink`)
+/// 2. Ensure `external-controller` is set for REST API access
 ///
-/// This class also handles merging external-controller settings so the
-/// REST API is always accessible.
+/// The bundled `default_config.yaml` is a **minimal fallback** only used
+/// when a subscription provides raw proxy nodes without groups/rules.
 class ConfigTemplate {
   ConfigTemplate._();
 
@@ -23,10 +25,13 @@ class ConfigTemplate {
   /// 1. Replaces template variables (`$app_name` -> `YueLink`)
   /// 2. Ensures `external-controller` is set for REST API access
   /// 3. Ensures `external-controller` secret if configured
+  /// 4. On Android: injects `tun.file-descriptor` so mihomo uses the
+  ///    pre-created TUN fd from VpnService instead of creating its own
   static String process(
     String rawConfig, {
     int apiPort = AppConstants.defaultApiPort,
     String? secret,
+    int? tunFd,
   }) {
     var config = rawConfig;
 
@@ -38,7 +43,44 @@ class ConfigTemplate {
     // Ensure external-controller is present
     config = _ensureExternalController(config, apiPort, secret);
 
+    // Inject TUN fd (Android VpnService mode)
+    if (tunFd != null && tunFd > 0) {
+      config = _injectTunFd(config, tunFd);
+    }
+
     return config;
+  }
+
+  /// Inject (or replace) the `tun.file-descriptor` value in a config.
+  ///
+  /// mihomo reads this fd directly instead of opening a new TUN device,
+  /// which is required on Android where VpnService must own the fd.
+  static String _injectTunFd(String config, int fd) {
+    // If a tun: section already exists, update/add file-descriptor inside it
+    if (_hasKey(config, 'tun')) {
+      if (RegExp(r'^\s+file-descriptor:', multiLine: true).hasMatch(config)) {
+        // Replace existing value
+        return config.replaceAllMapped(
+          RegExp(r'^(\s+file-descriptor:\s*).*$', multiLine: true),
+          (m) => '${m.group(1)}$fd',
+        );
+      } else {
+        // Insert after `tun:` line
+        return config.replaceFirstMapped(
+          RegExp(r'^(tun:.*\n)', multiLine: true),
+          (m) => '${m.group(1)}  file-descriptor: $fd\n',
+        );
+      }
+    } else {
+      // Append a minimal tun section
+      return '$config\ntun:\n'
+          '  enable: true\n'
+          '  stack: system\n'
+          '  file-descriptor: $fd\n'
+          '  dns-hijack:\n'
+          '    - any:53\n'
+          '  auto-route: false\n';
+    }
   }
 
   /// Ensure the config has external-controller set.
@@ -94,40 +136,46 @@ class ConfigTemplate {
     return match?.group(1);
   }
 
-  /// Load the built-in default config template.
-  static Future<String> loadDefaultTemplate() async {
+  /// Load the built-in minimal fallback config.
+  ///
+  /// This is NOT the default config for normal usage. Subscriptions provide
+  /// complete configs. This is only for the rare case where a subscription
+  /// returns raw proxy nodes without any proxy-groups or rules.
+  static Future<String> loadFallbackTemplate() async {
     return rootBundle.loadString('assets/default_config.yaml');
   }
 
-  /// Merge subscription proxies into a config template.
+  /// Determine if a subscription config is complete (has groups + rules).
   ///
-  /// The subscription typically provides just `proxies:` with node data.
-  /// This method extracts those proxies and injects them into the default
-  /// template which has the full proxy-groups, rules, DNS config, etc.
+  /// Most subscriptions (机场) deliver complete configs. Only use the
+  /// fallback template when the subscription provides raw proxies only.
+  static bool isCompleteConfig(String config) {
+    return _hasKey(config, 'proxy-groups') && _hasKey(config, 'rules');
+  }
+
+  /// Merge subscription proxy nodes into the fallback template.
   ///
-  /// If the subscription config already has proxy-groups and rules,
-  /// it's used as-is (it's a complete config, not just proxies).
-  static String mergeWithTemplate(String template, String subscriptionConfig) {
-    // If subscription has its own proxy-groups and rules, use it directly
-    if (_hasKey(subscriptionConfig, 'proxy-groups') &&
-        _hasKey(subscriptionConfig, 'rules')) {
-      return subscriptionConfig;
+  /// Only called when the subscription doesn't provide a complete config
+  /// (no proxy-groups, no rules). In the normal case where the subscription
+  /// delivers everything, this method returns the subscription config as-is.
+  static String mergeIfNeeded(String fallbackTemplate, String subConfig) {
+    // Subscription has everything — use it directly (the normal case)
+    if (isCompleteConfig(subConfig)) {
+      return subConfig;
     }
 
-    // Extract proxies section from subscription
-    final proxiesBlock = _extractSection(subscriptionConfig, 'proxies');
-    if (proxiesBlock == null) return subscriptionConfig;
+    // Rare case: subscription only has proxies, merge into fallback
+    final proxiesBlock = _extractSection(subConfig, 'proxies');
+    if (proxiesBlock == null) return subConfig;
 
-    // Replace the empty proxies section in the template
-    if (_hasKey(template, 'proxies')) {
-      final result = template.replaceFirst(
+    if (_hasKey(fallbackTemplate, 'proxies')) {
+      return fallbackTemplate.replaceFirst(
         RegExp(r'^proxies:\s*\n', multiLine: true),
         'proxies:\n$proxiesBlock\n',
       );
-      return result;
     }
 
-    return subscriptionConfig;
+    return subConfig;
   }
 
   /// Extract a YAML section's content (everything until the next top-level key).
@@ -137,9 +185,7 @@ class ConfigTemplate {
     if (match == null) return null;
 
     final start = match.end;
-    // Find the next top-level key (line starting with non-space, non-#)
-    final nextKeyPattern =
-        RegExp(r'^\S', multiLine: true);
+    final nextKeyPattern = RegExp(r'^\S', multiLine: true);
     final nextMatch = nextKeyPattern.firstMatch(config.substring(start));
     final end = nextMatch != null ? start + nextMatch.start : config.length;
 

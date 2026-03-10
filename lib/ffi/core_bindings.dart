@@ -15,16 +15,19 @@ class CoreBindings {
   late final DynamicLibrary _lib = _loadLibrary();
 
   static DynamicLibrary _loadLibrary() {
-    if (Platform.isAndroid || Platform.isLinux) {
+    if (Platform.isAndroid) {
       return DynamicLibrary.open('libclash.so');
     } else if (Platform.isMacOS) {
-      // Try arch-specific name first (from setup.dart install)
-      try {
-        return DynamicLibrary.open('libclash.dylib');
-      } catch (_) {}
-      // Try arch-specific variants
-      final arch = _getMacArch();
-      return DynamicLibrary.open('libclash-$arch.dylib');
+      // Try universal binary first, then arch-specific
+      for (final name in [
+        'libclash.dylib',
+        'libclash-${_getMacArch()}.dylib',
+      ]) {
+        try {
+          return DynamicLibrary.open(name);
+        } catch (_) {}
+      }
+      throw Exception('Cannot load libclash.dylib — run: dart setup.dart build -p macos');
     } else if (Platform.isWindows) {
       return DynamicLibrary.open('libclash.dll');
     } else if (Platform.isIOS) {

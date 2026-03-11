@@ -4,7 +4,7 @@ class AppConstants {
 
   static const appName = 'YueLink';
   static const appBrand = 'Yue.to';
-  static const appVersion = '0.0.5-alpha';
+  static const appVersion = '0.1.26';
   static const packageName = 'com.yueto.yuelink';
 
   static const configFileName = 'yuelink.yaml';

@@ -20,7 +20,7 @@ import '../theme.dart';
 import 'connections_page.dart';
 import 'log_page.dart';
 import 'overwrite_page.dart';
-import 'proxy_provider_page.dart';
+// proxy_provider_page removed from settings
 
 // ── Settings-level providers ─────────────────────────────────────────────────
 
@@ -426,22 +426,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                               )
                           : null,
                     ),
-                    Divider(height: 1, thickness: 0.5, color: dividerColor),
-                    // Proxy providers
-                    YLInfoRow(
-                      label: s.proxyProviderTitle,
-                      trailing: const Icon(Icons.chevron_right, size: 18,
-                          color: YLColors.zinc400),
-                      enabled: status == CoreStatus.running,
-                      onTap: status == CoreStatus.running
-                          ? () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (_) =>
-                                        const ProxyProviderPage()),
-                              )
-                          : null,
-                    ),
+                    // Proxy providers removed — not needed for current release
                   ],
                 ),
               ),

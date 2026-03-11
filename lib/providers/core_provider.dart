@@ -23,6 +23,9 @@ enum CoreStatus { stopped, starting, running, stopping }
 final coreStatusProvider =
     StateProvider<CoreStatus>((ref) => CoreStatus.stopped);
 
+/// Last startup error message — shown on dashboard when core fails to start.
+final coreStartupErrorProvider = StateProvider<String?>((ref) => null);
+
 /// Whether the core is running in mock mode (no native library).
 final isMockModeProvider = Provider<bool>((ref) {
   return CoreManager.instance.isMockMode;
@@ -65,6 +68,7 @@ class CoreActions {
   Future<bool> start(String configYaml) async {
     debugPrint('[CoreActions] start() called, config length: ${configYaml.length}');
     ref.read(coreStatusProvider.notifier).state = CoreStatus.starting;
+    ref.read(coreStartupErrorProvider.notifier).state = null;
 
     try {
       final manager = CoreManager.instance;
@@ -76,6 +80,7 @@ class CoreActions {
         if (!hasPerm) {
           debugPrint('[CoreActions] VPN permission denied');
           ref.read(coreStatusProvider.notifier).state = CoreStatus.stopped;
+          ref.read(coreStartupErrorProvider.notifier).state = S.current.errVpnPermission;
           AppNotifier.error(S.current.errVpnPermission);
           return false;
         }
@@ -87,6 +92,7 @@ class CoreActions {
       debugPrint('[CoreActions] CoreManager.start() returned: $ok');
       if (!ok) {
         ref.read(coreStatusProvider.notifier).state = CoreStatus.stopped;
+        ref.read(coreStartupErrorProvider.notifier).state = S.current.errCoreStartFailed;
         AppNotifier.error(S.current.errCoreStartFailed);
         return false;
       }
@@ -140,6 +146,7 @@ class CoreActions {
         msg = msg.split('\n').first; // 保持提示简短
       }
       
+      ref.read(coreStartupErrorProvider.notifier).state = msg;
       AppNotifier.error(S.current.errStartFailed(msg));
       return false;
     }

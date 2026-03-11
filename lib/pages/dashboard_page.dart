@@ -520,6 +520,43 @@ class _HeroCard extends ConsumerWidget {
               ],
             ),
           ],
+
+          // Startup error banner (shown when core failed to start)
+          if (!isRunning && !isTransitioning) ...[
+            Consumer(builder: (context, ref, _) {
+              final error = ref.watch(coreStartupErrorProvider);
+              if (error == null) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(YLRadius.md),
+                    border: Border.all(
+                        color: Colors.red.withValues(alpha: 0.2)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, size: 16,
+                          color: Colors.red),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          error,
+                          style: YLText.caption.copyWith(
+                              color: Colors.red.shade700),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ],
         ],
       ),
     );

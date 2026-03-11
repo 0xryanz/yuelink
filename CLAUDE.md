@@ -37,7 +37,7 @@ Flutter UI (Dart, Riverpod) → CoreController (dart:ffi) → hub.go (CGO //expo
 
 ### Key layers
 
-- **`core/`** — Go wrapper around mihomo. Exports C functions via `//export` (CGO). Compiled to `.so`/`.dylib`/`.dll` (dynamic) or `.a` (static, iOS only) via `setup.dart`. Android builds use `-tags cmfa` to enable mihomo's Android-specific features.
+- **`core/`** — Go wrapper around mihomo. Exports C functions via `//export` (CGO). Compiled to `.so`/`.dylib`/`.dll` (dynamic) or `.a` (static, iOS only) via `setup.dart`. Android builds use `-tags with_gvisor` (required for TUN fd/file-descriptor mode — without it mihomo fails with "gVisor is not included in this build").
 - **`lib/ffi/`** — Dart FFI bindings. `CoreBindings` has raw FFI (8 lifecycle symbols: InitCore, StartCore, StopCore, Shutdown, IsRunning, ValidateConfig, UpdateConfig, FreeCString). `CoreController` is the high-level wrapper; data methods (getProxies, changeProxy, testDelay, getTraffic) always delegate to `CoreMock` — they exist only for mock mode UI development.
 - **`lib/providers/`** — Riverpod state management. `core_provider.dart` (lifecycle, traffic, heartbeat), `proxy_provider.dart` (nodes, groups, delay tests), `profile_provider.dart` (subscriptions), `proxy_provider_provider.dart` (remote proxy providers).
 - **`lib/pages/`** — 4-tab layout: Dashboard (connect/traffic/status), Nodes (proxy groups + routing mode), Subscriptions (profiles), Settings. Settings sub-pages: connections, logs, overwrite, proxy providers.
@@ -74,6 +74,8 @@ Flutter UI (Dart, Riverpod) → CoreController (dart:ffi) → hub.go (CGO //expo
 - **Never use `Isolate.run()` for FFI calls**. Spawning a new isolate to call CGO functions causes hangs on Android/macOS (new isolate re-opens `DynamicLibrary`, interacts badly with Go runtime). FFI calls (`InitCore` ~1s, `StartCore` ~2s) are made synchronously on the main isolate — well within ANR limits. Same rule applies to pure Dart config processing (`OverwriteService.apply`, `ConfigTemplate.process`) — these are <10ms and don't need isolate isolation.
 - `CoreManager` handles VPN internally for each platform — `CoreActions` must NOT call `VpnService` directly.
 - Android VPN permission is always requested (no connectionMode guard) because Android always needs VpnService.
+- **Android notification permission**: `POST_NOTIFICATIONS` is requested at runtime in `MainActivity.onStart()` on Android 13+ (API 33+). Without it the foreground VPN notification is silently suppressed, and the service may be killed. The permission is declared in `AndroidManifest.xml` and requested via `checkSelfPermission`/`requestPermissions` (no AndroidX dependency needed).
+- **Android Secure Folder (Samsung)**: Apps installed inside Samsung Secure Folder run as user 95 (not user 0). `VpnService.establish()` always returns null for non-primary users — TUN fd will be -1 and VPN will never work. Only one VPN can be active system-wide; a Secure Folder instance running its VPN blocks the main-space instance. Verify with `adb shell dumpsys package com.yueto.yuelink | grep dataDir` — must show `/data/user/0/`.
 - **Android TUN config**: `ConfigTemplate._injectTunFd()` replaces the entire `tun:` section with Android-safe settings: `stack: gvisor`, `auto-route: false`, `auto-detect-interface: false` (netlink banned on Android 14+), `find-process-mode: off`. Never set `auto-route: true` when using VpnService fd.
 - **iOS TUN config**: `PacketTunnelProvider.injectTunConfig()` uses `stack: gvisor`. Also forces `find-process-mode: off` and injects full DNS fallback config.
 - Connection mode UI is hidden on mobile — only shown on desktop (`isDesktop = Platform.isMacOS || Platform.isWindows`).
@@ -135,9 +137,10 @@ Groups are ordered by the `GLOBAL` group's `all` field from the mihomo API (`/pr
 
 ## Git & CI
 
-- **Branches**: `master` (main/release), `dev` (development). CI triggers on push to `main` and `dev`, and on version tags (`v*`).
-- **Release flow**: merge to `dev` first → tag from `dev` (`git tag v0.x.x`) → push tag. Never tag before merging. Release job only runs on `v*` tags; dev push skipping "Create Release" is normal.
-- **CI pipeline** (`.github/workflows/build.yml`): analyze+test → build Go cores (per-platform matrix) → Flutter builds (download core artifacts → install → build) → release (on `v*` tags).
+- **Branches**: `master` (main/release), `dev` (development). CI triggers on push to `main` and `dev`, and on tags.
+- **Tag strategy**: `alpha.N` tags trigger full builds (APK/IPA/DMG/EXE as artifacts, no GitHub Release) for testing. `v*` tags additionally create a GitHub Release. Use `alpha.*` during development, `v1.0.0` etc. for production releases.
+- **Release flow**: commit to `dev` → `git tag alpha.N && git push origin alpha.N` (test build) or `git tag vX.Y.Z && git push origin vX.Y.Z` (release). Never tag before pushing the commit.
+- **CI pipeline** (`.github/workflows/build.yml`): analyze+test → build Go cores (per-platform matrix) → Flutter builds (download core artifacts → install → build) → release (on `v*` tags only).
 - **Release artifacts**: `YueLink-Windows-Setup.exe` (Inno Setup), `YueLink-macOS.dmg` (create-dmg, universal binary), `YueLink-Android.apk` (fat universal), `YueLink-iOS.ipa` (no-codesign).
 - **Analyze in CI** uses `--no-fatal-infos --no-fatal-warnings` — only errors fail the build.
 - Submodules: `core/mihomo` is a git submodule. Clone with `--recursive` or run `git submodule update --init --recursive`.

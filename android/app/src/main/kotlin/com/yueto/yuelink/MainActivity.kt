@@ -8,6 +8,7 @@ import android.content.ServiceConnection
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.VpnService
+import android.os.Build
 import android.os.IBinder
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -18,6 +19,7 @@ class MainActivity : FlutterActivity() {
         private const val VPN_CHANNEL  = "com.yueto.yuelink/vpn"
         private const val APPS_CHANNEL = "com.yueto.yuelink/apps"
         private const val VPN_REQUEST_CODE = 1001
+        private const val NOTIFICATION_REQUEST_CODE = 1002
     }
 
     private var vpnPermissionResult: MethodChannel.Result? = null
@@ -37,6 +39,18 @@ class MainActivity : FlutterActivity() {
         override fun onServiceDisconnected(name: ComponentName?) {
             vpnService = null
             serviceBound = false
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Android 13+ requires runtime POST_NOTIFICATIONS permission for foreground
+        // service notifications (including the VPN ongoing notification).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val perm = android.Manifest.permission.POST_NOTIFICATIONS
+            if (checkSelfPermission(perm) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(perm), NOTIFICATION_REQUEST_CODE)
+            }
         }
     }
 

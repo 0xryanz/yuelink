@@ -90,7 +90,9 @@ class CoreController {
       _mock.init(homeDir);
       return null;
     }
-    return Isolate.run(() => _ffiInit(homeDir));
+    return Isolate.run(() => _ffiInit(homeDir))
+        .timeout(const Duration(seconds: 30),
+            onTimeout: () => 'InitCore timed out after 30s');
   }
 
   /// Start the core. Returns null on success, error message on failure.
@@ -118,7 +120,9 @@ class CoreController {
       _mock.start(configYaml);
       return null;
     }
-    return Isolate.run(() => _ffiStart(configYaml));
+    return Isolate.run(() => _ffiStart(configYaml))
+        .timeout(const Duration(seconds: 30),
+            onTimeout: () => 'StartCore timed out after 30s');
   }
 
   void stop() {

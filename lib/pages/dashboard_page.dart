@@ -156,71 +156,69 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
           // ── Content ───────────────────────────────────────────────
           Expanded(
-            child: isTransitioning
-                ? const Center(child: CircularProgressIndicator())
-                : SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(24, isMock ? 24 : topPadding + 24, 24, 24),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 720),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // ── Layer 1: Hero Card ──────────────
-                            _HeroCard(
-                              status: status,
-                              uptimeText: _uptimeText,
-                              onToggle: () => _toggle(context, ref),
-                            ),
-
-                            // ── Layer 2: Overview (disconnect only) ──
-                            if (!isRunning) ...[
-                              const SizedBox(height: 16),
-                              const _OverviewCard(),
-                            ],
-
-                            // ── Layer 3: IP + Chart ───────────
-                            if (isRunning) ...[
-                              const SizedBox(height: 16),
-                              if (isWide)
-                                // Desktop: side by side
-                                IntrinsicHeight(
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                                    children: [
-                                      Flexible(
-                                        flex: 1,
-                                        child: _ExitIpCard(
-                                          ip: _ip,
-                                          country: _country,
-                                          isLoading: _ipLoading,
-                                          isQueried: _ipQueried,
-                                          onQuery: _queryIp,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      const Flexible(flex: 2, child: _ChartCard()),
-                                    ],
-                                  ),
-                                )
-                              else ...[
-                                // Mobile: stacked
-                                _ExitIpCard(
-                                  ip: _ip,
-                                  country: _country,
-                                  isLoading: _ipLoading,
-                                  isQueried: _ipQueried,
-                                  onQuery: _queryIp,
-                                ),
-                                const SizedBox(height: 12),
-                                const _ChartCard(),
-                              ],
-                            ],
-                          ],
-                        ),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(24, isMock ? 24 : topPadding + 24, 24, 24),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // ── Layer 1: Hero Card ──────────────
+                      _HeroCard(
+                        status: status,
+                        uptimeText: _uptimeText,
+                        onToggle: () => _toggle(context, ref),
                       ),
-                    ),
+
+                      // ── Layer 2: Overview (disconnect only) ──
+                      if (!isRunning && !isTransitioning) ...[
+                        const SizedBox(height: 16),
+                        const _OverviewCard(),
+                      ],
+
+                      // ── Layer 3: IP + Chart ───────────
+                      if (isRunning) ...[
+                        const SizedBox(height: 16),
+                        if (isWide)
+                          // Desktop: side by side
+                          IntrinsicHeight(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Flexible(
+                                  flex: 1,
+                                  child: _ExitIpCard(
+                                    ip: _ip,
+                                    country: _country,
+                                    isLoading: _ipLoading,
+                                    isQueried: _ipQueried,
+                                    onQuery: _queryIp,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                const Flexible(flex: 2, child: _ChartCard()),
+                              ],
+                            ),
+                          )
+                        else ...[
+                          // Mobile: stacked
+                          _ExitIpCard(
+                            ip: _ip,
+                            country: _country,
+                            isLoading: _ipLoading,
+                            isQueried: _ipQueried,
+                            onQuery: _queryIp,
+                          ),
+                          const SizedBox(height: 12),
+                          const _ChartCard(),
+                        ],
+                      ],
+                    ],
                   ),
+                ),
+              ),
+            ),
           ),
         ],
       ),

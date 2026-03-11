@@ -538,9 +538,11 @@ class _MainShellState extends ConsumerState<MainShell> {
         body: Row(
           children: [
             // ── Sidebar ────────────────────────────────────────
-            _Sidebar(
-              currentIndex: _currentIndex,
-              onSelect: (i) => setState(() => _currentIndex = i),
+            RepaintBoundary(
+              child: _Sidebar(
+                currentIndex: _currentIndex,
+                onSelect: (i) => setState(() => _currentIndex = i),
+              ),
             ),
 
             // ── Sidebar / content divider ──────────────────────
@@ -553,9 +555,11 @@ class _MainShellState extends ConsumerState<MainShell> {
 
             // ── Content ────────────────────────────────────────
             Expanded(
-              child: IndexedStack(
-                index: _currentIndex,
-                children: _pages,
+              child: RepaintBoundary(
+                child: IndexedStack(
+                  index: _currentIndex,
+                  children: _pages,
+                ),
               ),
             ),
           ],
@@ -710,30 +714,29 @@ class _SidebarItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    final activeColor = isDark ? YLColors.zinc800 : Colors.white;
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.06);
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Material(
-        color: isActive
-            ? (isDark ? YLColors.zinc800 : Colors.white)
-            : Colors.transparent,
+        color: isActive ? activeColor : Colors.transparent,
         borderRadius: BorderRadius.circular(YLRadius.lg),
+        shadowColor: Colors.black.withValues(alpha: 0.05),
+        elevation: isActive && !isDark ? 1 : 0,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(YLRadius.lg),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(YLRadius.lg),
-              border: isActive
-                  ? Border.all(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.08)
-                          : Colors.black.withValues(alpha: 0.06),
-                      width: 0.5,
-                    )
-                  : null,
-              boxShadow: isActive ? YLShadow.sm(context) : null,
-            ),
+            decoration: isActive
+                ? BoxDecoration(
+                    borderRadius: BorderRadius.circular(YLRadius.lg),
+                    border: Border.all(color: borderColor, width: 0.5),
+                  )
+                : null,
             child: Row(
               children: [
                 Icon(icon,

@@ -102,9 +102,19 @@ func StartCore(configStr *C.char) *C.char {
 	// Log key config sections for diagnostics
 	logConfigDiag(configYaml)
 
-	// Parse and apply config via hub.Parse (starts everything)
+	// Parse and apply config via hub.Parse (starts everything).
+	// If parsing fails (bad YAML, missing geo files, invalid rules, etc.),
+	// fall back to mihomo's default config so the core always starts.
+	// This matches FlClash's approach — the core must be running for the
+	// REST API and VPN tunnel to function, even with a degraded config.
 	if err := hub.Parse([]byte(configYaml)); err != nil {
-		return C.CString(fmt.Sprintf("parse config: %v", err))
+		log.Warnln("[StartCore] config parse failed: %v — falling back to default config", err)
+		defaultCfg, defaultErr := config.ParseRawConfig(config.DefaultRawConfig())
+		if defaultErr != nil {
+			return C.CString(fmt.Sprintf("parse config: %v (default fallback also failed: %v)", err, defaultErr))
+		}
+		hub.ApplyConfig(defaultCfg)
+		log.Warnln("[StartCore] running with default config (no proxies/rules)")
 	}
 
 	// Post-startup diagnostics

@@ -13,6 +13,7 @@ String? _ffiInit(String homeDir) {
   final ptr = homeDir.toNativeUtf8();
   try {
     final resultPtr = bindings.initCore(ptr);
+    if (resultPtr.address == 0) return null; // NULL => success
     final result = resultPtr.toDartString();
     bindings.freeCString(resultPtr);
     return result.isEmpty ? null : result;
@@ -26,6 +27,7 @@ String? _ffiStart(String configYaml) {
   final ptr = configYaml.toNativeUtf8();
   try {
     final resultPtr = bindings.startCore(ptr);
+    if (resultPtr.address == 0) return null; // NULL => success
     final result = resultPtr.toDartString();
     bindings.freeCString(resultPtr);
     return result.isEmpty ? null : result;
@@ -72,6 +74,7 @@ class CoreController {
     final ptr = homeDir.toNativeUtf8();
     try {
       final resultPtr = _bindings!.initCore(ptr);
+      if (resultPtr.address == 0) return null; // NULL => success
       final result = resultPtr.toDartString();
       _bindings!.freeCString(resultPtr);
       return result.isEmpty ? null : result;
@@ -99,6 +102,7 @@ class CoreController {
     final ptr = configYaml.toNativeUtf8();
     try {
       final resultPtr = _bindings!.startCore(ptr);
+      if (resultPtr.address == 0) return null; // NULL => success
       final result = resultPtr.toDartString();
       _bindings!.freeCString(resultPtr);
       return result.isEmpty ? null : result;
@@ -155,6 +159,7 @@ class CoreController {
     final ptr = configYaml.toNativeUtf8();
     try {
       final resultPtr = _bindings!.updateConfig(ptr);
+      if (resultPtr.address == 0) return null; // NULL => success
       final result = resultPtr.toDartString();
       _bindings!.freeCString(resultPtr);
       return result.isEmpty ? null : result;

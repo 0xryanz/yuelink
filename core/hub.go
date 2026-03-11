@@ -35,6 +35,13 @@ import (
 //
 //export InitCore
 func InitCore(homeDir *C.char) *C.char {
+	// Recover from Go panics — a panic in CGO kills the entire Flutter process.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorln("[InitCore] PANIC recovered: %v", r)
+		}
+	}()
+
 	state.lock()
 	defer state.unlock()
 

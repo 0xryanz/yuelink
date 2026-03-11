@@ -97,8 +97,8 @@ class ConfigTemplate {
   /// - `file-descriptor: <fd>` — use VpnService's TUN device
   /// - `inet4-address: [172.19.0.1/30]` — **required** by sing-tun stack init,
   ///   must match VpnService builder's `addAddress("172.19.0.1", 30)`
-  /// - `stack: mixed` — gvisor for UDP + system for TCP; `system` alone fails
-  ///   with "missing interface address" if inet4-address parsing has issues
+  /// - `stack: gvisor` — pure userspace TCP/IP stack; `mixed`/`system` stacks
+  ///   use kernel TCP which can fail with VPN-provided fds on Android
   /// - `auto-route: false` — VpnService handles routing (netlink banned on Android 14+)
   /// - `auto-detect-interface: false` — avoid NetworkUpdateMonitor (netlink)
   /// - `dns-hijack: [any:53]` — intercept DNS for fake-ip/redir
@@ -117,12 +117,17 @@ class ConfigTemplate {
     }
 
     // Append clean Android TUN section
-    // inet4-address MUST match VpnService's addAddress() — without it,
-    // sing-tun's system/mixed stack fails with "missing interface address"
-    // and mihomo silently skips TUN (only logs the error, doesn't fail startup).
+    // - gvisor stack: pure userspace TCP/IP — doesn't depend on kernel features.
+    //   mixed/system stacks use kernel TCP which fails with VPN-provided fds.
+    // - inet4-address MUST match VpnService's addAddress("172.19.0.1", 30)
+    // - auto-route: false — VpnService handles routing
+    // - auto-detect-interface: false — monitor_android.go uses netlink which
+    //   is banned on Android 14+ (API 34). Not needed anyway because
+    //   addDisallowedApplication(packageName) excludes our UID from VPN,
+    //   so mihomo's outbound connections use the physical interface directly.
     return '$config\ntun:\n'
         '  enable: true\n'
-        '  stack: mixed\n'
+        '  stack: gvisor\n'
         '  file-descriptor: $fd\n'
         '  inet4-address:\n'
         '    - 172.19.0.1/30\n'

@@ -258,7 +258,30 @@ class CoreManager {
       throw Exception('mihomo API not available after startup');
     }
     _saveLastWorkingConfig(configYaml);
+
+    // Post-startup DNS diagnostic (non-blocking)
+    _runDnsDiagnostic();
+
     return true;
+  }
+
+  /// Test DNS resolution after startup to verify the resolver works.
+  /// Non-blocking — logs result but doesn't affect startup.
+  Future<void> _runDnsDiagnostic() async {
+    try {
+      final result = await api.queryDns('google.com');
+      final status = result['Status'];
+      final answers = result['Answer'] as List?;
+      if (status == 0 && answers != null && answers.isNotEmpty) {
+        debugPrint('[CoreManager] DNS diagnostic OK: google.com → '
+            '${answers.map((a) => a['data']).join(', ')}');
+      } else {
+        debugPrint('[CoreManager] DNS diagnostic FAILED: status=$status, '
+            'answers=${answers?.length ?? 0}');
+      }
+    } catch (e) {
+      debugPrint('[CoreManager] DNS diagnostic ERROR: $e');
+    }
   }
 
   // ------------------------------------------------------------------

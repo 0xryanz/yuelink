@@ -145,9 +145,35 @@ class ConfigTemplate {
   }
 
   /// Ensure DNS is enabled with comprehensive fake-ip + fallback config.
-  /// If the subscription config already has a dns section, leave it alone.
+  /// If the subscription config already has a dns section, ensure enable: true.
   static String _ensureDns(String config) {
-    if (_hasKey(config, 'dns')) return config;
+    if (_hasKey(config, 'dns')) {
+      // Subscription has DNS section — ensure enable: true is set.
+      // Some subscriptions omit 'enable' or set it to false, which
+      // disables mihomo's DNS resolver entirely. Without the resolver,
+      // dns-hijack captures DNS queries but has nowhere to send them.
+      //
+      // Target only `enable:` that immediately follows `dns:` line
+      // (within the first few lines of the dns section).
+      final dnsEnableFalse = RegExp(
+        r'^(dns:\s*\n(?:\s+.*\n)*?\s+enable:\s*)false',
+        multiLine: true,
+      );
+      final dnsEnableTrue = RegExp(
+        r'^dns:\s*\n(?:\s+.*\n)*?\s+enable:\s*true',
+        multiLine: true,
+      );
+      if (dnsEnableFalse.hasMatch(config)) {
+        config = config.replaceFirst(dnsEnableFalse, r'${1}true');
+      } else if (!dnsEnableTrue.hasMatch(config)) {
+        // DNS section exists but has no 'enable' key — inject it
+        config = config.replaceFirst(
+          RegExp(r'^(dns:[ \t]*)$', multiLine: true),
+          r'$1' '\n  enable: true',
+        );
+      }
+      return config;
+    }
     return '$config\ndns:\n'
         '  enable: true\n'
         '  prefer-h3: true\n'

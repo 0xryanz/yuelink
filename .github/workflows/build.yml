@@ -69,6 +69,20 @@ jobs:
           channel: stable
           cache: true
 
+      # ── Apply patches to mihomo submodule ──────────────────────────────────
+      - name: Apply mihomo patches
+        shell: bash
+        run: |
+          if [ -d core/patches ] && ls core/patches/*.patch 1>/dev/null 2>&1; then
+            echo "Applying patches to core/mihomo..."
+            cd core/mihomo
+            for p in ../patches/*.patch; do
+              echo "  Applying $p"
+              git apply "$p"
+            done
+            cd ../..
+          fi
+
       # ── Android: NDK ──────────────────────────────────────────────────────
       - name: Setup Android NDK
         if: matrix.platform == 'android'

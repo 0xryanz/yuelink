@@ -410,20 +410,23 @@ final coreHeartbeatProvider = Provider<void>((ref) {
   if (manager.isMockMode) return; // mock never crashes
 
   var failures = 0;
-  final timer = Timer.periodic(const Duration(seconds: 5), (_) async {
-    final ok = await manager.api.isAvailable();
-    if (ok) {
+  final timer = Timer.periodic(const Duration(seconds: 10), (_) async {
+    // Check both FFI isRunning AND HTTP API
+    final ffiRunning = CoreController.instance.isRunning;
+    final apiOk = await manager.api.isAvailable();
+
+    if (apiOk && ffiRunning) {
       failures = 0;
     } else {
       failures++;
-      debugPrint('[Heartbeat] API failure #$failures');
-      if (failures >= 5) {
-        debugPrint('[Heartbeat] core appears dead, marking as stopped');
+      debugPrint('[Heartbeat] failure #$failures — '
+          'ffi.isRunning=$ffiRunning, api=$apiOk');
+      if (failures >= 3) {
+        debugPrint('[Heartbeat] core dead, cleaning up');
         ref.read(coreStatusProvider.notifier).state = CoreStatus.stopped;
         ref.read(trafficProvider.notifier).state = const Traffic();
-        // Clean up: stop VPN service if core is dead
         manager.stop().catchError((_) {});
-        failures = 0; // prevent repeated stop calls
+        failures = 0;
       }
     }
   });

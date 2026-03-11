@@ -450,7 +450,7 @@ final trafficStreamProvider = Provider<void>((ref) {
       ref.read(trafficProvider.notifier).state = traffic;
       final history = ref.read(trafficHistoryProvider);
       history.add(t.up, t.down);
-      ref.read(trafficHistoryProvider.notifier).state = history;
+      ref.read(trafficHistoryProvider.notifier).state = history.copy();
       ref.read(dailyTrafficProvider.notifier).add(t.up, t.down);
     });
     ref.onDispose(() => timer.cancel());
@@ -460,7 +460,7 @@ final trafficStreamProvider = Provider<void>((ref) {
           Traffic(up: t.up, down: t.down);
       final history = ref.read(trafficHistoryProvider);
       history.add(t.up, t.down);
-      ref.read(trafficHistoryProvider.notifier).state = history;
+      ref.read(trafficHistoryProvider.notifier).state = history.copy();
       ref.read(dailyTrafficProvider.notifier).add(t.up, t.down);
     });
     ref.onDispose(() => sub.cancel());

@@ -42,6 +42,20 @@ class TrafficHistory {
     return all[idx];
   }
 
+  /// Returns a new [TrafficHistory] with the same ring-buffer state.
+  /// Required because Riverpod's StateProvider uses identical() to detect
+  /// changes — mutating in place and setting the same reference never notifies.
+  TrafficHistory copy() {
+    final c = TrafficHistory();
+    for (var i = 0; i < capacity; i++) {
+      c._up[i] = _up[i];
+      c._down[i] = _down[i];
+    }
+    c._index = _index;
+    c._full = _full;
+    return c;
+  }
+
   List<double> _ordered(List<double> buf) {
     if (!_full) return buf.sublist(0, _index);
     final result = <double>[];

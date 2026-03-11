@@ -125,16 +125,20 @@ class CoreActions {
     }
   }
 
-  /// Apply saved routing mode to the running core.
-  /// Errors are logged but never thrown — routing mode is not critical.
+  /// Apply saved routing mode to the running core, then read back the actual
+  /// mode and sync to [routingModeProvider] in case the config overrode it.
   void _applyRoutingMode(CoreManager manager) async {
-    final routingMode = ref.read(routingModeProvider);
+    final savedMode = ref.read(routingModeProvider);
     try {
-      if (routingMode != 'rule') {
-        await manager.api.setRoutingMode(routingMode);
+      if (savedMode != 'rule') {
+        await manager.api.setRoutingMode(savedMode);
       }
       final actual = await manager.api.getRoutingMode();
-      debugPrint('[CoreActions] routingMode: saved=$routingMode, actual=$actual');
+      debugPrint('[CoreActions] routingMode: saved=$savedMode, actual=$actual');
+      // Sync UI to what mihomo is actually running
+      if (actual != savedMode) {
+        ref.read(routingModeProvider.notifier).state = actual;
+      }
     } catch (e) {
       debugPrint('[CoreActions] setRoutingMode error: $e');
     }

@@ -30,6 +30,8 @@ class _NodesPageState extends ConsumerState<NodesPage> {
     final s = S.of(context);
     final status = ref.watch(coreStatusProvider);
     final groups = ref.watch(proxyGroupsProvider);
+    final routingMode = ref.watch(routingModeProvider);
+    final globalGroup = ref.watch(globalGroupProvider);
 
     if (status != CoreStatus.running) {
       return Scaffold(
@@ -51,18 +53,113 @@ class _NodesPageState extends ConsumerState<NodesPage> {
       );
     }
 
-    if (groups.isEmpty) {
+    if (groups.isEmpty && globalGroup == null) {
       return const Scaffold(
         body: Center(child: CupertinoActivityIndicator(radius: 14)),
       );
     }
 
+    // ── Direct mode: no proxy group selection needed ──────────────────
+    if (routingMode == 'direct') {
+      return Scaffold(
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: CustomScrollView(
+              physics: const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics()),
+              slivers: [
+                SliverAppBar(
+                  backgroundColor: Colors.transparent,
+                  surfaceTintColor: Colors.transparent,
+                  pinned: true,
+                  actions: [
+                    _CompactRoutingMode(),
+                    const SizedBox(width: YLSpacing.sm),
+                  ],
+                ),
+                SliverFillRemaining(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.link_rounded,
+                          size: 56, color: YLColors.zinc300),
+                      const SizedBox(height: YLSpacing.lg),
+                      Text(s.routeModeDirect,
+                          style: YLText.titleLarge),
+                      const SizedBox(height: YLSpacing.sm),
+                      Text(
+                        s.directModeDesc,
+                        style:
+                            YLText.body.copyWith(color: YLColors.zinc500),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // ── Global mode: show only the GLOBAL group ───────────────────────
+    if (routingMode == 'global') {
+      return Scaffold(
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: CustomScrollView(
+              physics: const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics()),
+              slivers: [
+                SliverAppBar(
+                  backgroundColor: Colors.transparent,
+                  surfaceTintColor: Colors.transparent,
+                  pinned: true,
+                  actions: [
+                    _CompactRoutingMode(),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      icon: const Icon(Icons.refresh_rounded),
+                      onPressed: () =>
+                          ref.read(proxyGroupsProvider.notifier).refresh(),
+                    ),
+                    const SizedBox(width: YLSpacing.sm),
+                  ],
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(
+                      YLSpacing.xl, YLSpacing.sm, YLSpacing.xl, 0),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      _ModeBanner(
+                        icon: Icons.public_rounded,
+                        text: s.globalModeDesc,
+                      ),
+                      const SizedBox(height: YLSpacing.lg),
+                      if (globalGroup != null)
+                        _GroupCard(group: globalGroup),
+                    ]),
+                  ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 100)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // ── Rule mode: show all groups (default) ──────────────────────────
     return Scaffold(
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
           child: CustomScrollView(
-            physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+            physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics()),
             slivers: [
               SliverAppBar(
                 backgroundColor: Colors.transparent,
@@ -73,14 +170,16 @@ class _NodesPageState extends ConsumerState<NodesPage> {
                   const SizedBox(width: 4),
                   IconButton(
                     icon: const Icon(Icons.refresh_rounded),
-                    onPressed: () => ref.read(proxyGroupsProvider.notifier).refresh(),
+                    onPressed: () =>
+                        ref.read(proxyGroupsProvider.notifier).refresh(),
                   ),
                   const SizedBox(width: YLSpacing.sm),
                 ],
               ),
 
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(YLSpacing.xl, YLSpacing.sm, YLSpacing.xl, 0),
+                padding: const EdgeInsets.fromLTRB(
+                    YLSpacing.xl, YLSpacing.sm, YLSpacing.xl, 0),
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
@@ -98,6 +197,39 @@ class _NodesPageState extends ConsumerState<NodesPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── Mode banner ────────────────────────────────────────────────────────────
+
+class _ModeBanner extends StatelessWidget {
+  const _ModeBanner({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: YLSpacing.lg, vertical: YLSpacing.md),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.06)
+            : Colors.black.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(YLRadius.lg),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: YLColors.zinc500),
+          const SizedBox(width: YLSpacing.sm),
+          Expanded(
+            child: Text(text,
+                style: YLText.caption.copyWith(color: YLColors.zinc500)),
+          ),
+        ],
       ),
     );
   }
@@ -325,14 +457,21 @@ class _CompactRoutingMode extends ConsumerWidget {
                     try {
                       final ok = await CoreManager.instance.api.setRoutingMode(mode);
                       if (ok) {
-                        // Verify mode actually changed
+                        // Refresh proxy groups to reflect new mode
+                        ref.read(proxyGroupsProvider.notifier).refresh();
+                        // Verify and show feedback
                         final actual = await CoreManager.instance.api.getRoutingMode();
                         debugPrint('[RoutingMode] set=$mode, actual=$actual');
                         if (actual != mode) {
                           AppNotifier.warning('${s.routeModeRule}: $actual ≠ $mode');
+                        } else {
+                          final modeLabel = mode == 'global'
+                              ? s.routeModeGlobal
+                              : mode == 'direct'
+                                  ? s.routeModeDirect
+                                  : s.routeModeRule;
+                          AppNotifier.success('${s.modeSwitched}: $modeLabel');
                         }
-                        // Refresh proxy groups to reflect new mode
-                        ref.read(proxyGroupsProvider.notifier).refresh();
                       } else {
                         AppNotifier.error('切换模式失败');
                         // Revert UI state

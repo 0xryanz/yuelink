@@ -85,6 +85,13 @@ class S {
   String get routeModeRule => _e ? 'Rule' : '规则';
   String get routeModeGlobal => _e ? 'Global' : '全局';
   String get routeModeDirect => _e ? 'Direct' : '直连';
+  String get modeSwitched => _e ? 'Mode switched' : '模式已切换';
+  String get directModeDesc => _e
+      ? 'All traffic connects directly without proxy'
+      : '所有流量直接连接，不经过代理节点';
+  String get globalModeDesc => _e
+      ? 'All traffic routes through the selected node below'
+      : '所有流量通过下方选择的节点转发';
 
   // ── Traffic ───────────────────────────────────────────────────────
   String get trafficUpload => _e ? 'Upload' : '上传';

@@ -16,11 +16,17 @@ final testUrlProvider = StateProvider<String>(
 
 final proxyGroupsProvider =
     StateNotifierProvider<ProxyGroupsNotifier, List<ProxyGroup>>(
-  (ref) => ProxyGroupsNotifier(),
+  (ref) => ProxyGroupsNotifier(ref),
 );
 
+/// The mihomo GLOBAL proxy group (used in global routing mode).
+/// null until the first refresh completes.
+final globalGroupProvider = StateProvider<ProxyGroup?>((ref) => null);
+
 class ProxyGroupsNotifier extends StateNotifier<List<ProxyGroup>> {
-  ProxyGroupsNotifier() : super([]);
+  ProxyGroupsNotifier(this._ref) : super([]);
+  final Ref _ref;
+
 
   /// Refresh proxy data from the running mihomo instance.
   ///
@@ -53,6 +59,23 @@ class ProxyGroupsNotifier extends StateNotifier<List<ProxyGroup>> {
           now: info['now'] as String? ?? '',
         );
       }
+    }
+
+    // Extract and store the GLOBAL group (for global routing mode display).
+    final globalInfo = proxiesMap['GLOBAL'] as Map<String, dynamic>?;
+    if (globalInfo != null) {
+      // Filter GLOBAL's `all` list to only real user groups (exclude DIRECT/REJECT/built-ins)
+      final allNames = (globalInfo['all'] as List?)?.cast<String>() ?? [];
+      final filteredAll = allNames
+          .where((n) => groupsMap.containsKey(n))
+          .toList();
+      final globalGroup = ProxyGroup(
+        name: 'GLOBAL',
+        type: globalInfo['type'] as String? ?? 'Selector',
+        all: filteredAll.isNotEmpty ? filteredAll : allNames,
+        now: globalInfo['now'] as String? ?? '',
+      );
+      _ref.read(globalGroupProvider.notifier).state = globalGroup;
     }
 
     // Use GLOBAL group's order to sort; exclude GLOBAL itself

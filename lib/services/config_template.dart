@@ -23,6 +23,18 @@ class ConfigTemplate {
     r'$app_name': AppConstants.appName,
   };
 
+  // Cached RegExp patterns
+  static final _reTunKey        = RegExp(r'^tun:', multiLine: true);
+  static final _reDnsKey        = RegExp(r'^dns:', multiLine: true);
+  static final _reTopLevel      = RegExp(r'^\S', multiLine: true);
+  static final _reEnableTrue    = RegExp(r'\benable:\s*true');
+  static final _reEnableFalse   = RegExp(r'\benable:\s*false');
+  static final _reExtController = RegExp(r'^(external-controller:\s*).*$', multiLine: true);
+  static final _reMixedPort     = RegExp(r'^mixed-port:\s*(\d+)', multiLine: true);
+  static final _reApiPort       = RegExp(r'^external-controller:\s*[\w.]*:(\d+)', multiLine: true);
+  static final _reSecret        = RegExp(r'^secret:\s*["\x27]?(.+?)["\x27]?\s*$', multiLine: true);
+  static final _reProxiesSection = RegExp(r'^proxies:\s*\n', multiLine: true);
+
   /// Process a raw config from a subscription.
   ///
   /// Ensures all critical config keys are present for reliable operation
@@ -101,21 +113,19 @@ class ConfigTemplate {
     if (!_hasKey(config, 'tun')) return config;
     // Find the tun section and replace enable: true → false within it.
     // Use string operations to avoid catastrophic backtracking on large configs.
-    final tunMatch = RegExp(r'^tun:', multiLine: true).firstMatch(config);
+    final tunMatch = _reTunKey.firstMatch(config);
     if (tunMatch == null) return config;
 
     final afterTunLine = config.indexOf('\n', tunMatch.start);
     final afterTun = afterTunLine >= 0 ? afterTunLine + 1 : config.length;
-    final nextTopLevel =
-        RegExp(r'^\S', multiLine: true).firstMatch(config.substring(afterTun));
+    final nextTopLevel = _reTopLevel.firstMatch(config.substring(afterTun));
     final tunEnd =
         nextTopLevel != null ? afterTun + nextTopLevel.start : config.length;
 
     final tunSection = config.substring(tunMatch.start, tunEnd);
-    if (!RegExp(r'\benable:\s*true').hasMatch(tunSection)) return config;
+    if (!_reEnableTrue.hasMatch(tunSection)) return config;
 
-    final newSection =
-        tunSection.replaceFirst(RegExp(r'\benable:\s*true'), 'enable: false');
+    final newSection = tunSection.replaceFirst(_reEnableTrue, 'enable: false');
     return config.substring(0, tunMatch.start) +
         newSection +
         config.substring(tunEnd);
@@ -182,25 +192,24 @@ class ConfigTemplate {
       //
       // Use string operations instead of multi-line regex to avoid
       // catastrophic backtracking on large configs with YAML anchors.
-      final dnsMatch = RegExp(r'^dns:', multiLine: true).firstMatch(config);
+      final dnsMatch = _reDnsKey.firstMatch(config);
       if (dnsMatch != null) {
         // Find where the dns section ends (next top-level key)
         final afterDnsLine = config.indexOf('\n', dnsMatch.start);
         final afterDns = afterDnsLine >= 0 ? afterDnsLine + 1 : config.length;
-        final nextTopLevel =
-            RegExp(r'^\S', multiLine: true).firstMatch(config.substring(afterDns));
+        final nextTopLevel = _reTopLevel.firstMatch(config.substring(afterDns));
         final dnsEnd =
             nextTopLevel != null ? afterDns + nextTopLevel.start : config.length;
 
         final dnsSection = config.substring(dnsMatch.start, dnsEnd);
 
-        if (RegExp(r'\benable:\s*false').hasMatch(dnsSection)) {
+        if (_reEnableFalse.hasMatch(dnsSection)) {
           final newSection =
-              dnsSection.replaceFirst(RegExp(r'\benable:\s*false'), 'enable: true');
+              dnsSection.replaceFirst(_reEnableFalse, 'enable: true');
           return config.substring(0, dnsMatch.start) +
               newSection +
               config.substring(dnsEnd);
-        } else if (!RegExp(r'\benable:\s*true').hasMatch(dnsSection)) {
+        } else if (!_reEnableTrue.hasMatch(dnsSection)) {
           // DNS section exists but has no 'enable' key — inject after dns: line
           return config.substring(0, afterDns) +
               '  enable: true\n' +
@@ -388,7 +397,7 @@ class ConfigTemplate {
     if (_hasKey(config, 'external-controller')) {
       // Replace the existing value to ensure our port
       config = config.replaceAllMapped(
-        RegExp(r'^(external-controller:\s*).*$', multiLine: true),
+        _reExtController,
         (m) => '${m.group(1)}127.0.0.1:$port',
       );
     } else {
@@ -411,27 +420,21 @@ class ConfigTemplate {
 
   /// Extract the mixed-port from config, or return default.
   static int getMixedPort(String config) {
-    final match =
-        RegExp(r'^mixed-port:\s*(\d+)', multiLine: true).firstMatch(config);
+    final match = _reMixedPort.firstMatch(config);
     if (match != null) return int.parse(match.group(1)!);
     return AppConstants.defaultMixedPort;
   }
 
   /// Extract the external-controller port from config.
   static int getApiPort(String config) {
-    final match = RegExp(r'^external-controller:\s*[\w.]*:(\d+)',
-            multiLine: true)
-        .firstMatch(config);
+    final match = _reApiPort.firstMatch(config);
     if (match != null) return int.parse(match.group(1)!);
     return AppConstants.defaultApiPort;
   }
 
   /// Extract secret from config.
   static String? getSecret(String config) {
-    final match =
-        RegExp(r'^secret:\s*["\x27]?(.+?)["\x27]?\s*$', multiLine: true)
-            .firstMatch(config);
-    return match?.group(1);
+    return _reSecret.firstMatch(config)?.group(1);
   }
 
   /// Load the built-in fallback config.
@@ -468,7 +471,7 @@ class ConfigTemplate {
 
     if (_hasKey(fallbackTemplate, 'proxies')) {
       return fallbackTemplate.replaceFirst(
-        RegExp(r'^proxies:\s*\n', multiLine: true),
+        _reProxiesSection,
         'proxies:\n$proxiesBlock\n',
       );
     }

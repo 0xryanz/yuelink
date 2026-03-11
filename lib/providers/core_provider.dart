@@ -100,7 +100,7 @@ class CoreActions {
       AppNotifier.success(S.current.msgConnected);
 
       // 3. Apply routing mode (non-blocking — errors logged, not thrown)
-      _applyRoutingMode(manager);
+      await _applyRoutingMode(manager);
 
       // 4. System proxy (desktop)
       if ((Platform.isMacOS || Platform.isWindows) &&
@@ -127,7 +127,7 @@ class CoreActions {
 
   /// Apply saved routing mode to the running core, then read back the actual
   /// mode and sync to [routingModeProvider] in case the config overrode it.
-  void _applyRoutingMode(CoreManager manager) async {
+  Future<void> _applyRoutingMode(CoreManager manager) async {
     final savedMode = ref.read(routingModeProvider);
     try {
       if (savedMode != 'rule') {

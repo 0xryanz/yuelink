@@ -138,16 +138,6 @@ class SettingsService {
     await set('launchAtStartup', value);
   }
 
-  // ── Subscription auto-update interval (hours, 0 = disabled) ─────────────
-
-  static Future<int> getAutoUpdateInterval() async {
-    return (await get<int>('autoUpdateInterval')) ?? 24;
-  }
-
-  static Future<void> setAutoUpdateInterval(int hours) async {
-    await set('autoUpdateInterval', hours);
-  }
-
   // ── Language (zh / en) ──────────────────────────────────────────────────
 
   static Future<String> getLanguage() async {

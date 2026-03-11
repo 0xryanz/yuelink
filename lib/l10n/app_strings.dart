@@ -384,9 +384,6 @@ class S {
   String get configOverwrite => _e ? 'Config Overwrite' : '配置覆写';
   String get configOverwriteSub =>
       _e ? 'Add custom rules on top of subscription config' : '在订阅配置之上叠加自定义规则';
-  String get autoUpdateInterval =>
-      _e ? 'Auto Update Interval' : '自动更新间隔';
-  String get disabled => _e ? 'Disabled' : '关闭';
   String get updateAllNow =>
       _e ? 'Update all subscriptions now' : '立即更新所有订阅';
   String get webdavUrl => _e ? 'WebDAV URL' : 'WebDAV 地址';

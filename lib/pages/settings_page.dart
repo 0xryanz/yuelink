@@ -10,8 +10,8 @@ import '../l10n/app_strings.dart';
 import '../providers/core_provider.dart';
 import '../providers/split_tunnel_provider.dart';
 import '../services/app_notifier.dart';
-import '../services/auto_update_service.dart';
 import '../services/core_manager.dart';
+import '../services/profile_service.dart';
 import '../services/settings_service.dart';
 import '../services/vpn_service.dart';
 import '../services/webdav_service.dart';
@@ -38,7 +38,6 @@ class SettingsPage extends ConsumerStatefulWidget {
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   bool _launchAtStartup = false;
-  int _autoUpdateInterval = 24;
   UpdateInfo? _pendingUpdate;
   bool _checkingUpdate = false;
 
@@ -50,11 +49,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   Future<void> _loadSettings() async {
     final startup = await SettingsService.getLaunchAtStartup();
-    final interval = await SettingsService.getAutoUpdateInterval();
     if (mounted) {
       setState(() {
         _launchAtStartup = startup;
-        _autoUpdateInterval = interval;
       });
     }
     _checkForUpdate();
@@ -271,35 +268,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               _SettingsCard(
                 child: Column(
                   children: [
-                    YLInfoRow(
-                      label: s.autoUpdateInterval,
-                      trailing: DropdownButton<int>(
-                        value: _autoUpdateInterval,
-                        underline: const SizedBox.shrink(),
-                        style: YLText.body.copyWith(
-                          color: isDark ? YLColors.zinc200 : YLColors.zinc700,
-                        ),
-                        dropdownColor: isDark ? YLColors.zinc800 : Colors.white,
-                        items: [
-                          DropdownMenuItem(
-                              value: 0, child: Text(s.disabled)),
-                          DropdownMenuItem(
-                              value: 6, child: Text(s.hours6)),
-                          DropdownMenuItem(
-                              value: 12, child: Text(s.hours12)),
-                          DropdownMenuItem(
-                              value: 24, child: Text(s.hours24)),
-                          DropdownMenuItem(
-                              value: 48, child: Text(s.hours48)),
-                        ],
-                        onChanged: (v) async {
-                          if (v == null) return;
-                          setState(() => _autoUpdateInterval = v);
-                          await SettingsService.setAutoUpdateInterval(v);
-                        },
-                      ),
-                    ),
-                    Divider(height: 1, thickness: 0.5, color: dividerColor),
                     YLInfoRow(
                       label: s.updateAllNow,
                       trailing: const Icon(Icons.chevron_right, size: 18,
@@ -529,8 +497,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Future<void> _updateAllProfiles(BuildContext context) async {
     final s = S.of(context);
     AppNotifier.info(s.updatingAll);
-    final result = await AutoUpdateService.instance.updateAll();
-    AppNotifier.success(s.updateAllResult(result.updated, result.failed));
+    int updated = 0;
+    int failed = 0;
+    final profiles = await ProfileService.loadProfiles();
+    for (final profile in profiles) {
+      if (profile.url.isEmpty) continue;
+      try {
+        await ProfileService.updateProfile(profile);
+        updated++;
+      } catch (_) {
+        failed++;
+      }
+    }
+    AppNotifier.success(s.updateAllResult(updated, failed));
   }
 
   Future<void> _launchUrl(String url) async {

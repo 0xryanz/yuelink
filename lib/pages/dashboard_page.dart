@@ -99,7 +99,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       } finally {
         httpClient.close();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Dashboard] IP query failed: $e');
+    }
     if (mounted) setState(() { _ipLoading = false; _ipQueried = true; });
   }
 

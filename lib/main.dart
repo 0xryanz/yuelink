@@ -23,7 +23,6 @@ import 'providers/core_provider.dart';
 import 'providers/profile_provider.dart';
 import 'providers/proxy_provider.dart';
 import 'services/app_notifier.dart';
-import 'services/auto_update_service.dart';
 import 'services/core_manager.dart';
 import 'services/profile_service.dart';
 import 'services/settings_service.dart';
@@ -80,9 +79,6 @@ void main() async {
 
   // Initialize core manager
   CoreManager.instance;
-
-  // Start subscription auto-update service
-  AutoUpdateService.instance.start();
 
   // ── Global hotkeys (desktop) ─────────────────────────────────────────────
   if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
@@ -142,7 +138,6 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     if (Platform.isMacOS || Platform.isWindows) {
       windowManager.removeListener(this);
     }
-    AutoUpdateService.instance.stop();
     if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
       hotKeyManager.unregisterAll();
     }

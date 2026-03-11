@@ -82,4 +82,19 @@ Java_com_yueto_yuelink_YueLinkVpnService_nativeStopProtect(
     clear_vpn_service(env);
 }
 
+// JNI entry point: called when network DNS changes.
+// dnsList is a comma-separated string of DNS server IPs.
+// Implemented in Go (protect_android.go) via notifyDnsChangedFromC.
+extern void notifyDnsChangedFromC(const char* dnsList);
+
+JNIEXPORT void JNICALL
+Java_com_yueto_yuelink_YueLinkVpnService_nativeNotifyDnsChanged(
+    JNIEnv* env, jclass clazz, jstring dnsList) {
+    const char* str = (*env)->GetStringUTFChars(env, dnsList, NULL);
+    if (str != NULL) {
+        notifyDnsChangedFromC(str);
+        (*env)->ReleaseStringUTFChars(env, dnsList, str);
+    }
+}
+
 #endif

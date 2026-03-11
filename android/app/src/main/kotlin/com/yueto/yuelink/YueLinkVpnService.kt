@@ -5,8 +5,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Binder
+import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 
@@ -25,11 +31,9 @@ class YueLinkVpnService : VpnService() {
         private const val CHANNEL_ID = "yuelink_vpn"
 
         // JNI bridge to Go core's protect_android.c
-        // Called to register/unregister VpnService for socket protection.
-        // The Go core's DefaultSocketHook calls VpnService.protect(fd) for
-        // every outbound socket to bypass VPN routing.
         @JvmStatic external fun nativeStartProtect(vpnService: VpnService)
         @JvmStatic external fun nativeStopProtect()
+        @JvmStatic external fun nativeNotifyDnsChanged(dnsList: String)
 
         init {
             System.loadLibrary("clash")
@@ -41,12 +45,17 @@ class YueLinkVpnService : VpnService() {
     }
 
     private val binder = LocalBinder()
-    private var tunFd: ParcelFileDescriptor? = null
+
+    // Raw TUN fd — we use detachFd() to take ownership so GC can't close it.
+    // CMFA does the same: establish()?.detachFd().
+    // Using .fd without detach causes silent fd invalidation when GC collects
+    // the ParcelFileDescriptor, killing all TUN traffic.
+    private var tunFd: Int = -1
 
     var onTunReady: ((Int) -> Unit)? = null
 
-    // Split-tunnel config stored at start time for notification text
     private var splitMode: String = "all"
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -73,8 +82,8 @@ class YueLinkVpnService : VpnService() {
         // to avoid ANR. Call it before establish() which may take time.
         startForeground(NOTIFICATION_ID, createNotification())
 
-        if (tunFd != null) {
-            onTunReady?.invoke(tunFd!!.fd)
+        if (tunFd >= 0) {
+            onTunReady?.invoke(tunFd)
             return
         }
 
@@ -93,57 +102,67 @@ class YueLinkVpnService : VpnService() {
             .setSession("YueLink")
             .addAddress("172.19.0.1", 30)
             .addRoute("0.0.0.0", 0)
-            // Do NOT add IPv6 route — mihomo TUN only has inet4-address.
-            // Routing IPv6 to TUN without inet6-address creates a black hole:
-            // Android prefers IPv6, packets go to TUN, mihomo can't process them,
-            // connections hang. IPv6 traffic bypasses VPN and goes direct instead.
-            // Use TUN gateway (172.19.0.2 = .1/30 network's other usable IP) as DNS.
-            // This ensures DNS queries always enter the TUN and get caught by
-            // mihomo's dns-hijack. External DNS IPs (223.5.5.5) may have edge
-            // cases where packets don't match the hijack pattern.
+            // No IPv6 route — mihomo TUN only has inet4-address.
+            // Use TUN gateway as DNS so queries reliably enter TUN for dns-hijack.
             .addDnsServer("172.19.0.2")
             .setMtu(9000)
             .setBlocking(false)
-            // The mihomo process itself must always bypass the VPN to avoid routing loops.
-            // This excludes the entire app UID (Go core shares the same process/UID).
             .addDisallowedApplication(packageName)
+
+        // Tell Android this VPN is not metered — prevents traffic throttling
+        // and allows background data for all apps through the VPN.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            builder.setMetered(false)
+        }
 
         when (mode) {
             "whitelist" -> {
-                // Only listed apps go through VPN (allowedApplications)
                 for (pkg in apps) {
                     try { builder.addAllowedApplication(pkg) } catch (_: Exception) {}
                 }
             }
             "blacklist" -> {
-                // Listed apps bypass VPN (disallowedApplications)
                 for (pkg in apps) {
                     try { builder.addDisallowedApplication(pkg) } catch (_: Exception) {}
                 }
             }
-            // "all" — no extra filtering, everything goes through (default)
         }
 
-        tunFd = builder.establish()
-
-        val fd = tunFd?.fd
-        if (fd != null) {
-            onTunReady?.invoke(fd)
+        val pfd = builder.establish()
+        if (pfd == null) {
+            onTunReady?.invoke(-1)
+            return
         }
+
+        // detachFd() transfers fd ownership to us. The ParcelFileDescriptor
+        // no longer closes the fd on GC — we manage its lifecycle.
+        // Without this, GC can close the fd at any time, silently killing TUN.
+        tunFd = pfd.detachFd()
+
+        onTunReady?.invoke(tunFd)
+
+        // Start monitoring network changes for DNS updates
+        startNetworkMonitor()
     }
 
     private fun stopTunnel() {
+        stopNetworkMonitor()
         try {
             nativeStopProtect()
         } catch (_: UnsatisfiedLinkError) {}
-        tunFd?.close()
-        tunFd = null
+        // Close the raw fd we own (adopted back into PFD for safe close)
+        if (tunFd >= 0) {
+            try {
+                ParcelFileDescriptor.adoptFd(tunFd).close()
+            } catch (_: Exception) {}
+            tunFd = -1
+        }
         onTunReady = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
-    fun getTunFd(): Int = tunFd?.fd ?: -1
+    fun getTunFd(): Int = tunFd
 
     override fun onDestroy() {
         stopTunnel()
@@ -153,6 +172,64 @@ class YueLinkVpnService : VpnService() {
     override fun onRevoke() {
         stopTunnel()
     }
+
+    // ── Network change monitoring ───────────────────────────────────────────
+    // When the physical network changes (WiFi ↔ cellular), update mihomo's
+    // system DNS and flush the resolver cache. Without this, DNS resolution
+    // fails after network switches because cached servers are unreachable.
+    // CMFA has an equivalent NetworkObserveModule.
+
+    private fun startNetworkMonitor() {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            .build()
+
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onLinkPropertiesChanged(network: Network, lp: LinkProperties) {
+                val dnsServers = lp.dnsServers
+                    .mapNotNull { it.hostAddress }
+                    .filter { it.isNotEmpty() }
+                if (dnsServers.isNotEmpty()) {
+                    val dnsList = dnsServers.joinToString(",")
+                    android.util.Log.d("YueLinkVpn", "DNS changed: $dnsList")
+                    try {
+                        nativeNotifyDnsChanged(dnsList)
+                    } catch (_: UnsatisfiedLinkError) {}
+                }
+
+                // Tell the system which physical network underlies the VPN.
+                // This fixes connectivity detection ("no internet" warnings).
+                try {
+                    setUnderlyingNetworks(arrayOf(network))
+                } catch (_: Exception) {}
+            }
+
+            override fun onLost(network: Network) {
+                try {
+                    setUnderlyingNetworks(null)
+                } catch (_: Exception) {}
+            }
+        }
+
+        try {
+            cm.registerNetworkCallback(request, callback)
+            networkCallback = callback
+        } catch (_: Exception) {}
+    }
+
+    private fun stopNetworkMonitor() {
+        val cb = networkCallback ?: return
+        networkCallback = null
+        try {
+            val cm = getSystemService(ConnectivityManager::class.java)
+            cm?.unregisterNetworkCallback(cb)
+        } catch (_: Exception) {}
+    }
+
+    // ── Notification ────────────────────────────────────────────────────────
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(

@@ -70,12 +70,12 @@ Flutter UI (Dart, Riverpod) → CoreController (dart:ffi) → hub.go (CGO //expo
 - **Default connection mode is `systemProxy`** (not TUN). Mobile (Android/iOS) always uses VPN regardless of this setting; the setting only applies to desktop.
 - iOS: Go core must be `c-archive` (static library), not `c-shared`. Extension runs in separate process with ~15MB memory limit.
 - Go core state is protected by a single mutex (`state.go`) — all exported functions must acquire the lock.
-- **All Go exports that can fail return `*C.char`** (empty string = success, non-empty = error message). Caller must free via `FreeCString`. This applies to InitCore, StartCore, and UpdateConfig. Only IsRunning/StopCore/Shutdown use simple types.
+- **All Go exports that can fail return `*C.char`**: empty string = success, non-empty = error. **NULL pointer (address == 0) also means success** — Go can return NULL on some code paths (e.g., when panic is recovered). Dart `_callStringFn` in `CoreController` handles all three cases. Caller must free non-null results via `FreeCString`.
+- **Never use `Isolate.run()` for FFI calls**. Spawning a new isolate to call CGO functions causes hangs on Android/macOS (new isolate re-opens `DynamicLibrary`, interacts badly with Go runtime). FFI calls (`InitCore` ~1s, `StartCore` ~2s) are made synchronously on the main isolate — well within ANR limits. Same rule applies to pure Dart config processing (`OverwriteService.apply`, `ConfigTemplate.process`) — these are <10ms and don't need isolate isolation.
 - `CoreManager` handles VPN internally for each platform — `CoreActions` must NOT call `VpnService` directly.
 - Android VPN permission is always requested (no connectionMode guard) because Android always needs VpnService.
-- **Android TUN config**: `ConfigTemplate._injectTunFd()` replaces the entire `tun:` section with Android-safe settings: `stack: mixed`, `auto-route: false`, `auto-detect-interface: false` (netlink banned on Android 14+), `find-process-mode: off`. Never set `auto-route: true` when using VpnService fd.
-- **iOS TUN config**: `PacketTunnelProvider.injectTunConfig()` uses `stack: gvisor` (not mixed — iOS doesn't need system stack). Also forces `find-process-mode: off` and injects full DNS fallback config.
-- **TUN stack difference is intentional**: Android uses `mixed` (gvisor for UDP + system for TCP), iOS uses `gvisor` only.
+- **Android TUN config**: `ConfigTemplate._injectTunFd()` replaces the entire `tun:` section with Android-safe settings: `stack: gvisor`, `auto-route: false`, `auto-detect-interface: false` (netlink banned on Android 14+), `find-process-mode: off`. Never set `auto-route: true` when using VpnService fd.
+- **iOS TUN config**: `PacketTunnelProvider.injectTunConfig()` uses `stack: gvisor`. Also forces `find-process-mode: off` and injects full DNS fallback config.
 - Connection mode UI is hidden on mobile — only shown on desktop (`isDesktop = Platform.isMacOS || Platform.isWindows`).
 - MethodChannel name: `com.yueto.yuelink/vpn` (consistent across all platforms).
 - Package/Bundle ID: `com.yueto.yuelink`
@@ -112,9 +112,22 @@ Uses "ensure" pattern: only injects when missing, never overwrites subscription-
 
 iOS PacketTunnelProvider has its own `injectTunConfig()` in Swift with equivalent logic (runs in separate process, can't use Dart ConfigTemplate).
 
-### Core startup sequence
+### Core startup sequence & diagnostics
 
-`CoreActions.start()` → VPN permission (Android only) → `CoreManager.start(configYaml)` → `OverwriteService.apply()` → `_ensureInit()` → **`GeoDataService.ensureFiles()`** (downloads GeoIP.dat, GeoSite.dat, country.mmdb, ASN.mmdb if missing — blocks up to 10min/file for slow networks) → platform-specific VPN (Android: `startAndroidVpn()` for TUN fd, iOS: `startIosVpn()`) → `ConfigTemplate.process()` (full ensure pipeline + TUN fd injection) → `CoreController.start()` → `_waitForApi()` (awaited, up to 5s) → system proxy (desktop). `CoreManager` owns all VPN logic internally. On failure, `CoreManager._startFfi()` throws with the actual Go error message (propagated to UI via `CoreActions` catch block).
+`CoreManager.start()` runs 8 observable steps, each recorded in `StartupReport` (`lib/models/startup_report.dart`) with name, success, errorCode, error, detail, and durationMs:
+
+| Step | errorCode | What it does |
+|------|-----------|--------------|
+| `ensureGeo` | E009 | Copy GeoIP/GeoSite assets to homeDir (CDN fallback if missing) |
+| `initCore` | E002 | Call `InitCore(homeDir)` via FFI, set up Go logrus → `core.log` |
+| `vpnPermission` | E003 | Android only: request VpnService permission |
+| `startVpn` | E004 | Android only: get TUN fd from `VpnService` |
+| `buildConfig` | E005 | `OverwriteService.apply()` + `ConfigTemplate.process()` (sync, no Isolate) |
+| `startCore` | E006 | Call `StartCore(configYaml)` via FFI (hub.Parse + listeners) |
+| `waitApi` | E007 | Poll REST API up to 50× × 100ms = 5s |
+| `verify` | E008 | Check `IsRunning` + API available + DNS diagnostic |
+
+On failure, `StartupReport.failureSummary` returns `"[Exx_CODE] stepName: error"` — shown in `_StartupErrorBanner` on dashboard (expandable: shows all steps + last 20 lines of Go `core.log`). Report saved to `startup_report.json`. Go side logs tagged `[BOOT]`/`[CORE]` via logrus redirected to `core.log`; Dart reads this after startup in `_finishReport()`.
 
 ### Proxy group ordering
 

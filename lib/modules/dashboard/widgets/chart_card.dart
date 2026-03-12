@@ -164,6 +164,7 @@ class _ChartCardState extends ConsumerState<ChartCard> {
             ),
           ),
         ),
+        clipData: const FlClipData.all(),
         lineTouchData: const LineTouchData(enabled: false),
         lineBarsData: [
           _line(toSpots(down), YLColors.accent),

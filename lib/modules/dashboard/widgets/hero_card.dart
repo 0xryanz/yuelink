@@ -75,25 +75,15 @@ class HeroCard extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: isRunning
-            ? LinearGradient(
-                colors: [
-                  YLColors.connected.withValues(alpha: 0.10),
-                  YLColors.connected.withValues(alpha: 0.03),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              )
-            : null,
-        color: isRunning ? null : (isDark ? YLColors.zinc800 : Colors.white),
+        color: isDark ? YLColors.zinc800 : Colors.white,
         borderRadius: BorderRadius.circular(YLRadius.xxl),
         border: Border.all(
           color: isRunning
-              ? YLColors.connected.withValues(alpha: 0.25)
+              ? YLColors.connected.withValues(alpha: 0.30)
               : (isDark
                   ? Colors.white.withValues(alpha: 0.08)
                   : Colors.black.withValues(alpha: 0.08)),
-          width: 0.5,
+          width: isRunning ? 1.0 : 0.5,
         ),
         boxShadow: YLShadow.hero(context),
       ),
@@ -191,6 +181,7 @@ class HeroCard extends ConsumerWidget {
             ),
           ),
 
+          const SizedBox(height: 3),
           // Row 3: Node group
           Text(
             activeNodeGroup,

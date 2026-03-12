@@ -30,7 +30,7 @@ class TrafficSpeedRow extends ConsumerWidget {
             ),
           ],
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 4),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [

@@ -83,96 +83,104 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     ref.listen(coreStatusProvider, (prev, next) {
       if (next == CoreStatus.running) {
         _startUptimeTimer();
-        // Reset then auto-query exit IP; isLoading guard in query() prevents duplicates
         ref.read(exitIpProvider.notifier).reset();
         ref.read(exitIpProvider.notifier).query();
       } else if (next == CoreStatus.stopped) {
         _stopUptimeTimer();
-        // Keep last IP visible after disconnect — user can see where they were connected
       }
     });
 
-    final isWide = MediaQuery.sizeOf(context).width > 640;
-
+    // Use LayoutBuilder to get the ACTUAL available width (content area,
+    // not full window width — matters on desktop with sidebar).
     return Scaffold(
       body: SafeArea(
         bottom: false,
-        child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Mock banner
-          if (isMock)
-            Container(
-              color: Colors.amber.withValues(alpha: 0.12),
-              padding: const EdgeInsets.fromLTRB(16, 5, 16, 5),
-              child: Row(
-                children: [
-                  Icon(Icons.science_outlined,
-                      size: 13, color: Colors.amber.shade700),
-                  const SizedBox(width: 6),
-                  Text(s.mockModeBanner,
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.amber.shade700)),
-                ],
-              ),
-            ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // isWide uses the actual available content-area width,
+            // not MediaQuery window width (which includes the sidebar).
+            final isWide = constraints.maxWidth > 560;
 
-          // ── Content ───────────────────────────────────────────────
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 720),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ── Mock mode banner ────────────────────────────────
+                if (isMock)
+                  Container(
+                    color: Colors.amber.withValues(alpha: 0.12),
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+                    child: Row(
+                      children: [
+                        Icon(Icons.science_outlined,
+                            size: 13, color: Colors.amber.shade700),
+                        const SizedBox(width: 6),
+                        Text(s.mockModeBanner,
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.amber.shade700)),
+                      ],
+                    ),
+                  ),
+
+                // ── Scrollable card stack ────────────────────────────
+                Expanded(
+                  child: ListView(
+                    padding: EdgeInsets.symmetric(
+                      // Centre content at max 720px on wide screens.
+                      horizontal: constraints.maxWidth > 720 + 48
+                          ? (constraints.maxWidth - 720) / 2
+                          : 24.0,
+                      vertical: 24,
+                    ),
                     children: [
-                      // ── Layer 1: Hero Card ──────────────
+                      // Layer 1: Hero card (ALWAYS visible)
                       HeroCard(
                         status: status,
                         uptimeNotifier: _uptimeNotifier,
                         onToggle: () => _toggle(context, ref),
                       ),
 
-                      // ── Layer 2: IP + Chart (running only) ──
+                      // Layer 2+3: visible only when connected
                       if (isRunning) ...[
                         const SizedBox(height: 16),
                         if (isWide)
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const Flexible(
-                                flex: 1,
-                                child: ExitIpCard(),
-                              ),
-                              const SizedBox(width: 12),
-                              const Flexible(flex: 2, child: RepaintBoundary(child: ChartCard())),
-                            ],
+                          // SizedBox gives the Row a finite height so
+                          // CrossAxisAlignment.stretch works correctly.
+                          // IntrinsicHeight + Flexible collapses to 0px because
+                          // Row skips flex children in intrinsic height queries.
+                          SizedBox(
+                            height: 190,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: const [
+                                Expanded(flex: 1, child: ExitIpCard()),
+                                SizedBox(width: 12),
+                                Expanded(
+                                  flex: 2,
+                                  child: RepaintBoundary(child: ChartCard()),
+                                ),
+                              ],
+                            ),
                           )
                         else ...[
                           const ExitIpCard(),
                           const SizedBox(height: 12),
                           const RepaintBoundary(child: ChartCard()),
                         ],
-                        // ── Layer 3: Today stats ──────────
                         const SizedBox(height: 12),
                         const StatsCard(),
                       ],
 
-                      // ── Layer 4: Overview (always visible) ──
-                      // Shows active profile, auto-connect status, readiness.
-                      // Visible in both connected and disconnected states.
+                      // Layer 4: Overview (ALWAYS visible)
                       const SizedBox(height: 16),
                       const OverviewCard(),
+                      const SizedBox(height: 8),
                     ],
                   ),
                 ),
-              ),
-            ),
-          ),
-        ],
-      ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

@@ -13,13 +13,13 @@ import 'traffic_speed_row.dart';
 
 class HeroCard extends ConsumerWidget {
   final CoreStatus status;
-  final String uptimeText;
+  final ValueNotifier<String> uptimeNotifier;
   final VoidCallback onToggle;
 
   const HeroCard({
     super.key,
     required this.status,
-    required this.uptimeText,
+    required this.uptimeNotifier,
     required this.onToggle,
   });
 
@@ -75,25 +75,15 @@ class HeroCard extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: isRunning
-            ? LinearGradient(
-                colors: [
-                  YLColors.connected.withValues(alpha: 0.10),
-                  YLColors.connected.withValues(alpha: 0.03),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              )
-            : null,
-        color: isRunning ? null : (isDark ? YLColors.zinc800 : Colors.white),
+        color: isDark ? YLColors.zinc800 : Colors.white,
         borderRadius: BorderRadius.circular(YLRadius.xxl),
         border: Border.all(
           color: isRunning
-              ? YLColors.connected.withValues(alpha: 0.25)
+              ? YLColors.connected.withValues(alpha: 0.30)
               : (isDark
                   ? Colors.white.withValues(alpha: 0.08)
                   : Colors.black.withValues(alpha: 0.08)),
-          width: 0.5,
+          width: isRunning ? 1.0 : 0.5,
         ),
         boxShadow: YLShadow.hero(context),
       ),
@@ -131,18 +121,30 @@ class HeroCard extends ConsumerWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (isRunning && uptimeText.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        uptimeText,
-                        style: YLText.caption.copyWith(
-                          color: YLColors.zinc400,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    if (isRunning)
+                      ValueListenableBuilder<String>(
+                        valueListenable: uptimeNotifier,
+                        builder: (_, text, __) {
+                          if (text.isEmpty) return const SizedBox.shrink();
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(width: 8),
+                              Text(
+                                text,
+                                style: YLText.caption.copyWith(
+                                  color: YLColors.zinc400,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures()
+                                  ],
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          );
+                        },
                       ),
-                    ],
                   ],
                 ),
               ),
@@ -179,6 +181,7 @@ class HeroCard extends ConsumerWidget {
             ),
           ),
 
+          const SizedBox(height: 3),
           // Row 3: Node group
           Text(
             activeNodeGroup,

@@ -2,10 +2,10 @@ name: Build YueLink
 
 on:
   push:
-    branches: [main, dev]
-    tags: ['v*', 'alpha.*']
+    branches: [master, dev, release]
+    tags: ['v*']
   pull_request:
-    branches: [main, dev]
+    branches: [master, dev, release]
 
 # Cancel any in-progress run for the same ref (branch or tag) automatically.
 concurrency:
@@ -66,6 +66,9 @@ jobs:
           - os: windows-latest
             platform: windows
             arch: amd64
+          - os: ubuntu-latest
+            platform: linux
+            arch: amd64
 
     steps:
       - uses: actions/checkout@v4
@@ -113,6 +116,22 @@ jobs:
       - name: Enable macOS desktop
         if: matrix.platform == 'macos'
         run: flutter config --enable-macos-desktop
+
+      - name: Enable Linux desktop
+        if: matrix.platform == 'linux'
+        run: flutter config --enable-linux-desktop
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev libblkid-dev liblzma-dev ninja-build \
+            libglib2.0-dev libpango1.0-dev libcairo2-dev \
+            libsecret-1-dev libstdc++-12-dev \
+            libkeybinder-3.0-dev \
+            libayatana-appindicator3-dev \
+            pkg-config cmake clang
 
       # ── Build ─────────────────────────────────────────────────────────────
       - name: Build core (${{ matrix.platform }})
@@ -394,13 +413,119 @@ jobs:
           name: yuelink-windows
           path: windows/YueLink-Windows-Setup.exe
 
+  # ── Linux ─────────────────────────────────────────────────────────────────
+  build-linux:
+    name: Build Linux AppImage
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-core]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-linux
+          path: core/build/
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev libblkid-dev liblzma-dev ninja-build \
+            libglib2.0-dev libpango1.0-dev libcairo2-dev \
+            libsecret-1-dev libstdc++-12-dev \
+            libkeybinder-3.0-dev \
+            libayatana-appindicator3-dev \
+            pkg-config cmake clang
+
+      - run: dart setup.dart install -p linux
+
+      - name: Download geodata files
+        run: |
+          mkdir -p assets/geodata
+          curl -fSL -o assets/geodata/GeoIP.dat    "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
+          curl -fSL -o assets/geodata/GeoSite.dat  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
+          curl -fSL -o assets/geodata/country.mmdb  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb"
+          curl -fSL -o assets/geodata/ASN.mmdb      "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/GeoLite2-ASN.mmdb"
+
+      - run: flutter config --enable-linux-desktop
+      - run: flutter pub get
+      - run: flutter build linux --release
+
+      - name: Download appimagetool
+        run: |
+          curl -fSL -o /usr/local/bin/appimagetool \
+            "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x /usr/local/bin/appimagetool
+
+      - name: Package AppImage
+        run: |
+          VERSION=$(echo "${GITHUB_REF}" | sed 's|refs/tags/v||')
+          ARCH="$(uname -m)"
+          BUNDLE_DIR="build/linux/x64/release/bundle"
+          APPDIR="build/AppDir"
+          OUTPUT="YueLink-${VERSION}-linux-${ARCH}.AppImage"
+
+          # Assemble AppDir
+          rm -rf "${APPDIR}"
+          mkdir -p "${APPDIR}/usr/bin" "${APPDIR}/usr/lib"
+          mkdir -p "${APPDIR}/usr/share/applications"
+          mkdir -p "${APPDIR}/usr/share/icons/hicolor/256x256/apps"
+
+          cp -r "${BUNDLE_DIR}/." "${APPDIR}/usr/bin/"
+
+          cat > "${APPDIR}/usr/share/applications/yuelink.desktop" << 'DESKTOP'
+          [Desktop Entry]
+          Name=YueLink
+          Comment=Cross-platform proxy client
+          Exec=yuelink
+          Icon=yuelink
+          Type=Application
+          Categories=Network;
+          StartupNotify=true
+          DESKTOP
+
+          if [ -f "assets/icon.png" ]; then
+            cp "assets/icon.png" "${APPDIR}/usr/share/icons/hicolor/256x256/apps/yuelink.png"
+            cp "assets/icon.png" "${APPDIR}/yuelink.png"
+          fi
+
+          cat > "${APPDIR}/AppRun" << 'APPRUN'
+          #!/usr/bin/env bash
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          export LD_LIBRARY_PATH="${HERE}/usr/bin/lib:${LD_LIBRARY_PATH:-}"
+          exec "${HERE}/usr/bin/yuelink" "$@"
+          APPRUN
+          chmod +x "${APPDIR}/AppRun"
+
+          ln -sf "usr/share/applications/yuelink.desktop" "${APPDIR}/yuelink.desktop"
+
+          APPIMAGE_EXTRACT_AND_RUN=1 ARCH="${ARCH}" appimagetool "${APPDIR}" "${OUTPUT}"
+          echo "Created: ${OUTPUT} ($(du -sh "${OUTPUT}" | cut -f1))"
+
+      - name: Rename artifact
+        run: |
+          ls YueLink-*.AppImage
+          cp YueLink-*.AppImage YueLink-Linux-x86_64.AppImage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yuelink-linux
+          path: YueLink-Linux-x86_64.AppImage
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Job 4: Release (only on version tags)
 # ─────────────────────────────────────────────────────────────────────────────
   release:
     name: Create Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-android, build-ios, build-macos, build-windows]
+    needs: [build-android, build-ios, build-macos, build-windows, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -416,6 +541,7 @@ jobs:
           cp artifacts/yuelink-ios/YueLink-iOS.ipa release/
           cp artifacts/yuelink-macos/YueLink-macOS.dmg release/
           cp artifacts/yuelink-windows/YueLink-Windows-Setup.exe release/
+          cp artifacts/yuelink-linux/YueLink-Linux-x86_64.AppImage release/
           ls -lh release/
 
       - name: Create GitHub Release
@@ -423,3 +549,5 @@ jobs:
         with:
           files: release/*
           generate_release_notes: true
+          # beta/rc tags → prerelease=true; vX.Y.Z stable → prerelease=false
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}

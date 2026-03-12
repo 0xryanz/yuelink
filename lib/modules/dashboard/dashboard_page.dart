@@ -29,19 +29,33 @@ class DashboardPage extends ConsumerStatefulWidget {
 class _DashboardPageState extends ConsumerState<DashboardPage> {
   DateTime? _connectedSince;
   Timer? _uptimeTimer;
+  final _uptimeNotifier = ValueNotifier<String>('');
   bool _busy = false;
 
   @override
   void dispose() {
     _uptimeTimer?.cancel();
+    _uptimeNotifier.dispose();
     super.dispose();
   }
 
   void _startUptimeTimer() {
     _connectedSince = DateTime.now();
+    _uptimeNotifier.value = '';
     _uptimeTimer?.cancel();
     _uptimeTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
+      if (_connectedSince == null) return;
+      final diff = DateTime.now().difference(_connectedSince!);
+      final h = diff.inHours;
+      final m = diff.inMinutes % 60;
+      final sec = diff.inSeconds % 60;
+      if (h > 0) {
+        _uptimeNotifier.value = '${h}h ${m}m';
+      } else if (m > 0) {
+        _uptimeNotifier.value = '${m}m';
+      } else {
+        _uptimeNotifier.value = '${sec}s';
+      }
     });
   }
 
@@ -49,17 +63,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     _uptimeTimer?.cancel();
     _uptimeTimer = null;
     _connectedSince = null;
-  }
-
-  String get _uptimeText {
-    if (_connectedSince == null) return '';
-    final diff = DateTime.now().difference(_connectedSince!);
-    final h = diff.inHours;
-    final m = diff.inMinutes % 60;
-    final sec = diff.inSeconds % 60;
-    if (h > 0) return '${h}h ${m}m ${sec}s';
-    if (m > 0) return '${m}m ${sec}s';
-    return '${sec}s';
+    _uptimeNotifier.value = '';
   }
 
   @override
@@ -68,8 +72,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final status = ref.watch(coreStatusProvider);
     final isMock = ref.watch(isMockModeProvider);
     final isRunning = status == CoreStatus.running;
-    final isTransitioning =
-        status == CoreStatus.starting || status == CoreStatus.stopping;
 
     if (isRunning) {
       ref.watch(trafficStreamProvider);
@@ -81,97 +83,104 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     ref.listen(coreStatusProvider, (prev, next) {
       if (next == CoreStatus.running) {
         _startUptimeTimer();
-        // Reset IP on reconnect
         ref.read(exitIpProvider.notifier).reset();
+        ref.read(exitIpProvider.notifier).query();
       } else if (next == CoreStatus.stopped) {
         _stopUptimeTimer();
       }
     });
 
-    final isWide = MediaQuery.sizeOf(context).width > 640;
-
-    final topPadding = MediaQuery.of(context).padding.top;
-
+    // Use LayoutBuilder to get the ACTUAL available width (content area,
+    // not full window width — matters on desktop with sidebar).
     return Scaffold(
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Mock banner
-          if (isMock)
-            Container(
-              color: Colors.amber.withValues(alpha: 0.12),
-              padding: EdgeInsets.fromLTRB(16, topPadding + 5, 16, 5),
-              child: Row(
-                children: [
-                  Icon(Icons.science_outlined,
-                      size: 13, color: Colors.amber.shade700),
-                  const SizedBox(width: 6),
-                  Text(s.mockModeBanner,
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.amber.shade700)),
-                ],
-              ),
-            ),
+      body: SafeArea(
+        bottom: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // isWide uses the actual available content-area width,
+            // not MediaQuery window width (which includes the sidebar).
+            final isWide = constraints.maxWidth > 560;
 
-          // ── Content ───────────────────────────────────────────────
-          Expanded(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(24, isMock ? 24 : topPadding + 24, 24, 24),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 720),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ── Mock mode banner ────────────────────────────────
+                if (isMock)
+                  Container(
+                    color: Colors.amber.withValues(alpha: 0.12),
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+                    child: Row(
+                      children: [
+                        Icon(Icons.science_outlined,
+                            size: 13, color: Colors.amber.shade700),
+                        const SizedBox(width: 6),
+                        Text(s.mockModeBanner,
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.amber.shade700)),
+                      ],
+                    ),
+                  ),
+
+                // ── Scrollable card stack ────────────────────────────
+                Expanded(
+                  child: ListView(
+                    padding: EdgeInsets.symmetric(
+                      // Centre content at max 720px on wide screens.
+                      horizontal: constraints.maxWidth > 720 + 48
+                          ? (constraints.maxWidth - 720) / 2
+                          : 24.0,
+                      vertical: 24,
+                    ),
                     children: [
-                      // ── Layer 1: Hero Card ──────────────
+                      // Layer 1: Hero card (ALWAYS visible)
                       HeroCard(
                         status: status,
-                        uptimeText: _uptimeText,
+                        uptimeNotifier: _uptimeNotifier,
                         onToggle: () => _toggle(context, ref),
                       ),
 
-                      // ── Layer 2: Overview (disconnect only) ──
-                      if (!isRunning && !isTransitioning) ...[
-                        const SizedBox(height: 16),
-                        const OverviewCard(),
-                      ],
-
-                      // ── Layer 3: IP + Chart ───────────
+                      // Layer 2+3: visible only when connected
                       if (isRunning) ...[
                         const SizedBox(height: 16),
                         if (isWide)
-                          // Desktop: side by side.
-                          // CrossAxisAlignment.stretch makes ExitIpCard fill the
-                          // same height as ChartCard without IntrinsicHeight's
-                          // double-layout cost.
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const Flexible(
-                                flex: 1,
-                                child: ExitIpCard(),
-                              ),
-                              const SizedBox(width: 12),
-                              const Flexible(flex: 2, child: RepaintBoundary(child: ChartCard())),
-                            ],
+                          // SizedBox gives the Row a finite height so
+                          // CrossAxisAlignment.stretch works correctly.
+                          // IntrinsicHeight + Flexible collapses to 0px because
+                          // Row skips flex children in intrinsic height queries.
+                          SizedBox(
+                            height: 190,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: const [
+                                Expanded(flex: 1, child: ExitIpCard()),
+                                SizedBox(width: 12),
+                                Expanded(
+                                  flex: 2,
+                                  child: RepaintBoundary(child: ChartCard()),
+                                ),
+                              ],
+                            ),
                           )
                         else ...[
-                          // Mobile: stacked
                           const ExitIpCard(),
                           const SizedBox(height: 12),
                           const RepaintBoundary(child: ChartCard()),
                         ],
-                        // ── Layer 4: Today stats ──────────
                         const SizedBox(height: 12),
                         const StatsCard(),
                       ],
+
+                      // Layer 4: Overview (ALWAYS visible)
+                      const SizedBox(height: 16),
+                      const OverviewCard(),
+                      const SizedBox(height: 8),
                     ],
                   ),
                 ),
-              ),
-            ),
-          ),
-        ],
+              ],
+            );
+          },
+        ),
       ),
     );
   }

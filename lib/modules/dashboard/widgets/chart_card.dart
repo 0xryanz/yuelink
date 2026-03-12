@@ -112,8 +112,7 @@ class _ChartCardState extends ConsumerState<ChartCard> {
                     child: Text('—',
                         style: YLText.body.copyWith(color: YLColors.zinc400)),
                   )
-                : _buildChart(context, downHistory, upHistory,
-                    history.p90(seconds: range)),
+                : _buildChart(context, downHistory, upHistory, 0),
           ),
         ],
       ),
@@ -122,7 +121,10 @@ class _ChartCardState extends ConsumerState<ChartCard> {
 
   Widget _buildChart(BuildContext context, List<double> down,
       List<double> up, double p90) {
-    final maxY = p90 > 0 ? p90 * 1.5 : 1024 * 1024.0;
+    // Use actual max of displayed data + 15% headroom so every spike is
+    // fully visible. p90 was used before but caused peaks to be clipped.
+    final maxVal = [...down, ...up].fold(0.0, (a, b) => b > a ? b : a);
+    final maxY = maxVal > 0 ? maxVal * 1.15 : 1024 * 1024.0;
 
     List<FlSpot> toSpots(List<double> data) => data
         .asMap()
@@ -153,17 +155,31 @@ class _ChartCardState extends ConsumerState<ChartCard> {
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 42,
+              reservedSize: 48,
+              interval: maxY / 3,
               getTitlesWidget: (value, meta) {
-                if (value == 0) return const SizedBox.shrink();
-                return Text(
-                  _fmtSpeed(value),
-                  style: YLText.caption.copyWith(fontSize: 9, color: YLColors.zinc400),
+                // Hide the 0 baseline label.
+                if (value <= 0) return const SizedBox.shrink();
+                // Top label (maxY): anchor to topRight so the text sits
+                // entirely inside the chart and never bleeds above it.
+                final isTop = value >= meta.max * 0.99;
+                return Align(
+                  alignment:
+                      isTop ? Alignment.topRight : Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Text(
+                      _fmtSpeed(value),
+                      style: YLText.caption
+                          .copyWith(fontSize: 9, color: YLColors.zinc400),
+                    ),
+                  ),
                 );
               },
             ),
           ),
         ),
+        clipData: const FlClipData.all(),
         lineTouchData: const LineTouchData(enabled: false),
         lineBarsData: [
           _line(toSpots(down), YLColors.accent),
@@ -197,9 +213,10 @@ class _ChartCardState extends ConsumerState<ChartCard> {
   }
 
   static String _fmtSpeed(double bps) {
-    if (bps < 1024) return '${bps.toStringAsFixed(0)}B';
-    if (bps < 1024 * 1024) return '${(bps / 1024).toStringAsFixed(0)}K';
-    return '${(bps / (1024 * 1024)).toStringAsFixed(1)}M';
+    if (bps >= 1024 * 1024 * 1024) {
+      return '${(bps / (1024 * 1024 * 1024)).toStringAsFixed(2)}GB';
+    }
+    return '${(bps / (1024 * 1024)).toStringAsFixed(2)}MB';
   }
 }
 

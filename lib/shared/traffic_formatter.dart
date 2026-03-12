@@ -6,30 +6,22 @@
 class TrafficFormatter {
   TrafficFormatter._();
 
-  /// Format a bytes-per-second value with auto unit scaling.
+  /// Format a bytes-per-second value. Always shows MB or GB (no /s suffix).
   ///
-  /// Examples: 512 → "512 B/s", 1536 → "1.5 KB/s", 2097152 → "2.0 MB/s"
+  /// Examples: 512 → "0.00 MB", 1536 → "0.00 MB", 2097152 → "2.00 MB"
   static String speed(int bps) {
-    if (bps < 1024) return '$bps B/s';
-    if (bps < 1024 * 1024) {
-      return '${(bps / 1024).toStringAsFixed(1)} KB/s';
-    }
     if (bps < 1024 * 1024 * 1024) {
-      return '${(bps / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+      return '${(bps / (1024 * 1024)).toStringAsFixed(2)} MB';
     }
-    return '${(bps / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB/s';
+    return '${(bps / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
-  /// Format a total byte count with auto unit scaling (no "/s").
+  /// Format a total byte count. Always shows MB or GB.
   ///
-  /// Examples: 512 → "512 B", 1536 → "1.5 KB", 2097152 → "2.0 MB"
+  /// Examples: 512 → "0.00 MB", 10485760 → "10.00 MB"
   static String bytes(int b) {
-    if (b < 1024) return '$b B';
-    if (b < 1024 * 1024) {
-      return '${(b / 1024).toStringAsFixed(1)} KB';
-    }
     if (b < 1024 * 1024 * 1024) {
-      return '${(b / (1024 * 1024)).toStringAsFixed(1)} MB';
+      return '${(b / (1024 * 1024)).toStringAsFixed(2)} MB';
     }
     return '${(b / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }

@@ -1,7 +1,7 @@
 name: yuelink
 description: "YueLink - Cross-platform proxy client by Yue.to"
 publish_to: 'none'
-version: 0.1.27
+version: 1.0.0-beta.1
 
 environment:
   sdk: ^3.6.0
@@ -48,6 +48,9 @@ flutter_launcher_icons:
   windows:
     generate: true
     image_path: "assets/icon.png"
+  linux:
+    generate: true
+    image_path: "assets/icon.png"
   image_path: "assets/icon.png"
   adaptive_icon_background: "#6366F1"
   adaptive_icon_foreground: "assets/icon.png"
@@ -59,6 +62,7 @@ flutter:
     - assets/tray_icon.png
     - assets/tray_icon_macos.png
     - assets/tray_icon_win.png
+    - assets/app_icon.ico
     - assets/geodata/GeoIP.dat
     - assets/geodata/GeoSite.dat
     - assets/geodata/country.mmdb

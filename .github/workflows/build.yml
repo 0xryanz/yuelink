@@ -467,7 +467,47 @@ jobs:
       - name: Package AppImage
         run: |
           VERSION=$(echo "${GITHUB_REF}" | sed 's|refs/tags/v||')
-          bash scripts/build_linux.sh "${VERSION}"
+          ARCH="$(uname -m)"
+          BUNDLE_DIR="build/linux/x64/release/bundle"
+          APPDIR="build/AppDir"
+          OUTPUT="YueLink-${VERSION}-linux-${ARCH}.AppImage"
+
+          # Assemble AppDir
+          rm -rf "${APPDIR}"
+          mkdir -p "${APPDIR}/usr/bin" "${APPDIR}/usr/lib"
+          mkdir -p "${APPDIR}/usr/share/applications"
+          mkdir -p "${APPDIR}/usr/share/icons/hicolor/256x256/apps"
+
+          cp -r "${BUNDLE_DIR}/." "${APPDIR}/usr/bin/"
+
+          cat > "${APPDIR}/usr/share/applications/yuelink.desktop" << 'DESKTOP'
+          [Desktop Entry]
+          Name=YueLink
+          Comment=Cross-platform proxy client
+          Exec=yuelink
+          Icon=yuelink
+          Type=Application
+          Categories=Network;
+          StartupNotify=true
+          DESKTOP
+
+          if [ -f "assets/icon.png" ]; then
+            cp "assets/icon.png" "${APPDIR}/usr/share/icons/hicolor/256x256/apps/yuelink.png"
+            cp "assets/icon.png" "${APPDIR}/yuelink.png"
+          fi
+
+          cat > "${APPDIR}/AppRun" << 'APPRUN'
+          #!/usr/bin/env bash
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          export LD_LIBRARY_PATH="${HERE}/usr/bin/lib:${LD_LIBRARY_PATH:-}"
+          exec "${HERE}/usr/bin/yuelink" "$@"
+          APPRUN
+          chmod +x "${APPDIR}/AppRun"
+
+          ln -sf "usr/share/applications/yuelink.desktop" "${APPDIR}/yuelink.desktop"
+
+          ARCH="${ARCH}" appimagetool "${APPDIR}" "${OUTPUT}"
+          echo "Created: ${OUTPUT} ($(du -sh "${OUTPUT}" | cut -f1))"
 
       - name: Rename artifact
         run: |

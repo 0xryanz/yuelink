@@ -6,14 +6,14 @@
 class TrafficFormatter {
   TrafficFormatter._();
 
-  /// Format a bytes-per-second value. Always shows MB/s or GB/s.
+  /// Format a bytes-per-second value. Always shows MB or GB (no /s suffix).
   ///
-  /// Examples: 512 → "0.00 MB/s", 1536 → "0.00 MB/s", 2097152 → "2.00 MB/s"
+  /// Examples: 512 → "0.00 MB", 1536 → "0.00 MB", 2097152 → "2.00 MB"
   static String speed(int bps) {
     if (bps < 1024 * 1024 * 1024) {
-      return '${(bps / (1024 * 1024)).toStringAsFixed(2)} MB/s';
+      return '${(bps / (1024 * 1024)).toStringAsFixed(2)} MB';
     }
-    return '${(bps / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB/s';
+    return '${(bps / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
   /// Format a total byte count. Always shows MB or GB.

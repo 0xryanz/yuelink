@@ -129,6 +129,8 @@ jobs:
             libgtk-3-dev libblkid-dev liblzma-dev ninja-build \
             libglib2.0-dev libpango1.0-dev libcairo2-dev \
             libsecret-1-dev libstdc++-12-dev \
+            libkeybinder-3.0-dev \
+            libayatana-appindicator3-dev \
             pkg-config cmake clang
 
       # ── Build ─────────────────────────────────────────────────────────────
@@ -438,6 +440,8 @@ jobs:
             libgtk-3-dev libblkid-dev liblzma-dev ninja-build \
             libglib2.0-dev libpango1.0-dev libcairo2-dev \
             libsecret-1-dev libstdc++-12-dev \
+            libkeybinder-3.0-dev \
+            libayatana-appindicator3-dev \
             pkg-config cmake clang
 
       - run: dart setup.dart install -p linux

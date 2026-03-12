@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../l10n/app_strings.dart';
 import '../../../providers/connection_provider.dart';
 import '../../../providers/core_provider.dart';
+import '../../../shared/traffic_formatter.dart';
 import '../../../theme.dart';
 import '../providers/traffic_providers.dart';
 
@@ -11,15 +12,6 @@ import '../providers/traffic_providers.dart';
 
 class StatsCard extends ConsumerWidget {
   const StatsCard({super.key});
-
-  static String _fmt(int bytes) {
-    if (bytes < 1024) return '${bytes}B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)}KB';
-    if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
-    }
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)}GB';
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -30,10 +22,10 @@ class StatsCard extends ConsumerWidget {
     final mem = ref.watch(memoryUsageProvider);
 
     final items = [
-      (s.trafficDownload, _fmt(daily.$2), Icons.arrow_downward_rounded, YLColors.accent),
-      (s.trafficUpload,   _fmt(daily.$1), Icons.arrow_upward_rounded,   YLColors.connected),
-      (s.activeConns,     '$connCount',   Icons.swap_horiz_rounded, YLColors.zinc500),
-      (s.trafficMemory,   _fmt(mem),      Icons.memory_rounded,          YLColors.zinc500),
+      (s.trafficDownload, TrafficFormatter.bytes(daily.$2), Icons.arrow_downward_rounded, YLColors.accent),
+      (s.trafficUpload,   TrafficFormatter.bytes(daily.$1), Icons.arrow_upward_rounded,   YLColors.connected),
+      (s.activeConns,     '$connCount',                     Icons.swap_horiz_rounded,     YLColors.zinc500),
+      (s.trafficMemory,   TrafficFormatter.bytes(mem),      Icons.memory_rounded,         YLColors.zinc500),
     ];
 
     return Container(

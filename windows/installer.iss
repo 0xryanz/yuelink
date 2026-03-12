@@ -1,4 +1,5 @@
 [Setup]
+AppId={{2C7A4BEF-D5E9-4B1A-8F3C-9E2D8A1F6042}
 AppName=YueLink
 AppVersion={#MyAppVersion}
 AppPublisher=Yue.to

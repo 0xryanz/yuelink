@@ -373,10 +373,11 @@ class _CompactRoutingMode extends ConsumerWidget {
     const modes = ['rule', 'global', 'direct'];
     final labels = [s.routeModeRule, s.routeModeGlobal, s.routeModeDirect];
 
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 200),
+    // Fixed width ensures all three segments are equal and the pill never jumps.
+    return SizedBox(
+      width: 186,
+      height: 32,
       child: Container(
-        height: 32,
         padding: const EdgeInsets.all(2),
         decoration: BoxDecoration(
           color: isDark
@@ -385,10 +386,9 @@ class _CompactRoutingMode extends ConsumerWidget {
           borderRadius: BorderRadius.circular(YLRadius.pill),
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: List.generate(modes.length, (i) {
             final isSelected = modes[i] == routingMode;
-            return Flexible(
+            return Expanded(
               child: GestureDetector(
                 onTap: () async {
                   final mode = modes[i];

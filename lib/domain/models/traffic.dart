@@ -1,3 +1,5 @@
+import '../../shared/traffic_formatter.dart';
+
 /// Traffic rate snapshot.
 class Traffic {
   final int up; // bytes per second
@@ -5,8 +7,8 @@ class Traffic {
 
   const Traffic({this.up = 0, this.down = 0});
 
-  String get upFormatted => _formatBytes(up);
-  String get downFormatted => _formatBytes(down);
+  String get upFormatted => TrafficFormatter.speed(up);
+  String get downFormatted => TrafficFormatter.speed(down);
 }
 
 /// Connection info.
@@ -49,12 +51,3 @@ class ConnectionInfo {
   }
 }
 
-/// Format bytes to human-readable string.
-String _formatBytes(int bytes) {
-  if (bytes < 1024) return '$bytes B/s';
-  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB/s';
-  if (bytes < 1024 * 1024 * 1024) {
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB/s';
-  }
-  return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB/s';
-}

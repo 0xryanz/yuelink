@@ -11,7 +11,6 @@ import '../../providers/core_provider.dart';
 import '../../providers/split_tunnel_provider.dart';
 import '../../shared/app_notifier.dart';
 import '../../core/kernel/core_manager.dart';
-import '../../services/profile_service.dart';
 import '../../core/storage/settings_service.dart';
 import '../../core/platform/vpn_service.dart';
 import '../../services/update_checker.dart';
@@ -19,6 +18,7 @@ import '../../theme.dart';
 import 'sub/connections_sub_page.dart';
 import 'sub/logs_sub_page.dart';
 import 'sub/overwrite_sub_page.dart';
+import 'sub/proxy_providers_sub_page.dart';
 import 'sub/webdav_sub_page.dart';
 
 // ── Settings-level providers ─────────────────────────────────────────────────
@@ -73,6 +73,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final logLevel = ref.watch(logLevelProvider);
     final systemProxyOnConnect = ref.watch(systemProxyOnConnectProvider);
     final status = ref.watch(coreStatusProvider);
+    final routingMode = ref.watch(routingModeProvider);
     final isDesktop = Platform.isMacOS || Platform.isWindows;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -214,79 +215,129 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 ),
               ),
 
-              // ══ 2. Proxy (desktop only — mobile always uses VPN) ═══
-              if (isDesktop) ...[
+              // ══ 2. Connection ═════════════════════════════════════
               _SectionTitle(s.sectionConnection),
               _SettingsCard(
                 child: Column(
                   children: [
+                    // Routing mode — all platforms
                     YLInfoRow(
-                      label: s.connectionMode,
-                      trailing: DropdownButton<String>(
-                        value: connectionMode,
-                        underline: const SizedBox.shrink(),
-                        style: YLText.body.copyWith(
-                          color: isDark ? YLColors.zinc200 : YLColors.zinc700,
+                      label: s.routingModeSetting,
+                      trailing: SizedBox(
+                        width: 200,
+                        child: SegmentedButton<String>(
+                          showSelectedIcon: false,
+                          style: SegmentedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            textStyle: const TextStyle(fontSize: 12),
+                          ),
+                          segments: [
+                            ButtonSegment(
+                                value: 'rule',
+                                label: Text(s.routeModeRule)),
+                            ButtonSegment(
+                                value: 'global',
+                                label: Text(s.routeModeGlobal)),
+                            ButtonSegment(
+                                value: 'direct',
+                                label: Text(s.routeModeDirect)),
+                          ],
+                          selected: {routingMode},
+                          onSelectionChanged: (v) async {
+                            final mode = v.first;
+                            ref.read(routingModeProvider.notifier).state = mode;
+                            await SettingsService.setRoutingMode(mode);
+                            if (status == CoreStatus.running) {
+                              try {
+                                await CoreManager.instance.api.setRoutingMode(mode);
+                              } catch (_) {}
+                            }
+                          },
                         ),
-                        dropdownColor: isDark ? YLColors.zinc800 : Colors.white,
-                        items: [
-                          DropdownMenuItem(
-                              value: 'tun', child: Text(s.modeTun)),
-                          DropdownMenuItem(
-                              value: 'systemProxy',
-                              child: Text(s.modeSystemProxy)),
-                        ],
-                        onChanged: (v) async {
-                          if (v == null) return;
-                          ref.read(connectionModeProvider.notifier).state = v;
-                          await SettingsService.setConnectionMode(v);
-                        },
                       ),
                     ),
-                    Divider(height: 1, thickness: 0.5, color: dividerColor),
-                    YLSettingsRow(
-                      title: s.setSystemProxyOnConnect,
-                      description: s.setSystemProxyOnConnectSub,
-                      trailing: Switch(
-                        value: systemProxyOnConnect,
-                        onChanged: (v) async {
-                          ref
-                              .read(systemProxyOnConnectProvider.notifier)
-                              .state = v;
-                          await SettingsService.setSystemProxyOnConnect(v);
-                        },
+                    if (isDesktop) ...[
+                      Divider(height: 1, thickness: 0.5, color: dividerColor),
+                      YLInfoRow(
+                        label: s.connectionMode,
+                        trailing: DropdownButton<String>(
+                          value: connectionMode,
+                          underline: const SizedBox.shrink(),
+                          style: YLText.body.copyWith(
+                            color: isDark ? YLColors.zinc200 : YLColors.zinc700,
+                          ),
+                          dropdownColor: isDark ? YLColors.zinc800 : Colors.white,
+                          items: [
+                            DropdownMenuItem(
+                                value: 'tun', child: Text(s.modeTun)),
+                            DropdownMenuItem(
+                                value: 'systemProxy',
+                                child: Text(s.modeSystemProxy)),
+                          ],
+                          onChanged: (v) async {
+                            if (v == null) return;
+                            ref.read(connectionModeProvider.notifier).state = v;
+                            await SettingsService.setConnectionMode(v);
+                          },
+                        ),
                       ),
-                    ),
+                      Divider(height: 1, thickness: 0.5, color: dividerColor),
+                      YLSettingsRow(
+                        title: s.setSystemProxyOnConnect,
+                        description: s.setSystemProxyOnConnectSub,
+                        trailing: Switch(
+                          value: systemProxyOnConnect,
+                          onChanged: (v) async {
+                            ref
+                                .read(systemProxyOnConnectProvider.notifier)
+                                .state = v;
+                            await SettingsService.setSystemProxyOnConnect(v);
+                          },
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
-              ],
 
-              // ══ 3. Subscription & Sync ════════════════════════════
+              // ══ 3. Subscription & Config ══════════════════════════
               _SectionTitle(s.sectionSubscription),
               _SettingsCard(
                 child: Column(
                   children: [
                     YLInfoRow(
-                      label: s.updateAllNow,
+                      label: s.configOverwrite,
                       trailing: const Icon(Icons.chevron_right, size: 18,
                           color: YLColors.zinc400),
-                      onTap: () => _updateAllProfiles(context),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const OverwriteSubPage()),
+                      ),
+                    ),
+                    Divider(height: 1, thickness: 0.5, color: dividerColor),
+                    YLInfoRow(
+                      label: s.proxyProviderTitle,
+                      trailing: const Icon(Icons.chevron_right, size: 18,
+                          color: YLColors.zinc400),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const ProxyProvidersSubPage()),
+                      ),
+                    ),
+                    Divider(height: 1, thickness: 0.5, color: dividerColor),
+                    YLInfoRow(
+                      label: 'WebDAV',
+                      trailing: const Icon(Icons.chevron_right,
+                          size: 18, color: YLColors.zinc400),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const WebDavSubPage()),
+                      ),
                     ),
                   ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              _SettingsCard(
-                child: YLInfoRow(
-                  label: 'WebDAV',
-                  trailing: const Icon(Icons.chevron_right,
-                      size: 18, color: YLColors.zinc400),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const WebDavSubPage()),
-                  ),
                 ),
               ),
 
@@ -295,7 +346,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               _SettingsCard(
                 child: Column(
                   children: [
-                    // Status info
                     YLInfoRow(
                       label: s.coreStatus,
                       trailing: Row(
@@ -321,7 +371,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       ),
                     ),
                     Divider(height: 1, thickness: 0.5, color: dividerColor),
-                    // Log level
                     YLInfoRow(
                       label: s.logLevelSetting,
                       trailing: DropdownButton<String>(
@@ -355,17 +404,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         },
                       ),
                     ),
-                    Divider(height: 1, thickness: 0.5, color: dividerColor),
-                    YLInfoRow(
-                      label: s.configOverwrite,
-                      trailing: const Icon(Icons.chevron_right, size: 18,
-                          color: YLColors.zinc400),
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const OverwriteSubPage()),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -375,7 +413,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               _SettingsCard(
                 child: Column(
                   children: [
-                    // Live connections
                     YLInfoRow(
                       label: s.navConnections,
                       trailing: const Icon(Icons.chevron_right, size: 18,
@@ -390,7 +427,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           : null,
                     ),
                     Divider(height: 1, thickness: 0.5, color: dividerColor),
-                    // Logs
                     YLInfoRow(
                       label: s.tabLogs,
                       trailing: const Icon(Icons.chevron_right, size: 18,
@@ -404,7 +440,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                               )
                           : null,
                     ),
-                    // Proxy providers removed — not needed for current release
                   ],
                 ),
               ),
@@ -428,7 +463,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     Divider(height: 1, thickness: 0.5, color: dividerColor),
                     YLInfoRow(
                       label: s.coreLabel,
-                      value: 'mihomo (Clash.Meta)',
+                      value: 'mihomo',
                     ),
                     Divider(height: 1, thickness: 0.5, color: dividerColor),
                     YLInfoRow(
@@ -502,24 +537,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ],
       ),
     );
-  }
-
-  Future<void> _updateAllProfiles(BuildContext context) async {
-    final s = S.of(context);
-    AppNotifier.info(s.updatingAll);
-    int updated = 0;
-    int failed = 0;
-    final profiles = await ProfileService.loadProfiles();
-    for (final profile in profiles) {
-      if (profile.url.isEmpty) continue;
-      try {
-        await ProfileService.updateProfile(profile);
-        updated++;
-      } catch (_) {
-        failed++;
-      }
-    }
-    AppNotifier.success(s.updateAllResult(updated, failed));
   }
 
   Future<void> _launchUrl(String url) async {

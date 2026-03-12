@@ -24,8 +24,9 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   _SortColumn _sortCol = _SortColumn.duration;
   bool _sortAsc = false;
 
-  static bool get _isSubPage =>
-      !(Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+  // Always show AppBar — this page is always entered via Navigator.push()
+  // from Settings on all platforms.
+  static const bool _isSubPage = true;
 
   List<ActiveConnection> _sorted(List<ActiveConnection> list) {
     final copy = List<ActiveConnection>.from(list);

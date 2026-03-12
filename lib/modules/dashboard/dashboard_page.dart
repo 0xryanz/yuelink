@@ -94,17 +94,17 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
     final isWide = MediaQuery.sizeOf(context).width > 640;
 
-    final topPadding = MediaQuery.of(context).padding.top;
-
     return Scaffold(
-      body: Column(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Mock banner
           if (isMock)
             Container(
               color: Colors.amber.withValues(alpha: 0.12),
-              padding: EdgeInsets.fromLTRB(16, topPadding + 5, 16, 5),
+              padding: const EdgeInsets.fromLTRB(16, 5, 16, 5),
               child: Row(
                 children: [
                   Icon(Icons.science_outlined,
@@ -120,8 +120,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           // ── Content ───────────────────────────────────────────────
           Expanded(
             child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(24, isMock ? 24 : topPadding + 24, 24, 24),
-              child: Center(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+              child: Align(
+                alignment: Alignment.topCenter,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 720),
                   child: Column(
@@ -171,6 +172,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

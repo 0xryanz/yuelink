@@ -72,7 +72,7 @@ class GroupCard extends ConsumerStatefulWidget {
 
 class _GroupCardState extends ConsumerState<GroupCard>
     with SingleTickerProviderStateMixin {
-  bool _expanded = true;
+  bool _expanded = false;
   late AnimationController _animController;
   late Animation<double> _expandAnim;
   late Animation<double> _chevronAnim;
@@ -83,7 +83,7 @@ class _GroupCardState extends ConsumerState<GroupCard>
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 250),
-      value: 1.0, // start expanded
+      value: 0.0, // start collapsed
     );
     _expandAnim =
         CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic);

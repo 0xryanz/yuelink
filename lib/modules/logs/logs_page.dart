@@ -22,8 +22,9 @@ class _LogPageState extends ConsumerState<LogPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  static bool get _isSubPage =>
-      !(Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+  // Always show AppBar — this page is always entered via Navigator.push()
+  // from Settings on all platforms.
+  static const bool _isSubPage = true;
 
   @override
   void initState() {

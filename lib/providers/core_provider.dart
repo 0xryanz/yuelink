@@ -490,8 +490,21 @@ final memoryStreamProvider = Provider<void>((ref) {
   final manager = CoreManager.instance;
   if (manager.isMockMode) return;
 
+  // Throttle to 5s — memory fluctuates every ~1s but we don't need sub-second UI updates
+  int? pending;
+  Timer? throttle;
+
   final sub = manager.stream.memoryStream().listen((bytes) {
-    ref.read(memoryUsageProvider.notifier).state = bytes;
+    pending = bytes;
+    throttle ??= Timer(const Duration(seconds: 5), () {
+      final v = pending;
+      if (v != null) ref.read(memoryUsageProvider.notifier).state = v;
+      pending = null;
+      throttle = null;
+    });
   });
-  ref.onDispose(() => sub.cancel());
+  ref.onDispose(() {
+    sub.cancel();
+    throttle?.cancel();
+  });
 });

@@ -196,7 +196,6 @@ class _NodesPageState extends ConsumerState<NodesPage> {
     // ── Global mode: show only the GLOBAL group ───────────────────────
     if (routingMode == 'global') {
       final globalSortMode = ref.watch(nodeSortModeProvider);
-      final globalDelays = ref.watch(delayResultsProvider);
       return Scaffold(
         body: Center(
           child: ConstrainedBox(
@@ -245,8 +244,7 @@ class _NodesPageState extends ConsumerState<NodesPage> {
                       if (globalGroup != null)
                         _GroupCard(
                           group: globalGroup,
-                          sortedNodes: _sortedNodes(
-                              globalGroup.all, globalSortMode, globalDelays),
+                          sortMode: globalSortMode,
                         ),
                     ]),
                   ),
@@ -262,7 +260,6 @@ class _NodesPageState extends ConsumerState<NodesPage> {
     // ── Rule mode: show all groups (default) ──────────────────────────
     final sortMode = ref.watch(nodeSortModeProvider);
     final viewMode = ref.watch(nodeViewModeProvider);
-    final delays = ref.watch(delayResultsProvider);
 
     return Scaffold(
       body: Center(
@@ -322,35 +319,27 @@ class _NodesPageState extends ConsumerState<NodesPage> {
                 sliver: viewMode == NodeViewMode.list
                     ? SliverList(
                         delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final group = groups[index];
-                            final sorted = _sortedNodes(
-                                group.all, sortMode, delays);
-                            return Padding(
-                              padding: const EdgeInsets.only(
-                                  bottom: YLSpacing.lg),
-                              child: _GroupListSection(
-                                group: group,
-                                sortedNodes: sorted,
-                              ),
-                            );
-                          },
+                          (context, index) => Padding(
+                            padding:
+                                const EdgeInsets.only(bottom: YLSpacing.lg),
+                            child: _GroupListSection(
+                              group: groups[index],
+                              sortMode: sortMode,
+                            ),
+                          ),
                           childCount: groups.length,
                         ),
                       )
                     : SliverList(
                         delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final group = groups[index];
-                            final sorted = _sortedNodes(
-                                group.all, sortMode, delays);
-                            return Padding(
-                              padding: const EdgeInsets.only(
-                                  bottom: YLSpacing.lg),
-                              child: _GroupCard(
-                                  group: group, sortedNodes: sorted),
-                            );
-                          },
+                          (context, index) => Padding(
+                            padding:
+                                const EdgeInsets.only(bottom: YLSpacing.lg),
+                            child: _GroupCard(
+                              group: groups[index],
+                              sortMode: sortMode,
+                            ),
+                          ),
                           childCount: groups.length,
                         ),
                       ),
@@ -413,8 +402,8 @@ class _ModeBanner extends StatelessWidget {
 
 class _GroupCard extends ConsumerStatefulWidget {
   final ProxyGroup group;
-  final List<String>? sortedNodes;
-  const _GroupCard({required this.group, this.sortedNodes});
+  final NodeSortMode sortMode;
+  const _GroupCard({required this.group, this.sortMode = NodeSortMode.defaultOrder});
 
   @override
   ConsumerState<_GroupCard> createState() => _GroupCardState();
@@ -459,6 +448,7 @@ class _GroupCardState extends ConsumerState<_GroupCard> with SingleTickerProvide
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final delays = ref.watch(delayResultsProvider);
     final testing = ref.watch(delayTestingProvider);
+    final nodeList = _sortedNodes(group.all, widget.sortMode, delays);
 
     return Container(
       decoration: BoxDecoration(
@@ -537,8 +527,7 @@ class _GroupCardState extends ConsumerState<_GroupCard> with SingleTickerProvide
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: YLSpacing.xs),
                   child: Column(
-                    children: List.generate((widget.sortedNodes ?? group.all).length, (i) {
-                      final nodeList = widget.sortedNodes ?? group.all;
+                    children: List.generate(nodeList.length, (i) {
                       final nodeName = nodeList[i];
                       final isSelected = nodeName == group.now;
                       return Column(
@@ -560,7 +549,7 @@ class _GroupCardState extends ConsumerState<_GroupCard> with SingleTickerProvide
                             },
                             onTest: () => ref.read(delayTestProvider).testDelay(nodeName),
                           ),
-                          if (i < (widget.sortedNodes ?? group.all).length - 1)
+                          if (i < (nodeList).length - 1)
                             Divider(height: 1, indent: 48),
                         ],
                       );
@@ -913,15 +902,16 @@ class _ReadOnlyGroupCard extends StatelessWidget {
 
 class _GroupListSection extends ConsumerWidget {
   final ProxyGroup group;
-  final List<String> sortedNodes;
+  final NodeSortMode sortMode;
   const _GroupListSection(
-      {required this.group, required this.sortedNodes});
+      {required this.group, this.sortMode = NodeSortMode.defaultOrder});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final delays = ref.watch(delayResultsProvider);
     final testing = ref.watch(delayTestingProvider);
+    final nodeList = _sortedNodes(group.all, sortMode, delays);
 
     return Container(
       decoration: BoxDecoration(
@@ -963,7 +953,7 @@ class _GroupListSection extends ConsumerWidget {
                 ),
                 const Spacer(),
                 Text(
-                  S.of(context).nodesCountLabel(sortedNodes.length),
+                  S.of(context).nodesCountLabel(nodeList.length),
                   style: YLText.caption.copyWith(color: YLColors.zinc500),
                 ),
               ],
@@ -972,8 +962,8 @@ class _GroupListSection extends ConsumerWidget {
           const Divider(height: 0.5),
           // Flat node list
           Column(
-            children: List.generate(sortedNodes.length, (i) {
-              final nodeName = sortedNodes[i];
+            children: List.generate(nodeList.length, (i) {
+              final nodeName = nodeList[i];
               final isSelected = nodeName == group.now;
               return Column(
                 children: [
@@ -1041,7 +1031,7 @@ class _GroupListSection extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  if (i < sortedNodes.length - 1)
+                  if (i < nodeList.length - 1)
                     const Divider(height: 1, indent: 48),
                 ],
               );

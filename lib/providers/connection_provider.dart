@@ -70,6 +70,11 @@ final connectionsStreamProvider = Provider<void>((ref) {
   });
 });
 
+// Derived count — cheap int comparison avoids rebuilds on every connection update
+final connectionCountProvider = Provider<int>((ref) {
+  return ref.watch(connectionsSnapshotProvider).connections.length;
+});
+
 // ------------------------------------------------------------------
 // Connection filter / search
 // ------------------------------------------------------------------

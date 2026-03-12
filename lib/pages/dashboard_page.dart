@@ -119,6 +119,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       ref.watch(trafficStreamProvider);
       ref.watch(memoryStreamProvider);
       ref.watch(coreHeartbeatProvider);
+      ref.watch(connectionsStreamProvider);
     }
 
     ref.listen(coreStatusProvider, (prev, next) {
@@ -185,25 +186,24 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       if (isRunning) ...[
                         const SizedBox(height: 16),
                         if (isWide)
-                          // Desktop: side by side
-                          IntrinsicHeight(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Flexible(
-                                  flex: 1,
-                                  child: _ExitIpCard(
-                                    ip: _ip,
-                                    country: _country,
-                                    isLoading: _ipLoading,
-                                    isQueried: _ipQueried,
-                                    onQuery: _queryIp,
-                                  ),
+                          // Desktop: side by side — CrossAxisAlignment.start avoids
+                          // the expensive double layout pass of IntrinsicHeight
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Flexible(
+                                flex: 1,
+                                child: _ExitIpCard(
+                                  ip: _ip,
+                                  country: _country,
+                                  isLoading: _ipLoading,
+                                  isQueried: _ipQueried,
+                                  onQuery: _queryIp,
                                 ),
-                                const SizedBox(width: 12),
-                                const Flexible(flex: 2, child: RepaintBoundary(child: _ChartCard())),
-                              ],
-                            ),
+                              ),
+                              const SizedBox(width: 12),
+                              const Flexible(flex: 2, child: RepaintBoundary(child: _ChartCard())),
+                            ],
                           )
                         else ...[
                           // Mobile: stacked
@@ -353,9 +353,6 @@ class _HeroCard extends ConsumerWidget {
       }
     }
 
-    // Traffic
-    final traffic = isRunning ? ref.watch(trafficProvider) : null;
-
     // Pills data
     final profiles = ref.watch(profilesProvider);
     final activeId = ref.watch(activeProfileIdProvider);
@@ -476,41 +473,10 @@ class _HeroCard extends ConsumerWidget {
           ),
 
           // Row 4: Inline traffic speed (only when connected)
-          if (isRunning && traffic != null) ...[
+          // Isolated in its own ConsumerWidget so only the speed numbers rebuild
+          if (isRunning) ...[
             const SizedBox(height: 14),
-            Row(
-              children: [
-                Icon(Icons.arrow_downward_rounded,
-                    size: 13, color: YLColors.connected),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    traffic.downFormatted,
-                    style: YLText.mono.copyWith(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Icon(Icons.arrow_upward_rounded,
-                    size: 13, color: YLColors.accent),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    traffic.upFormatted,
-                    style: YLText.mono.copyWith(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
+            const RepaintBoundary(child: _TrafficSpeedRow()),
           ],
 
           // Row 5: Pills (routing mode + profile name)
@@ -536,6 +502,42 @@ class _HeroCard extends ConsumerWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+// Isolated consumer so only the two speed numbers rebuild every traffic tick
+// rather than rebuilding the entire _HeroCard.
+class _TrafficSpeedRow extends ConsumerWidget {
+  const _TrafficSpeedRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final traffic = ref.watch(trafficProvider);
+    return Row(
+      children: [
+        Icon(Icons.arrow_downward_rounded, size: 13, color: YLColors.connected),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            traffic.downFormatted,
+            style: YLText.mono.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Icon(Icons.arrow_upward_rounded, size: 13, color: YLColors.accent),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            traffic.upFormatted,
+            style: YLText.mono.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1310,13 +1312,13 @@ class _StatsCard extends ConsumerWidget {
     final s = S.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final daily = ref.watch(dailyTrafficProvider);
-    final snap = ref.watch(connectionsSnapshotProvider);
+    final connCount = ref.watch(connectionCountProvider);
     final mem = ref.watch(memoryUsageProvider);
 
     final items = [
       (s.trafficDownload, _fmt(daily.$2), Icons.arrow_downward_rounded, YLColors.accent),
       (s.trafficUpload,   _fmt(daily.$1), Icons.arrow_upward_rounded,   YLColors.connected),
-      (s.activeConns,     '${snap.connections.length}', Icons.swap_horiz_rounded, YLColors.zinc500),
+      (s.activeConns,     '$connCount',   Icons.swap_horiz_rounded, YLColors.zinc500),
       (s.trafficMemory,   _fmt(mem),      Icons.memory_rounded,          YLColors.zinc500),
     ];
 

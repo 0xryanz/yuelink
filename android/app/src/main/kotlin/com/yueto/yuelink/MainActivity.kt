@@ -11,10 +11,18 @@ import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
 import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.RenderMode
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+
+    // Use texture render mode to avoid the black-frame flash / ghost shadow
+    // that appears when returning from background with the default surface mode.
+    // Surface mode destroys and recreates the EGL surface on pause/resume;
+    // texture mode keeps the Flutter texture alive, giving a smooth transition.
+    override fun getRenderMode(): RenderMode = RenderMode.texture
+
     companion object {
         private const val VPN_CHANNEL  = "com.yueto.yuelink/vpn"
         private const val APPS_CHANNEL = "com.yueto.yuelink/apps"

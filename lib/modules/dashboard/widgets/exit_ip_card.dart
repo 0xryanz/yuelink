@@ -64,6 +64,7 @@ class ExitIpCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.max,
           children: [
             Row(
               children: [
@@ -88,8 +89,12 @@ class ExitIpCard extends ConsumerWidget {
               ),
             if (displayMeta.isNotEmpty) ...[
               const SizedBox(height: 2),
-              Text(displayMeta,
-                  style: YLText.caption.copyWith(color: YLColors.zinc400)),
+              Text(
+                displayMeta,
+                style: YLText.caption.copyWith(color: YLColors.zinc400),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ],
           ],
         ),

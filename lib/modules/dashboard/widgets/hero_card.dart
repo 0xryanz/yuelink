@@ -101,6 +101,8 @@ class HeroCard extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Row 1: Status + uptime ───────── Power button
+          // Flexible wraps the left text group so the PowerButton stays pinned
+          // right regardless of status-text or uptime-text length.
           Row(
             children: [
               YLStatusDot(
@@ -110,26 +112,41 @@ class HeroCard extends ConsumerWidget {
                 glow: isRunning,
               ),
               const SizedBox(width: 8),
-              Text(
-                isRunning
-                    ? s.statusConnected
-                    : (isTransitioning ? s.statusProcessing : s.statusDisconnected),
-                style: YLText.label.copyWith(
-                  color: isRunning ? YLColors.connected : YLColors.zinc500,
-                  fontWeight: FontWeight.w600,
+              Flexible(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        isRunning
+                            ? s.statusConnected
+                            : (isTransitioning
+                                ? s.statusProcessing
+                                : s.statusDisconnected),
+                        style: YLText.label.copyWith(
+                          color: isRunning ? YLColors.connected : YLColors.zinc500,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (isRunning && uptimeText.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        uptimeText,
+                        style: YLText.caption.copyWith(
+                          color: YLColors.zinc400,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              if (isRunning && uptimeText.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                Text(
-                  uptimeText,
-                  style: YLText.caption.copyWith(
-                    color: YLColors.zinc400,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ],
-              const Spacer(),
+              const SizedBox(width: 8),
               PowerButton(
                 isRunning: isRunning,
                 isTransitioning: isTransitioning,

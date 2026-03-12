@@ -17,6 +17,7 @@ class TrafficSpeedRow extends ConsumerWidget {
         Icon(Icons.arrow_downward_rounded, size: 13, color: YLColors.connected),
         const SizedBox(width: 4),
         Flexible(
+          fit: FlexFit.tight,
           child: Text(
             traffic.downFormatted,
             style: YLText.mono.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
@@ -28,6 +29,7 @@ class TrafficSpeedRow extends ConsumerWidget {
         Icon(Icons.arrow_upward_rounded, size: 13, color: YLColors.accent),
         const SizedBox(width: 4),
         Flexible(
+          fit: FlexFit.tight,
           child: Text(
             traffic.upFormatted,
             style: YLText.mono.copyWith(fontSize: 13, fontWeight: FontWeight.w600),

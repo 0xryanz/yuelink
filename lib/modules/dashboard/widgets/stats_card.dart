@@ -59,9 +59,13 @@ class StatsCard extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
-                Text(label,
-                    style: YLText.caption
-                        .copyWith(fontSize: 10, color: YLColors.zinc500)),
+                Text(
+                  label,
+                  style: YLText.caption
+                      .copyWith(fontSize: 10, color: YLColors.zinc500),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ],
             ),
           );

@@ -140,10 +140,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       if (isRunning) ...[
                         const SizedBox(height: 16),
                         if (isWide)
-                          // Desktop: side by side — CrossAxisAlignment.start avoids
-                          // the expensive double layout pass of IntrinsicHeight
+                          // Desktop: side by side.
+                          // CrossAxisAlignment.stretch makes ExitIpCard fill the
+                          // same height as ChartCard without IntrinsicHeight's
+                          // double-layout cost.
                           Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               const Flexible(
                                 flex: 1,

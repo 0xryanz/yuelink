@@ -50,9 +50,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       final m = diff.inMinutes % 60;
       final sec = diff.inSeconds % 60;
       if (h > 0) {
-        _uptimeNotifier.value = '${h}h ${m}m ${sec}s';
+        _uptimeNotifier.value = '${h}h ${m}m';
       } else if (m > 0) {
-        _uptimeNotifier.value = '${m}m ${sec}s';
+        _uptimeNotifier.value = '${m}m';
       } else {
         _uptimeNotifier.value = '${sec}s';
       }

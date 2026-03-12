@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../ffi/core_mock.dart';
-import '../models/rule.dart';
-import '../services/core_manager.dart';
+import '../core/ffi/core_mock.dart';
+import '../domain/models/rule.dart';
+import '../core/kernel/core_manager.dart';
 
 final rulesProvider =
     StateNotifierProvider<RulesNotifier, List<RuleInfo>>(

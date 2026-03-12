@@ -7,11 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_strings.dart';
 import '../main.dart' show deepLinkUrlProvider;
-import '../models/profile.dart';
+import '../domain/models/profile.dart';
 import '../providers/profile_provider.dart';
-import '../services/app_notifier.dart';
+import '../shared/app_notifier.dart';
 import '../services/profile_service.dart';
-import '../services/subscription_parser.dart';
+import '../shared/formatters/subscription_parser.dart';
 import '../theme.dart';
 import '../widgets/loading_overlay.dart';
 

@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/proxy_provider.dart';
-import '../services/core_manager.dart';
+import '../domain/models/proxy_provider.dart';
+import '../core/kernel/core_manager.dart';
 
 final proxyProvidersProvider =
     StateNotifierProvider<ProxyProvidersNotifier, List<ProxyProviderInfo>>(

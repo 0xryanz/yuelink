@@ -8,9 +8,9 @@ import 'package:path_provider/path_provider.dart';
 
 import '../constants.dart';
 import '../l10n/app_strings.dart';
-import '../models/profile.dart';
-import 'config_template.dart';
-import 'subscription_parser.dart';
+import '../domain/models/profile.dart';
+import '../core/kernel/config_template.dart';
+import '../shared/formatters/subscription_parser.dart';
 
 /// Manages subscription profiles: download, store, update.
 class ProfileService {

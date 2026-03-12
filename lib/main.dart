@@ -18,14 +18,14 @@ import 'pages/dashboard_page.dart';
 import 'pages/nodes_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/settings_page.dart';
-import 'models/proxy.dart';
+import 'domain/models/proxy.dart';
 import 'providers/core_provider.dart';
 import 'providers/profile_provider.dart';
 import 'providers/proxy_provider.dart';
-import 'services/app_notifier.dart';
-import 'services/core_manager.dart';
+import 'shared/app_notifier.dart';
+import 'core/kernel/core_manager.dart';
 import 'services/profile_service.dart';
-import 'services/settings_service.dart';
+import 'core/storage/settings_service.dart';
 import 'theme.dart';
 
 /// Global navigator key for deep-link navigation outside widget tree.

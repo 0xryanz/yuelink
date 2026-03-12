@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/connection.dart';
-import '../services/core_manager.dart';
+import '../domain/models/connection.dart';
+import '../core/kernel/core_manager.dart';
 import 'core_provider.dart';
 
 // ------------------------------------------------------------------

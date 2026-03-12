@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_strings.dart';
-import '../models/connection.dart';
+import '../domain/models/connection.dart';
 import '../providers/connection_provider.dart';
 import '../providers/core_provider.dart';
 import '../theme.dart';

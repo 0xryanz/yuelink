@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_strings.dart';
-import '../models/proxy_provider.dart';
+import '../domain/models/proxy_provider.dart';
 import '../providers/proxy_provider_provider.dart';
-import '../services/app_notifier.dart';
+import '../shared/app_notifier.dart';
 
 class ProxyProviderPage extends ConsumerStatefulWidget {
   const ProxyProviderPage({super.key});

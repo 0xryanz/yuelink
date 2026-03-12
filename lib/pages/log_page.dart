@@ -5,11 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_strings.dart';
-import '../models/rule.dart';
+import '../domain/models/rule.dart';
 import '../providers/core_provider.dart';
 import '../providers/log_provider.dart';
 import '../providers/rule_provider.dart';
-import '../services/mihomo_stream.dart';
+import '../infrastructure/datasources/mihomo_stream.dart';
 
 class LogPage extends ConsumerStatefulWidget {
   const LogPage({super.key});

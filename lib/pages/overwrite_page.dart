@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
-import '../services/app_notifier.dart';
+import '../shared/app_notifier.dart';
 import '../services/overwrite_service.dart';
 
 // ── Internal data model ────────────────────────────────────────────────────────

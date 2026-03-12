@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
-import 'settings_service.dart';
+import '../core/storage/settings_service.dart';
 
 /// WebDAV-based sync for profiles, settings, and subscription config files.
 ///

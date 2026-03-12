@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_strings.dart';
-import '../../services/core_manager.dart';
+import '../../core/kernel/core_manager.dart';
 
 class DnsQueryPage extends StatefulWidget {
   const DnsQueryPage({super.key});

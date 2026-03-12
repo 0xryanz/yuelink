@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yaml/yaml.dart';
 
-import '../ffi/core_controller.dart';
-import '../models/proxy.dart';
+import '../core/ffi/core_controller.dart';
+import '../domain/models/proxy.dart';
 import '../providers/profile_provider.dart';
-import '../services/core_manager.dart';
+import '../core/kernel/core_manager.dart';
 import '../services/profile_service.dart';
 
 /// Custom URL used for latency testing. Defaults to the standard gstatic URL.

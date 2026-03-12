@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
-import '../services/app_notifier.dart';
-import '../services/settings_service.dart';
+import '../shared/app_notifier.dart';
+import '../core/storage/settings_service.dart';
 import '../services/webdav_service.dart';
 import '../theme.dart';
 

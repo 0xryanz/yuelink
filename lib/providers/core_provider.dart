@@ -3,16 +3,16 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../ffi/core_controller.dart';
-import '../models/traffic.dart';
-import '../models/traffic_history.dart';
+import '../core/ffi/core_controller.dart';
+import '../domain/models/traffic.dart';
+import '../domain/models/traffic_history.dart';
 import '../providers/proxy_provider.dart';
 import '../l10n/app_strings.dart';
-import '../services/app_notifier.dart';
-import '../services/core_manager.dart';
-import '../services/mihomo_api.dart';
-import '../services/settings_service.dart';
-import '../services/vpn_service.dart';
+import '../shared/app_notifier.dart';
+import '../core/kernel/core_manager.dart';
+import '../infrastructure/datasources/mihomo_api.dart';
+import '../core/storage/settings_service.dart';
+import '../core/platform/vpn_service.dart';
 
 // ------------------------------------------------------------------
 // Core state

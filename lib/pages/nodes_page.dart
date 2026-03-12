@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_strings.dart';
-import '../models/proxy.dart';
+import '../domain/models/proxy.dart';
 import '../providers/core_provider.dart';
 import '../providers/proxy_provider.dart';
-import '../services/app_notifier.dart';
-import '../services/core_manager.dart';
-import '../services/settings_service.dart';
+import '../shared/app_notifier.dart';
+import '../core/kernel/core_manager.dart';
+import '../core/storage/settings_service.dart';
 import '../theme.dart';
 
 /// Sort a list of node names based on the given sort mode and delay map.

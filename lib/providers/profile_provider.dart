@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/profile.dart';
-import '../services/core_manager.dart';
+import '../domain/models/profile.dart';
+import '../core/kernel/core_manager.dart';
 import '../services/profile_service.dart';
-import '../services/settings_service.dart';
+import '../core/storage/settings_service.dart';
 
 // ------------------------------------------------------------------
 // Current active profile (persisted)

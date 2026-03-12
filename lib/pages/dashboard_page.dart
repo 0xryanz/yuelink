@@ -10,13 +10,13 @@ import 'dart:io';
 
 import '../l10n/app_strings.dart';
 import '../main.dart';
-import '../models/traffic_history.dart';
+import '../domain/models/traffic_history.dart';
 import '../providers/connection_provider.dart';
 import '../providers/core_provider.dart';
 import '../providers/profile_provider.dart';
 import '../providers/proxy_provider.dart';
-import '../services/app_notifier.dart';
-import '../services/core_manager.dart';
+import '../shared/app_notifier.dart';
+import '../core/kernel/core_manager.dart';
 import '../services/profile_service.dart';
 import '../theme.dart';
 

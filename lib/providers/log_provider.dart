@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../ffi/core_mock.dart';
-import '../services/core_manager.dart';
-import '../services/mihomo_stream.dart';
+import '../core/ffi/core_mock.dart';
+import '../core/kernel/core_manager.dart';
+import '../infrastructure/datasources/mihomo_stream.dart';
 import 'core_provider.dart';
 
 /// Live log entries from mihomo.

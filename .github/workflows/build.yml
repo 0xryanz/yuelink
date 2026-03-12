@@ -2,10 +2,10 @@ name: Build YueLink
 
 on:
   push:
-    branches: [main, dev]
-    tags: ['v*', 'alpha.*']
+    branches: [master, dev, release]
+    tags: ['v*']
   pull_request:
-    branches: [main, dev]
+    branches: [master, dev, release]
 
 # Cancel any in-progress run for the same ref (branch or tag) automatically.
 concurrency:
@@ -503,3 +503,5 @@ jobs:
         with:
           files: release/*
           generate_release_notes: true
+          # beta/rc tags → prerelease=true; vX.Y.Z stable → prerelease=false
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}

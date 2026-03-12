@@ -11,9 +11,11 @@ import '../l10n/app_strings.dart';
 import '../shared/app_notifier.dart';
 import '../core/kernel/core_manager.dart';
 import '../infrastructure/datasources/mihomo_api.dart';
-import '../infrastructure/repositories/traffic_repository.dart';
-import '../core/storage/settings_service.dart';
 import '../core/platform/vpn_service.dart';
+
+// Re-export traffic stream providers and chart UI state
+// (defined in modules/dashboard to avoid circular imports)
+export '../modules/dashboard/providers/traffic_providers.dart';
 
 // ------------------------------------------------------------------
 // Core state
@@ -332,70 +334,6 @@ class CoreActions {
 }
 
 // ------------------------------------------------------------------
-// Daily traffic accumulation
-// ------------------------------------------------------------------
-
-final dailyTrafficProvider =
-    StateNotifierProvider<DailyTrafficNotifier, (int, int)>(
-  (ref) => DailyTrafficNotifier(),
-);
-
-class DailyTrafficNotifier extends StateNotifier<(int, int)> {
-  Timer? _flushTimer;
-  bool _loaded = false;
-  String _loadedDateKey = '';
-
-  DailyTrafficNotifier() : super((0, 0)) {
-    _load();
-  }
-
-  static String _todayKey() {
-    final d = DateTime.now();
-    final m = d.month.toString().padLeft(2, '0');
-    final day = d.day.toString().padLeft(2, '0');
-    return '${d.year}-$m-$day';
-  }
-
-  Future<void> _load() async {
-    _loadedDateKey = _todayKey();
-    final data = await SettingsService.getTodayTraffic();
-    if (mounted) {
-      state = (data['up']!, data['down']!);
-      _loaded = true;
-    }
-  }
-
-  void add(int upDelta, int downDelta) {
-    if (!_loaded || !mounted) return;
-
-    // Reset counters on day rollover (midnight boundary)
-    final today = _todayKey();
-    if (today != _loadedDateKey) {
-      _loadedDateKey = today;
-      state = (upDelta, downDelta);
-      SettingsService.saveTodayTraffic(upDelta, downDelta);
-      return;
-    }
-
-    state = (state.$1 + upDelta, state.$2 + downDelta);
-    _flushTimer?.cancel();
-    _flushTimer = Timer(const Duration(seconds: 30), _flush);
-  }
-
-  Future<void> _flush() async {
-    await SettingsService.saveTodayTraffic(state.$1, state.$2);
-  }
-
-  @override
-  void dispose() {
-    _flushTimer?.cancel();
-    // Fire-and-forget final flush so we don't lose partial data on exit
-    SettingsService.saveTodayTraffic(state.$1, state.$2);
-    super.dispose();
-  }
-}
-
-// ------------------------------------------------------------------
 // Core heartbeat — detects unexpected crashes
 // ------------------------------------------------------------------
 
@@ -434,7 +372,7 @@ final coreHeartbeatProvider = Provider<void>((ref) {
 });
 
 // ------------------------------------------------------------------
-// Traffic streaming
+// Traffic state (written by both heartbeat and stream activators)
 // ------------------------------------------------------------------
 
 final trafficProvider = StateProvider<Traffic>((ref) => const Traffic());
@@ -442,64 +380,9 @@ final trafficProvider = StateProvider<Traffic>((ref) => const Traffic());
 final trafficHistoryProvider =
     StateProvider<TrafficHistory>((ref) => TrafficHistory());
 
-/// Selected time range for the traffic chart in seconds: 60 / 300 / 1800.
-final trafficChartRangeProvider = StateProvider<int>((ref) => 60);
-
-/// Whether the traffic chart is locked (frozen at snapshot).
-final trafficChartLockedProvider = StateProvider<bool>((ref) => false);
-
-final trafficStreamProvider = Provider<void>((ref) {
-  final status = ref.watch(coreStatusProvider);
-  if (status != CoreStatus.running) return;
-
-  final manager = CoreManager.instance;
-
-  if (manager.isMockMode) {
-    final timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      final t = CoreController.instance.getTraffic();
-      final traffic = Traffic(up: t.up, down: t.down);
-      ref.read(trafficProvider.notifier).state = traffic;
-      final history = ref.read(trafficHistoryProvider);
-      history.add(t.up, t.down);
-      ref.read(trafficHistoryProvider.notifier).state = history.copy();
-      ref.read(dailyTrafficProvider.notifier).add(t.up, t.down);
-    });
-    ref.onDispose(() => timer.cancel());
-  } else {
-    final repo = ref.watch(trafficRepositoryProvider);
-    // Traffic ticks → trafficProvider + dailyTrafficProvider
-    final trafficSub = repo.trafficStream().listen((t) {
-      ref.read(trafficProvider.notifier).state = t;
-      ref.read(dailyTrafficProvider.notifier).add(t.up, t.down);
-    });
-    // History ticks → trafficHistoryProvider
-    final historySub = repo.historyStream().listen((history) {
-      ref.read(trafficHistoryProvider.notifier).state = history;
-    });
-    ref.onDispose(() {
-      trafficSub.cancel();
-      historySub.cancel();
-    });
-  }
-});
-
 // ------------------------------------------------------------------
-// Memory usage streaming
+// Memory usage state
 // ------------------------------------------------------------------
 
 final memoryUsageProvider = StateProvider<int>((ref) => 0);
 
-final memoryStreamProvider = Provider<void>((ref) {
-  final status = ref.watch(coreStatusProvider);
-  if (status != CoreStatus.running) return;
-
-  final manager = CoreManager.instance;
-  if (manager.isMockMode) return;
-
-  // Throttle is handled inside TrafficRepository.memoryStream() (5 s window)
-  final repo = ref.watch(trafficRepositoryProvider);
-  final sub = repo.memoryStream().listen((bytes) {
-    ref.read(memoryUsageProvider.notifier).state = bytes;
-  });
-  ref.onDispose(() => sub.cancel());
-});

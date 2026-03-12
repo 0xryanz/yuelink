@@ -14,12 +14,12 @@ import '../services/core_manager.dart';
 import '../services/profile_service.dart';
 import '../services/settings_service.dart';
 import '../services/vpn_service.dart';
-import '../services/webdav_service.dart';
 import '../services/update_checker.dart';
 import '../theme.dart';
 import 'connections_page.dart';
 import 'log_page.dart';
 import 'overwrite_page.dart';
+import 'webdav_page.dart';
 // proxy_provider_page removed from settings
 
 // ── Settings-level providers ─────────────────────────────────────────────────
@@ -278,7 +278,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 ),
               ),
               const SizedBox(height: 8),
-              const _WebDavSection(),
+              _SettingsCard(
+                child: YLInfoRow(
+                  label: 'WebDAV',
+                  trailing: const Icon(Icons.chevron_right,
+                      size: 18, color: YLColors.zinc400),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const WebDavPage()),
+                  ),
+                ),
+              ),
 
               // ══ 4. Core ═══════════════════════════════════════════
               _SectionTitle(s.sectionCore),
@@ -519,174 +530,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     }
   }
 }
-
-// ── WebDAV Section ────────────────────────────────────────────────────────────
-
-class _WebDavSection extends StatefulWidget {
-  const _WebDavSection();
-
-  @override
-  State<_WebDavSection> createState() => _WebDavSectionState();
-}
-
-class _WebDavSectionState extends State<_WebDavSection> {
-  final _urlCtrl = TextEditingController();
-  final _userCtrl = TextEditingController();
-  final _passCtrl = TextEditingController();
-  bool _loading = false;
-  bool _obscure = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final cfg = await SettingsService.getWebDavConfig();
-    if (mounted) {
-      _urlCtrl.text = cfg['url'] ?? '';
-      _userCtrl.text = cfg['username'] ?? '';
-      _passCtrl.text = cfg['password'] ?? '';
-    }
-  }
-
-  @override
-  void dispose() {
-    _urlCtrl.dispose();
-    _userCtrl.dispose();
-    _passCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    return _SettingsCard(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _urlCtrl,
-              decoration: InputDecoration(
-                labelText: s.webdavUrl,
-                hintText: 'https://example.com/dav',
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _userCtrl,
-              decoration: InputDecoration(
-                labelText: s.username,
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _passCtrl,
-              obscureText: _obscure,
-              decoration: InputDecoration(
-                labelText: s.password,
-                isDense: true,
-                suffixIcon: IconButton(
-                  icon: Icon(
-                      _obscure ? Icons.visibility_off : Icons.visibility,
-                      size: 18),
-                  onPressed: () => setState(() => _obscure = !_obscure),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.check_circle_outline, size: 16),
-                    label: Text(s.testConnection),
-                    onPressed: _loading ? null : _testConnection,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.cloud_upload_outlined, size: 16),
-                    label: Text(s.upload),
-                    onPressed: _loading ? null : _upload,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.icon(
-                    icon: const Icon(Icons.cloud_download_outlined, size: 16),
-                    label: Text(s.download),
-                    onPressed: _loading ? null : _download,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _saveConfig() async {
-    await SettingsService.setWebDavConfig(
-      url: _urlCtrl.text.trim(),
-      username: _userCtrl.text.trim(),
-      password: _passCtrl.text,
-    );
-  }
-
-  Future<void> _testConnection() async {
-    final s = S.of(context);
-    await _saveConfig();
-    setState(() => _loading = true);
-    try {
-      final ok = await WebDavService.instance.testConnection();
-      if (ok) {
-        AppNotifier.success(s.connectionSuccess);
-      } else {
-        AppNotifier.error(s.connectionFailed);
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _upload() async {
-    final s = S.of(context);
-    await _saveConfig();
-    setState(() => _loading = true);
-    try {
-      await WebDavService.instance.upload();
-      AppNotifier.success(s.uploadSuccess);
-    } catch (e) {
-      AppNotifier.error(s.uploadFailed(e.toString()));
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _download() async {
-    final s = S.of(context);
-    await _saveConfig();
-    setState(() => _loading = true);
-    try {
-      await WebDavService.instance.download();
-      AppNotifier.success(s.downloadSuccess);
-    } catch (e) {
-      AppNotifier.error(s.downloadFailed(e.toString()));
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-}
-
-// ── Helper widgets ────────────────────────────────────────────────────────────
 
 // ── Settings page helper widgets ─────────────────────────────────────────────
 

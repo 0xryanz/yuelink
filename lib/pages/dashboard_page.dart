@@ -10,6 +10,7 @@ import 'dart:io';
 
 import '../l10n/app_strings.dart';
 import '../main.dart';
+import '../models/traffic_history.dart';
 import '../providers/connection_provider.dart';
 import '../providers/core_provider.dart';
 import '../providers/profile_provider.dart';
@@ -200,7 +201,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                                   ),
                                 ),
                                 const SizedBox(width: 12),
-                                const Flexible(flex: 2, child: _ChartCard()),
+                                const Flexible(flex: 2, child: RepaintBoundary(child: _ChartCard())),
                               ],
                             ),
                           )
@@ -214,7 +215,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                             onQuery: _queryIp,
                           ),
                           const SizedBox(height: 12),
-                          const _ChartCard(),
+                          const RepaintBoundary(child: _ChartCard()),
                         ],
                         // ── Layer 4: Today stats ──────────
                         const SizedBox(height: 12),
@@ -886,16 +887,32 @@ class _ExitIpCard extends StatelessWidget {
   }
 }
 
-class _ChartCard extends ConsumerWidget {
+class _ChartCard extends ConsumerStatefulWidget {
   const _ChartCard();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ChartCard> createState() => _ChartCardState();
+}
+
+class _ChartCardState extends ConsumerState<_ChartCard> {
+  TrafficHistory? _frozenHistory;
+
+  @override
+  Widget build(BuildContext context) {
     final s = S.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final history = ref.watch(trafficHistoryProvider);
+    final liveHistory = ref.watch(trafficHistoryProvider);
     final range = ref.watch(trafficChartRangeProvider);
+    final locked = ref.watch(trafficChartLockedProvider);
 
+    // When lock toggles on, capture snapshot; when off, clear it
+    if (locked && _frozenHistory == null) {
+      _frozenHistory = liveHistory.copy();
+    } else if (!locked && _frozenHistory != null) {
+      _frozenHistory = null;
+    }
+
+    final history = locked && _frozenHistory != null ? _frozenHistory! : liveHistory;
     final downHistory = history.downSampled(seconds: range);
     final upHistory = history.upSampled(seconds: range);
 
@@ -915,7 +932,7 @@ class _ChartCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header row: title + range selector + legend
+          // Header row: title + range selector + lock + legend
           Row(
             children: [
               Expanded(
@@ -930,7 +947,32 @@ class _ChartCard extends ConsumerWidget {
               _RangeButton(label: '5m', value: 300, range: range, ref: ref),
               const SizedBox(width: 4),
               _RangeButton(label: '30m', value: 1800, range: range, ref: ref),
-              const SizedBox(width: 10),
+              const SizedBox(width: 4),
+              // Lock button
+              GestureDetector(
+                onTap: () {
+                  final nowLocked = ref.read(trafficChartLockedProvider);
+                  if (!nowLocked) {
+                    // Capture snapshot before locking
+                    _frozenHistory = ref.read(trafficHistoryProvider).copy();
+                  } else {
+                    _frozenHistory = null;
+                  }
+                  ref.read(trafficChartLockedProvider.notifier).state = !nowLocked;
+                },
+                child: Tooltip(
+                  message: locked ? s.chartUnlock : s.chartLock,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Icon(
+                      locked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                      size: 13,
+                      color: locked ? YLColors.zinc400 : YLColors.zinc500,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
               _LegendDot(color: YLColors.accent, label: '↓'),
               const SizedBox(width: 10),
               _LegendDot(color: YLColors.connected, label: '↑'),

@@ -519,4 +519,23 @@ class S {
       _e ? 'Network error: $detail' : '网络错误: $detail';
   String errDownloadHttpFailed(int code) =>
       _e ? 'Download failed: HTTP $code' : '下载失败: HTTP $code';
+
+  // ── Traffic chart ────────────────────────────────────────────────
+  String get chartLock => _e ? 'Lock chart' : '锁定图表';
+  String get chartUnlock => _e ? 'Unlock chart' : '解锁图表';
+
+  // ── Routing mode ─────────────────────────────────────────────────
+  String get switchModeFailed => _e ? 'Mode switch failed' : '切换模式失败';
+
+  // ── Offline preview ──────────────────────────────────────────────
+  String get offlinePreview =>
+      _e ? 'Offline preview — connect to switch nodes' : '离线预览 — 连接后可切换节点';
+
+  // ── Node sort / view ─────────────────────────────────────────────
+  String get sortDefault => _e ? 'Default' : '默认顺序';
+  String get sortLatencyAsc => _e ? 'Latency ↑' : '延迟升序';
+  String get sortLatencyDesc => _e ? 'Latency ↓' : '延迟降序';
+  String get sortNameAsc => _e ? 'Name A-Z' : '名称 A-Z';
+  String get nodeViewCard => _e ? 'Card view' : '卡片视图';
+  String get nodeViewList => _e ? 'List view' : '列表视图';
 }

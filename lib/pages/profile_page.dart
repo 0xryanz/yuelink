@@ -71,6 +71,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   ),
                 ),
                 IconButton(
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  tooltip: s.updateAllNow,
+                  onPressed: () => _updateAllProfiles(context, ref),
+                  style: IconButton.styleFrom(
+                    foregroundColor: YLColors.zinc500,
+                  ),
+                ),
+                IconButton(
                   icon: const Icon(Icons.content_paste, size: 18),
                   tooltip: s.pasteFromClipboard,
                   onPressed: () => _pasteFromClipboard(context, ref),
@@ -168,6 +176,24 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         ],
       ),
     );
+  }
+
+  Future<void> _updateAllProfiles(BuildContext context, WidgetRef ref) async {
+    final s = S.of(context);
+    AppNotifier.info(s.updatingAll);
+    final profiles = await ProfileService.loadProfiles();
+    int updated = 0, failed = 0;
+    for (final p in profiles) {
+      if (p.url.isEmpty) continue;
+      try {
+        await ProfileService.updateProfile(p);
+        updated++;
+      } catch (_) {
+        failed++;
+      }
+    }
+    AppNotifier.success(s.updateAllResult(updated, failed));
+    ref.read(profilesProvider.notifier).load();
   }
 
   Future<void> _importLocalFile(

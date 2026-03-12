@@ -1,14 +1,67 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:yaml/yaml.dart';
 
 import '../ffi/core_controller.dart';
 import '../models/proxy.dart';
+import '../providers/profile_provider.dart';
 import '../services/core_manager.dart';
+import '../services/profile_service.dart';
 
 /// Custom URL used for latency testing. Defaults to the standard gstatic URL.
 final testUrlProvider = StateProvider<String>(
     (ref) => 'https://www.gstatic.com/generate_204');
+
+// ------------------------------------------------------------------
+// Node sort / view mode
+// ------------------------------------------------------------------
+
+enum NodeSortMode { defaultOrder, latencyAsc, latencyDesc, nameAsc }
+
+final nodeSortModeProvider =
+    StateProvider<NodeSortMode>((ref) => NodeSortMode.defaultOrder);
+
+enum NodeViewMode { card, list }
+
+final nodeViewModeProvider =
+    StateProvider<NodeViewMode>((ref) => NodeViewMode.card);
+
+// ------------------------------------------------------------------
+// Offline proxy groups (parsed from active profile YAML)
+// ------------------------------------------------------------------
+
+final offlineProxyGroupsProvider = FutureProvider<List<ProxyGroup>>((ref) async {
+  final activeId = ref.watch(activeProfileIdProvider);
+  if (activeId == null) return [];
+  final config = await ProfileService.loadConfig(activeId);
+  if (config == null || config.isEmpty) return [];
+  try {
+    final yaml = loadYaml(config);
+    if (yaml is! YamlMap) return [];
+    final rawGroups = yaml['proxy-groups'];
+    if (rawGroups == null) return [];
+    final groups = <ProxyGroup>[];
+    for (final item in rawGroups) {
+      if (item is! YamlMap) continue;
+      final name = item['name']?.toString() ?? '';
+      final type = item['type']?.toString() ?? '';
+      if (name.isEmpty) continue;
+      if (name == 'GLOBAL' || name == 'DIRECT' || name == 'REJECT') continue;
+      final allRaw = item['proxies'];
+      final all = <String>[];
+      if (allRaw is YamlList) {
+        for (final n in allRaw) {
+          if (n != null) all.add(n.toString());
+        }
+      }
+      groups.add(ProxyGroup(name: name, type: type, all: all, now: ''));
+    }
+    return groups;
+  } catch (_) {
+    return [];
+  }
+});
 
 // ------------------------------------------------------------------
 // Proxy groups & nodes

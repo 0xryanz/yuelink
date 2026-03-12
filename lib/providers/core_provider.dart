@@ -444,6 +444,9 @@ final trafficHistoryProvider =
 /// Selected time range for the traffic chart in seconds: 60 / 300 / 1800.
 final trafficChartRangeProvider = StateProvider<int>((ref) => 60);
 
+/// Whether the traffic chart is locked (frozen at snapshot).
+final trafficChartLockedProvider = StateProvider<bool>((ref) => false);
+
 final trafficStreamProvider = Provider<void>((ref) {
   final status = ref.watch(coreStatusProvider);
   if (status != CoreStatus.running) return;

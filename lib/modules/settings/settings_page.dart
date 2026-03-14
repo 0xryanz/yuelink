@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
@@ -1567,16 +1568,47 @@ class _UpstreamProxyRowState extends State<_UpstreamProxyRow> {
     return null;
   }
 
-  Future<int?> _detectProxyPort(String host) async {
+  /// Returns (port, type) or null if nothing found.
+  Future<({int port, String type})?> _detectProxy(String host) async {
     for (final port in [7890, 1080, 7891, 10809, 1081, 8080]) {
       try {
         final s = await Socket.connect(host, port,
             timeout: const Duration(milliseconds: 500));
+        // Probe SOCKS5: send greeting [0x05, 0x01, 0x00]
+        // A SOCKS5 server replies with [0x05, 0x??]
+        final type = await _probeType(s);
         s.destroy();
-        return port;
+        return (port: port, type: type);
       } catch (_) {}
     }
     return null;
+  }
+
+  /// Sends a SOCKS5 greeting; returns 'socks5' if server responds with 0x05,
+  /// otherwise falls back to 'http'.
+  Future<String> _probeType(Socket s) async {
+    final completer = Completer<String>();
+    s.add([0x05, 0x01, 0x00]); // SOCKS5 handshake
+    late StreamSubscription sub;
+    sub = s.listen(
+      (data) {
+        sub.cancel();
+        if (!completer.isCompleted) {
+          completer.complete(data.isNotEmpty && data[0] == 0x05 ? 'socks5' : 'http');
+        }
+      },
+      onError: (_) {
+        if (!completer.isCompleted) completer.complete('http');
+      },
+      onDone: () {
+        if (!completer.isCompleted) completer.complete('http');
+      },
+    );
+    return completer.future.timeout(const Duration(milliseconds: 400),
+        onTimeout: () {
+      sub.cancel();
+      return 'socks5'; // assume socks5 if no response (common with mihomo)
+    });
   }
 
   Future<void> _autoDetect() async {
@@ -1591,8 +1623,8 @@ class _UpstreamProxyRowState extends State<_UpstreamProxyRow> {
         });
         return;
       }
-      final port = await _detectProxyPort(gateway);
-      if (port == null) {
+      final result = await _detectProxy(gateway);
+      if (result == null) {
         if (mounted) AppNotifier.error(S.of(context).upstreamProxyNotFound);
         setState(() {
           _enabled = false;
@@ -1601,7 +1633,8 @@ class _UpstreamProxyRowState extends State<_UpstreamProxyRow> {
         return;
       }
       _server = gateway;
-      _port = port;
+      _port = result.port;
+      _type = result.type;
       await SettingsService.setUpstreamProxy(
         enabled: true,
         type: _type,
@@ -1610,7 +1643,7 @@ class _UpstreamProxyRowState extends State<_UpstreamProxyRow> {
       );
       if (mounted) {
         setState(() {
-          _detectedInfo = '$gateway:$port';
+          _detectedInfo = '$gateway:${result.port}';
           _detecting = false;
         });
         AppNotifier.success(S.of(context).upstreamProxySaved);

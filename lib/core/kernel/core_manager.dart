@@ -304,7 +304,19 @@ class CoreManager {
     await _step(steps, 'buildConfig_ios', StartupError.configBuildFailed,
         () async {
       final overwrite = await OverwriteService.load();
-      final withOverwrite = OverwriteService.apply(configYaml, overwrite);
+      var withOverwrite = OverwriteService.apply(configYaml, overwrite);
+
+      // Inject upstream proxy if configured
+      final upstream = await SettingsService.getUpstreamProxy();
+      if (upstream != null && (upstream['server'] as String).isNotEmpty) {
+        withOverwrite = ConfigTemplate.injectUpstreamProxy(
+          withOverwrite,
+          upstream['type'] as String,
+          upstream['server'] as String,
+          upstream['port'] as int,
+        );
+      }
+
       processed = ConfigTemplate.process(
             withOverwrite,
             apiPort: _apiPort,

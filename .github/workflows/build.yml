@@ -200,16 +200,12 @@ jobs:
           ls -lh assets/geodata/
 
       - name: Decode keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            printf '%s' "$KEYSTORE_BASE64" | tr -d ' \r\n' | base64 -d > android/app/yuelink.jks
-            echo "KEYSTORE_PATH=${{ github.workspace }}/android/app/yuelink.jks" >> $GITHUB_ENV
-            echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
-            echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> $GITHUB_ENV
-            echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
-          fi
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | openssl base64 -d -A > android/app/yuelink.jks
+          echo "KEYSTORE_PATH=${{ github.workspace }}/android/app/yuelink.jks" >> $GITHUB_ENV
+          echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
+          echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> $GITHUB_ENV
+          echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
 
       - name: Extract version from tag
         run: |

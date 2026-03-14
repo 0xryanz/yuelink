@@ -50,6 +50,7 @@ class ConnectionRepository {
         throttle?.cancel();
         sub = null;
         throttle = null;
+        controller.close();
       },
     );
 

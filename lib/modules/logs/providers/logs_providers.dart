@@ -35,13 +35,15 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
     // Restart stream when log level changes while core is running
     ref.listen(logLevelProvider, (prev, next) {
       if (prev != next && ref.read(coreStatusProvider) == CoreStatus.running) {
-        _stopListening();
-        _startListening();
+        _startListening(); // _startListening calls _stopListening first
       }
     });
   }
 
   void _startListening() {
+    // Ensure old subscription is fully cleaned before starting new one
+    _stopListening();
+
     final manager = CoreManager.instance;
     final level = ref.read(logLevelProvider);
 
@@ -68,11 +70,11 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
   }
 
   void _addEntry(LogEntry entry) {
-    final updated = [entry, ...state];
-    if (updated.length > _maxEntries) {
-      state = updated.sublist(0, _maxEntries);
+    if (state.length >= _maxEntries) {
+      // Avoid copying the full list + trimming; just take the tail we need
+      state = [entry, ...state.take(_maxEntries - 1)];
     } else {
-      state = updated;
+      state = [entry, ...state];
     }
   }
 

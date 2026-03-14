@@ -23,6 +23,10 @@ import 'modules/nodes/providers/nodes_providers.dart';
 import 'modules/store/store_page.dart';
 import 'modules/yue_auth/presentation/yue_auth_page.dart';
 import 'modules/yue_auth/providers/yue_auth_providers.dart';
+import 'domain/models/traffic.dart';
+import 'domain/models/traffic_history.dart';
+import 'modules/connections/providers/connections_providers.dart';
+import 'modules/dashboard/providers/dashboard_providers.dart';
 import 'providers/core_provider.dart';
 import 'providers/profile_provider.dart';
 import 'providers/proxy_provider.dart';
@@ -134,6 +138,13 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
   final _appLinks = AppLinks();
   StreamSubscription<Uri>? _appLinksSub;
 
+  // Managed provider subscriptions — cleaned up in dispose()
+  ProviderSubscription? _langSub;
+  ProviderSubscription? _statusSub;
+  ProviderSubscription? _groupsSub;
+  ProviderSubscription? _profilesSub;
+  ProviderSubscription? _hotkeySub;
+
   @override
   void initState() {
     super.initState();
@@ -147,6 +158,7 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     }
     // Auto-connect and expiry check after first frame is rendered
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _initListeners();
       await _maybeAutoConnect();
       _checkSubscriptionExpiry();
       _initDeepLinks();
@@ -156,8 +168,65 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     });
   }
 
+  /// Register all provider listeners once, not on every build().
+  /// Each listener is a ProviderSubscription stored as a field and
+  /// closed in dispose() — preventing repeated registration.
+  void _initListeners() {
+    // Keep S.current in sync with language provider
+    _langSub = ref.listenManual(languageProvider, (_, lang) {
+      S.setLanguage(lang);
+      _updateTrayMenu(
+        isRunning: ref.read(coreStatusProvider) == CoreStatus.running,
+        groups: ref.read(proxyGroupsProvider),
+      );
+    });
+
+    // Sync tray menu with connection state; notify on unexpected disconnect
+    _statusSub = ref.listenManual(coreStatusProvider, (prev, next) {
+      _updateTrayMenu(
+        isRunning: next == CoreStatus.running,
+        groups: ref.read(proxyGroupsProvider),
+      );
+      if (prev == CoreStatus.running && next == CoreStatus.stopped) {
+        AppNotifier.warning(S.current.disconnectedUnexpected);
+        if (_trayInitialized) {
+          trayManager
+              .setToolTip('YueLink · ${S.current.statusDisconnected}')
+              .ignore();
+        }
+      } else if (next == CoreStatus.running && _trayInitialized) {
+        trayManager.setToolTip('YueLink').ignore();
+      }
+    });
+
+    // Sync tray proxy submenu when proxy groups change
+    _groupsSub = ref.listenManual(proxyGroupsProvider, (_, groups) {
+      _updateTrayMenu(
+        isRunning: ref.read(coreStatusProvider) == CoreStatus.running,
+        groups: groups,
+      );
+    });
+
+    // Re-check subscription expiry after profiles are updated
+    _profilesSub = ref.listenManual(profilesProvider, (prev, next) {
+      if (next is AsyncData) _checkSubscriptionExpiry();
+    });
+
+    // Re-register hotkey when user changes it in Settings
+    if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+      _hotkeySub = ref.listenManual(toggleHotkeyProvider, (prev, next) {
+        if (prev != null && prev != next) _reregisterHotkeys(next);
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _langSub?.close();
+    _statusSub?.close();
+    _groupsSub?.close();
+    _profilesSub?.close();
+    _hotkeySub?.close();
     WidgetsBinding.instance.removeObserver(this);
     _appLinksSub?.cancel();
     if (_trayInitialized) trayManager.removeListener(this);
@@ -181,17 +250,43 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
 
   /// Validate core state immediately when app returns from background.
   /// Avoids waiting up to 10s for the heartbeat to detect a crashed core.
+  ///
+  /// If the core is still alive, invalidates stream providers to force
+  /// WebSocket reconnection (the OS may have suspended the sockets during
+  /// a long background period).
   Future<void> _onAppResumed() async {
+    // 1. Refresh auth / user profile in background (catches token expiry)
+    ref.read(authProvider.notifier).refreshUserInfo().ignore();
+
+    // 2. Check core liveness (only relevant if core was running)
     final status = ref.read(coreStatusProvider);
     if (status != CoreStatus.running) return;
     final manager = CoreManager.instance;
     if (manager.isMockMode) return;
-    final running = manager.isRunning;
-    final apiOk = await manager.api.isAvailable();
-    if (!running || !apiOk) {
-      debugPrint('[AppLifecycle] core dead after resume — resetting state');
-      ref.read(coreStatusProvider.notifier).state = CoreStatus.stopped;
-      manager.stop().catchError((_) {});
+
+    try {
+      final running = manager.isRunning;
+      final apiOk = await manager.api.isAvailable();
+      if (!running || !apiOk) {
+        debugPrint('[AppLifecycle] core dead after resume — resetting state');
+        ref.read(coreStatusProvider.notifier).state = CoreStatus.stopped;
+        ref.read(trafficProvider.notifier).state = const Traffic();
+        ref.read(trafficHistoryProvider.notifier).state = TrafficHistory();
+        manager.stop().catchError((_) {});
+      } else {
+        // Core alive — force reconnect stale WebSocket streams.
+        // After long background, OS may have closed TCP connections;
+        // the retry loop in MihomoStream is paused while suspended.
+        ref.invalidate(trafficStreamProvider);
+        ref.invalidate(memoryStreamProvider);
+        ref.invalidate(connectionsStreamProvider);
+        // Refresh exit IP in case network changed during background
+        ref.invalidate(exitIpInfoProvider);
+        // Refresh proxy groups in case core reloaded config
+        ref.read(proxyGroupsProvider.notifier).refresh();
+      }
+    } catch (e) {
+      debugPrint('[AppLifecycle] resume check failed: $e');
     }
   }
 
@@ -495,53 +590,6 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     // The provider itself guards: only runs while CoreStatus.running.
     ref.watch(coreHeartbeatProvider);
 
-    // Keep S.current in sync with language provider
-    ref.listen(languageProvider, (_, lang) {
-      S.setLanguage(lang);
-      _updateTrayMenu(
-        isRunning: ref.read(coreStatusProvider) == CoreStatus.running,
-        groups: ref.read(proxyGroupsProvider),
-      );
-    });
-
-    // Sync tray menu with connection state; notify on unexpected disconnect
-    ref.listen(coreStatusProvider, (prev, next) {
-      _updateTrayMenu(
-        isRunning: next == CoreStatus.running,
-        groups: ref.read(proxyGroupsProvider),
-      );
-      if (prev == CoreStatus.running && next == CoreStatus.stopped) {
-        AppNotifier.warning(S.current.disconnectedUnexpected);
-        if (_trayInitialized) {
-          trayManager
-              .setToolTip('YueLink · ${S.current.statusDisconnected}')
-              .ignore();
-        }
-      } else if (next == CoreStatus.running && _trayInitialized) {
-        trayManager.setToolTip('YueLink').ignore();
-      }
-    });
-
-    // Sync tray proxy submenu when proxy groups change
-    ref.listen(proxyGroupsProvider, (_, groups) {
-      _updateTrayMenu(
-        isRunning: ref.read(coreStatusProvider) == CoreStatus.running,
-        groups: groups,
-      );
-    });
-
-    // Re-check subscription expiry after profiles are updated
-    ref.listen(profilesProvider, (prev, next) {
-      if (next is AsyncData) _checkSubscriptionExpiry();
-    });
-
-    // Re-register hotkey when user changes it in Settings
-    if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
-      ref.listen(toggleHotkeyProvider, (prev, next) {
-        if (prev != null && prev != next) _reregisterHotkeys(next);
-      });
-    }
-
     return MaterialApp(
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
@@ -577,8 +625,10 @@ class _AuthGate extends ConsumerWidget {
 
     switch (authState.status) {
       case AuthStatus.unknown:
-        // Auth resolves within ~100ms; show blank to avoid a flash.
-        return const Scaffold();
+        // Auth resolves within ~100ms from cached token read.
+        // Use SizedBox.shrink() so native splash stays visible longer —
+        // Scaffold() causes a visible blank-page flash before the real UI.
+        return const SizedBox.shrink();
       case AuthStatus.loggedOut:
         return const YueAuthPage();
       case AuthStatus.loggedIn:

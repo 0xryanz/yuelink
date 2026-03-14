@@ -99,7 +99,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             + "  dns-hijack:\n"
             + "    - any:53\n"
 
-        // Ensure comprehensive DNS config for TUN fake-ip
+        // Ensure comprehensive DNS config for TUN fake-ip.
+        // If subscription has no dns section, inject a full default.
+        // If it does, patch it: ensure enable:true and inject nameserver-policy
+        // for Apple/iCloud so DIRECT-routed Apple system services resolve via
+        // domestic DoH (avoids "dial tcp 0.0.0.0:443" on blocked networks).
         if result.range(of: #"(?m)^dns:"#, options: .regularExpression) == nil {
             result += "\ndns:\n"
                 + "  enable: true\n"
@@ -119,6 +123,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 + "    - \"+.ntp.org\"\n"
                 + "    - \"+.pool.ntp.org\"\n"
                 + "    - \"+.time.edu.cn\"\n"
+                + "    - \"+.apple.com\"\n"
+                + "    - \"+.icloud.com\"\n"
+                + "    - \"+.cdn-apple.com\"\n"
+                + "    - \"+.mzstatic.com\"\n"
                 + "    - \"+.push.apple.com\"\n"
                 + "  default-nameserver:\n"
                 + "    - 223.5.5.5\n"
@@ -133,6 +141,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 + "  proxy-server-nameserver:\n"
                 + "    - https://doh.pub/dns-query\n"
                 + "    - https://dns.alidns.com/dns-query\n"
+                + "  nameserver-policy:\n"
+                + "    \"+.apple.com\": [\"https://doh.pub/dns-query\", \"https://dns.alidns.com/dns-query\"]\n"
+                + "    \"+.icloud.com\": [\"https://doh.pub/dns-query\", \"https://dns.alidns.com/dns-query\"]\n"
                 + "  fallback:\n"
                 + "    - \"tls://8.8.4.4:853\"\n"
                 + "    - \"tls://1.0.0.1:853\"\n"
@@ -149,6 +160,88 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 + "      - \"+.youtube.com\"\n"
                 + "      - \"+.github.com\"\n"
                 + "      - \"+.googleapis.com\"\n"
+        } else {
+            result = ensureDnsPatched(result)
+        }
+
+        return result
+    }
+
+    /// Patch an existing dns section: ensure enable:true, inject
+    /// nameserver-policy + direct-nameserver for Apple/iCloud if not present.
+    /// Uses indent detection to match the subscription's YAML style (2-space
+    /// or 4-space) — hardcoded indentation breaks go-yaml parsing.
+    private func ensureDnsPatched(_ config: String) -> String {
+        var result = config
+
+        // Ensure enable: true
+        guard let dnsRange = result.range(
+            of: #"(?m)^dns:.*\n(?:[ \t]+.*\n)*"#, options: .regularExpression
+        ) else { return result }
+
+        let dnsBlock = String(result[dnsRange])
+        if dnsBlock.contains("enable: false") {
+            result = result.replacingCharacters(
+                in: dnsRange,
+                with: dnsBlock.replacingOccurrences(of: "enable: false", with: "enable: true")
+            )
+        } else if !dnsBlock.contains("enable: true") {
+            if let dnsLineEnd = result.range(of: #"(?m)^dns:.*$"#, options: .regularExpression) {
+                let insertPos = result.index(after: dnsLineEnd.upperBound)
+                result.insert(contentsOf: "  enable: true\n", at: insertPos)
+            }
+        }
+
+        // Re-capture dns block after enable:true changes
+        guard let updatedRange = result.range(
+            of: #"(?m)^dns:.*\n(?:[ \t]+.*\n)*"#, options: .regularExpression
+        ) else { return result }
+        let updatedBlock = String(result[updatedRange])
+
+        // Detect indentation used by dns sub-keys (2-space or 4-space).
+        // Without matching, go-yaml reports "did not find expected key".
+        guard let indentMatch = updatedBlock.range(
+            of: #"(?m)\n( +)\S"#, options: .regularExpression
+        ) else { return result }
+
+        // Extract the whitespace between \n and the first non-whitespace char
+        let afterNewline = updatedBlock.index(after: indentMatch.lowerBound)
+        let firstNonSpace = updatedBlock[indentMatch].drop(while: { $0 == "\n" || $0 == " " || $0 == "\t" }).startIndex
+        let indent = String(updatedBlock[afterNewline..<firstNonSpace])
+
+        // Detect entry indentation from existing list items (e.g. "    - ")
+        var entryIndent = indent + "  " // default: indent + 2
+        if let listMatch = updatedBlock.range(of: #"(?m)\n( +)- "#, options: .regularExpression) {
+            let afterNl = updatedBlock.index(after: listMatch.lowerBound)
+            let firstDash = updatedBlock[listMatch].drop(while: { $0 == "\n" || $0 == " " }).startIndex
+            entryIndent = String(updatedBlock[afterNl..<firstDash])
+        }
+
+        // Inject nameserver-policy for Apple/iCloud (used by main resolver).
+        // On some networks, domestic UDP DNS returns 0.0.0.0 for Apple update
+        // domains when subscription routes them DIRECT.
+        if !updatedBlock.contains("nameserver-policy:") {
+            let policy = "\(indent)nameserver-policy:\n"
+                + "\(entryIndent)\"+.apple.com\": [\"https://doh.pub/dns-query\", \"https://dns.alidns.com/dns-query\"]\n"
+                + "\(entryIndent)\"+.icloud.com\": [\"https://doh.pub/dns-query\", \"https://dns.alidns.com/dns-query\"]\n"
+            result.insert(contentsOf: policy, at: updatedRange.upperBound)
+        }
+
+        // Inject direct-nameserver with DoH (used by direct resolver for
+        // DIRECT outbound connections). This is critical — mihomo uses
+        // direct-nameserver (not nameserver-policy) to resolve domains
+        // when the rule says DIRECT. Without DoH, plain UDP DNS may be
+        // poisoned and return 0.0.0.0 for Apple/other domains.
+        if !updatedBlock.contains("direct-nameserver:") {
+            // Re-find dns block end after possible nameserver-policy injection
+            if let finalRange = result.range(
+                of: #"(?m)^dns:.*\n(?:[ \t]+.*\n)*"#, options: .regularExpression
+            ) {
+                let directNs = "\(indent)direct-nameserver:\n"
+                    + "\(entryIndent)- https://doh.pub/dns-query\n"
+                    + "\(entryIndent)- https://dns.alidns.com/dns-query\n"
+                result.insert(contentsOf: directNs, at: finalRange.upperBound)
+            }
         }
 
         return result

@@ -33,6 +33,11 @@ class SettingsService {
   static Future<void> save(Map<String, dynamic> settings) async {
     _cache = settings;
     final file = await _getFile();
+    // Ensure parent directory exists (first run or after cleanup)
+    final dir = file.parent;
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
     // Atomic write: write to temp file then rename to prevent corruption
     final tmp = File('${file.path}.tmp');
     await tmp.writeAsString(json.encode(settings));

@@ -329,12 +329,45 @@ class ConfigTemplate {
       dnsSection = config.substring(dnsMatch.start, dnsEnd);
     }
 
-    // Do NOT inject nameserver-policy into existing DNS sections.
-    // Subscription configs use varied indentation (2-space or 4-space).
-    // Injecting with hardcoded 2-space indentation breaks YAML parsing when
-    // the existing DNS block uses 4-space indentation (go-yaml reports
-    // "did not find expected key" on the mismatched indentation level).
-    // Airport-provided DNS config is already complete — leave it untouched.
+    // Fix 2: inject nameserver-policy + direct-nameserver for Apple/iCloud.
+    //
+    // Problem: subscription routes Apple domains DIRECT. mihomo resolves them
+    // using direct-nameserver (or nameserver if not set). On some Chinese
+    // networks, plain UDP DNS (223.5.5.5) returns 0.0.0.0 for Apple update
+    // domains (mesu.apple.com, swscan.apple.com), causing
+    // "dial tcp 0.0.0.0:443: connection refused".
+    //
+    // Fix: inject DoH-based nameserver-policy + direct-nameserver so that:
+    // - nameserver-policy covers Apple/iCloud (if main resolver is used)
+    // - direct-nameserver uses DoH (if direct resolver is used)
+    //
+    // Indent detection: subscription configs use varied indentation (2/4 space).
+    // Detect the actual indent from existing keys to avoid YAML parse errors.
+    final indentMatch = RegExp(r'\n( +)\S').firstMatch(dnsSection);
+    if (indentMatch != null) {
+      final indent = indentMatch.group(1)!; // e.g. "  " or "    "
+      // Sub-entries need more indentation than the key itself.
+      // Detect from existing list items, or use indent + 2 spaces.
+      final listMatch = RegExp(r'\n( +)- ').firstMatch(dnsSection);
+      final entryIndent = listMatch?.group(1) ?? '$indent  ';
+
+      if (!dnsSection.contains('nameserver-policy:')) {
+        final policy = '$indent' 'nameserver-policy:\n'
+            '$entryIndent' '"+.apple.com": ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"]\n'
+            '$entryIndent' '"+.icloud.com": ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"]\n';
+        config =
+            config.substring(0, dnsEnd) + policy + config.substring(dnsEnd);
+        dnsEnd += policy.length;
+      }
+
+      if (!dnsSection.contains('direct-nameserver:')) {
+        final directNs = '$indent' 'direct-nameserver:\n'
+            '$entryIndent' '- https://doh.pub/dns-query\n'
+            '$entryIndent' '- https://dns.alidns.com/dns-query\n';
+        config =
+            config.substring(0, dnsEnd) + directNs + config.substring(dnsEnd);
+      }
+    }
 
     return config;
   }

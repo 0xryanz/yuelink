@@ -370,7 +370,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           ),
         ],
       ),
-    );
+    ).whenComplete(() {
+      nameCtrl.dispose();
+      urlCtrl.dispose();
+    });
   }
 
   Future<void> _doAddProfile(
@@ -516,7 +519,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           ],
         ),
       ),
-    );
+    ).whenComplete(() {
+      nameCtrl.dispose();
+      urlCtrl.dispose();
+    });
   }
 
   void _showConfigViewer(BuildContext context, Profile profile) async {

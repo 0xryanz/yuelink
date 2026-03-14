@@ -79,8 +79,12 @@ class MihomoStream {
   Stream<Map<String, dynamic>> _connectWithRetry(String path) {
     late StreamController<Map<String, dynamic>> controller;
     bool cancelled = false;
+    WebSocketChannel? activeChannel;
 
     Future<void> connect() async {
+      var retryDelay = const Duration(seconds: 2);
+      const maxDelay = Duration(seconds: 30);
+
       while (!cancelled) {
         try {
           final sep = path.contains('?') ? '&' : '?';
@@ -88,9 +92,16 @@ class MihomoStream {
               secret != null ? '$path${sep}token=$secret' : path;
           final uri = Uri.parse('$_wsBase$authPath');
           final channel = WebSocketChannel.connect(uri);
+          activeChannel = channel;
+
+          // Reset backoff on successful connection
+          retryDelay = const Duration(seconds: 2);
 
           await for (final event in channel.stream) {
-            if (cancelled) return;
+            if (cancelled) {
+              activeChannel = null;
+              return;
+            }
             try {
               controller
                   .add(json.decode(event as String) as Map<String, dynamic>);
@@ -98,26 +109,36 @@ class MihomoStream {
               // Malformed JSON — skip frame
             }
           }
+          activeChannel = null;
           // Stream ended cleanly (server closed); fall through to reconnect
         } catch (_) {
+          activeChannel = null;
           // Connection failed or dropped
         }
 
         if (!cancelled) {
-          await Future.delayed(_reconnectDelay);
+          await Future.delayed(retryDelay);
+          // Exponential backoff: 2s → 4s → 8s → 16s → 30s (cap)
+          retryDelay = Duration(
+            milliseconds: (retryDelay.inMilliseconds * 2)
+                .clamp(0, maxDelay.inMilliseconds),
+          );
         }
       }
     }
 
     controller = StreamController<Map<String, dynamic>>(
       onListen: () => connect(),
-      onCancel: () => cancelled = true,
+      onCancel: () {
+        cancelled = true;
+        activeChannel?.sink.close();
+        activeChannel = null;
+        controller.close();
+      },
     );
 
     return controller.stream;
   }
-
-  static const _reconnectDelay = Duration(seconds: 2);
 }
 
 /// A single log entry from mihomo.

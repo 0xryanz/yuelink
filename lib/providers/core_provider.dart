@@ -269,19 +269,33 @@ class CoreActions {
   }
 
   /// Verify that macOS system proxy is actually pointing to our port.
+  /// Checks ALL network services (not just the first match) so the log
+  /// shows which interfaces have the proxy enabled.
   static Future<bool> _verifySystemProxy(int mixedPort) async {
     if (!Platform.isMacOS) return true;
     try {
       final services = await _listNetworkServices();
+      final verified = <String>[];
+      final missing = <String>[];
       for (final svc in services) {
         final result = await Process.run(
             'networksetup', ['-getwebproxy', svc]);
         final output = result.stdout as String;
         if (output.contains('Enabled: Yes') &&
             output.contains('Port: $mixedPort')) {
-          debugPrint('[SystemProxy] Verified proxy on $svc: port $mixedPort');
-          return true;
+          verified.add(svc);
+        } else {
+          missing.add(svc);
         }
+      }
+      if (verified.isNotEmpty) {
+        debugPrint('[SystemProxy] Proxy active on: ${verified.join(', ')} '
+            '(port $mixedPort)');
+        if (missing.isNotEmpty) {
+          debugPrint('[SystemProxy] Not set on: ${missing.join(', ')} '
+              '(inactive interfaces)');
+        }
+        return true;
       }
       debugPrint('[SystemProxy] Verification failed: no service has '
           'proxy set to port $mixedPort');

@@ -55,6 +55,7 @@ class TrafficRepository {
         throttle?.cancel();
         sub = null;
         throttle = null;
+        controller.close();
       },
     );
 
@@ -81,6 +82,7 @@ class TrafficRepository {
       onCancel: () {
         sub?.cancel();
         sub = null;
+        controller.close();
       },
     );
 

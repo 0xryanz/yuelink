@@ -33,9 +33,31 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   Timer? _uptimeTimer;
   final _uptimeNotifier = ValueNotifier<String>('');
   bool _busy = false;
+  ProviderSubscription? _statusSub;
+
+  @override
+  void initState() {
+    super.initState();
+    // Listen for core status changes to manage the uptime timer.
+    // Using listenManual avoids re-registering in every build() call.
+    Future.microtask(() {
+      _statusSub = ref.listenManual(coreStatusProvider, (prev, next) {
+        if (next == CoreStatus.running) {
+          _startUptimeTimer();
+        } else if (next == CoreStatus.stopped) {
+          _stopUptimeTimer();
+        }
+      });
+      // Sync initial state if core is already running
+      if (ref.read(coreStatusProvider) == CoreStatus.running) {
+        _startUptimeTimer();
+      }
+    });
+  }
 
   @override
   void dispose() {
+    _statusSub?.close();
     _uptimeTimer?.cancel();
     _uptimeNotifier.dispose();
     super.dispose();
@@ -82,14 +104,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       ref.watch(memoryStreamProvider);
       ref.watch(connectionsStreamProvider);
     }
-
-    ref.listen(coreStatusProvider, (prev, next) {
-      if (next == CoreStatus.running) {
-        _startUptimeTimer();
-      } else if (next == CoreStatus.stopped) {
-        _stopUptimeTimer();
-      }
-    });
 
     return Scaffold(
       body: SafeArea(

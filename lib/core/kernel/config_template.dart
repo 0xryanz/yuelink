@@ -461,6 +461,15 @@ class ConfigTemplate {
     return '$config\nmixed-port: $port\n';
   }
 
+  /// Force-set mixed-port, replacing an existing value if present.
+  /// Used by CoreManager to remap the port when it is already in use.
+  static String setMixedPort(String config, int port) {
+    if (_hasKey(config, 'mixed-port')) {
+      return config.replaceAllMapped(_reMixedPort, (_) => 'mixed-port: $port');
+    }
+    return '$config\nmixed-port: $port\n';
+  }
+
   /// Ensure the config has external-controller set.
   static String _ensureExternalController(
       String config, int port, String? secret) {

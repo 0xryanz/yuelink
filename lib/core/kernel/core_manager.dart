@@ -172,6 +172,25 @@ class CoreManager {
           );
         }
 
+        // 5a++. On desktop, check for port conflicts with other proxy software.
+        // If the configured port is already in use, find the next free port so
+        // mihomo can start even when Clash / Surge / V2rayU etc. are running.
+        if ((Platform.isMacOS || Platform.isWindows) && !isMockMode) {
+          final preferredMixed = ConfigTemplate.getMixedPort(withOverwrite);
+          final freeMixed = await _findAvailablePort(preferredMixed);
+          if (freeMixed != preferredMixed) {
+            debugPrint('[CoreManager] mixed-port $preferredMixed busy → remapped to $freeMixed');
+            withOverwrite = ConfigTemplate.setMixedPort(withOverwrite, freeMixed);
+          }
+          final freeApi = await _findAvailablePort(_apiPort);
+          if (freeApi != _apiPort) {
+            debugPrint('[CoreManager] apiPort $_apiPort busy → remapped to $freeApi');
+            _apiPort = freeApi;
+            _api = null;
+            _stream = null;
+          }
+        }
+
         // 5b. Template processing (ports, DNS, sniffer, geo, TUN fd)
         debugPrint('[CoreManager] buildConfig 5c: ConfigTemplate.process...');
         processed = ConfigTemplate.process(
@@ -420,6 +439,24 @@ class CoreManager {
           '[CoreManager] ✗ $name [$errorCode] (${sw.elapsedMilliseconds}ms) $e');
       rethrow;
     }
+  }
+
+  /// Find a free TCP port starting from [preferred], trying up to 20 ports.
+  /// Returns [preferred] if all attempts fail (let mihomo surface the error).
+  static Future<int> _findAvailablePort(int preferred) async {
+    for (var port = preferred; port < preferred + 20; port++) {
+      try {
+        final server = await ServerSocket.bind(
+          InternetAddress.loopbackIPv4, port,
+          shared: false,
+        );
+        await server.close();
+        return port;
+      } on SocketException {
+        continue;
+      }
+    }
+    return preferred;
   }
 
   /// Build the final report, read Go core logs, save to disk.

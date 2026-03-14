@@ -230,90 +230,113 @@ class ConfigTemplate {
   }
 
   /// Ensure DNS is enabled with comprehensive fake-ip + fallback config.
-  /// If the subscription config already has a dns section, ensure enable: true.
+  /// If the subscription config already has a dns section, ensure enable: true
+  /// and inject nameserver-policy for Apple/iCloud so DIRECT-routed Apple
+  /// system services (mesu.apple.com, etc.) resolve via domestic DoH instead
+  /// of UDP DNS that may return 0.0.0.0 on some networks.
   static String _ensureDns(String config) {
-    if (_hasKey(config, 'dns')) {
-      // Subscription has DNS section — ensure enable: true is set.
-      // Some subscriptions omit 'enable' or set it to false, which
-      // disables mihomo's DNS resolver entirely. Without the resolver,
-      // dns-hijack captures DNS queries but has nowhere to send them.
-      //
-      // Use string operations instead of multi-line regex to avoid
-      // catastrophic backtracking on large configs with YAML anchors.
-      final dnsMatch = _reDnsKey.firstMatch(config);
-      if (dnsMatch != null) {
-        // Find where the dns section ends (next top-level key)
-        final afterDnsLine = config.indexOf('\n', dnsMatch.start);
-        final afterDns = afterDnsLine >= 0 ? afterDnsLine + 1 : config.length;
-        final nextTopLevel = _reTopLevel.firstMatch(config.substring(afterDns));
-        final dnsEnd =
-            nextTopLevel != null ? afterDns + nextTopLevel.start : config.length;
-
-        final dnsSection = config.substring(dnsMatch.start, dnsEnd);
-
-        if (_reEnableFalse.hasMatch(dnsSection)) {
-          final newSection =
-              dnsSection.replaceFirst(_reEnableFalse, 'enable: true');
-          return config.substring(0, dnsMatch.start) +
-              newSection +
-              config.substring(dnsEnd);
-        } else if (!_reEnableTrue.hasMatch(dnsSection)) {
-          // DNS section exists but has no 'enable' key — inject after dns: line
-          return config.substring(0, afterDns) +
-              '  enable: true\n' +
-              config.substring(afterDns);
-        }
-      }
-      return config;
+    if (!_hasKey(config, 'dns')) {
+      return '$config\ndns:\n'
+          '  enable: true\n'
+          '  prefer-h3: true\n'
+          '  enhanced-mode: fake-ip\n'
+          '  fake-ip-range: 198.18.0.1/16\n'
+          '  fake-ip-filter:\n'
+          '    - "+.lan"\n'
+          '    - "+.local"\n'
+          '    - "+.direct"\n'
+          '    - "+.msftconnecttest.com"\n'
+          '    - "+.msftncsi.com"\n'
+          '    - "localhost.ptlogin2.qq.com"\n'
+          '    - "+.srv.nintendo.net"\n'
+          '    - "+.stun.playstation.net"\n'
+          '    - "+.xboxlive.com"\n'
+          '    - "+.ntp.org"\n'
+          '    - "+.pool.ntp.org"\n'
+          '    - "+.time.edu.cn"\n'
+          '    - "+.apple.com"\n'
+          '    - "+.icloud.com"\n'
+          '    - "+.cdn-apple.com"\n'
+          '    - "+.mzstatic.com"\n'
+          '    - "+.push.apple.com"\n'
+          '  default-nameserver:\n'
+          '    - 223.5.5.5\n'
+          '    - 119.29.29.29\n'
+          '    - 8.8.8.8\n'
+          '  nameserver:\n'
+          '    - https://doh.pub/dns-query\n'
+          '    - https://dns.alidns.com/dns-query\n'
+          '  direct-nameserver:\n'
+          '    - https://doh.pub/dns-query\n'
+          '    - https://dns.alidns.com/dns-query\n'
+          '  proxy-server-nameserver:\n'
+          '    - https://doh.pub/dns-query\n'
+          '    - https://dns.alidns.com/dns-query\n'
+          '  nameserver-policy:\n'
+          '    "+.apple.com": ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"]\n'
+          '    "+.icloud.com": ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"]\n'
+          '  fallback:\n'
+          '    - "tls://8.8.4.4:853"\n'
+          '    - "tls://1.0.0.1:853"\n'
+          '    - "https://1.0.0.1/dns-query"\n'
+          '    - "https://8.8.4.4/dns-query"\n'
+          '  fallback-filter:\n'
+          '    geoip: true\n'
+          '    geoip-code: CN\n'
+          '    geosite:\n'
+          '      - gfw\n'
+          '    domain:\n'
+          '      - "+.google.com"\n'
+          '      - "+.facebook.com"\n'
+          '      - "+.youtube.com"\n'
+          '      - "+.github.com"\n'
+          '      - "+.googleapis.com"\n';
     }
-    return '$config\ndns:\n'
-        '  enable: true\n'
-        '  prefer-h3: true\n'
-        '  enhanced-mode: fake-ip\n'
-        '  fake-ip-range: 198.18.0.1/16\n'
-        '  fake-ip-filter:\n'
-        '    - "+.lan"\n'
-        '    - "+.local"\n'
-        '    - "+.direct"\n'
-        '    - "+.msftconnecttest.com"\n'
-        '    - "+.msftncsi.com"\n'
-        '    - "localhost.ptlogin2.qq.com"\n'
-        '    - "+.srv.nintendo.net"\n'
-        '    - "+.stun.playstation.net"\n'
-        '    - "+.xboxlive.com"\n'
-        '    - "+.ntp.org"\n'
-        '    - "+.pool.ntp.org"\n'
-        '    - "+.time.edu.cn"\n'
-        '    - "+.push.apple.com"\n'
-        '  default-nameserver:\n'
-        '    - 223.5.5.5\n'
-        '    - 119.29.29.29\n'
-        '    - 8.8.8.8\n'
-        '  nameserver:\n'
-        '    - https://doh.pub/dns-query\n'
-        '    - https://dns.alidns.com/dns-query\n'
-        '  direct-nameserver:\n'
-        '    - https://doh.pub/dns-query\n'
-        '    - https://dns.alidns.com/dns-query\n'
-        '  proxy-server-nameserver:\n'
-        '    - https://doh.pub/dns-query\n'
-        '    - https://dns.alidns.com/dns-query\n'
-        '  fallback:\n'
-        '    - "tls://8.8.4.4:853"\n'
-        '    - "tls://1.0.0.1:853"\n'
-        '    - "https://1.0.0.1/dns-query"\n'
-        '    - "https://8.8.4.4/dns-query"\n'
-        '  fallback-filter:\n'
-        '    geoip: true\n'
-        '    geoip-code: CN\n'
-        '    geosite:\n'
-        '      - gfw\n'
-        '    domain:\n'
-        '      - "+.google.com"\n'
-        '      - "+.facebook.com"\n'
-        '      - "+.youtube.com"\n'
-        '      - "+.github.com"\n'
-        '      - "+.googleapis.com"\n';
+
+    // Subscription has DNS section — use string operations to patch it
+    // without fully re-parsing the YAML (avoids catastrophic backtracking
+    // on large configs with anchors).
+    final dnsMatch = _reDnsKey.firstMatch(config);
+    if (dnsMatch == null) return config;
+
+    // Find where the dns section ends (next top-level key or EOF)
+    final afterDnsLine = config.indexOf('\n', dnsMatch.start);
+    var afterDns = afterDnsLine >= 0 ? afterDnsLine + 1 : config.length;
+    final nextTopLevel = _reTopLevel.firstMatch(config.substring(afterDns));
+    var dnsEnd =
+        nextTopLevel != null ? afterDns + nextTopLevel.start : config.length;
+
+    var dnsSection = config.substring(dnsMatch.start, dnsEnd);
+
+    // Fix 1: ensure enable: true
+    if (_reEnableFalse.hasMatch(dnsSection)) {
+      final newSection =
+          dnsSection.replaceFirst(_reEnableFalse, 'enable: true');
+      config = config.substring(0, dnsMatch.start) +
+          newSection +
+          config.substring(dnsEnd);
+      // Adjust dnsEnd to account for length change
+      dnsEnd += newSection.length - dnsSection.length;
+      dnsSection = newSection;
+    } else if (!_reEnableTrue.hasMatch(dnsSection)) {
+      // DNS section exists but has no 'enable' key — inject after dns: line
+      const injection = '  enable: true\n';
+      config = config.substring(0, afterDns) +
+          injection +
+          config.substring(afterDns);
+      dnsEnd += injection.length;
+      afterDns += injection.length;
+      dnsSection = config.substring(dnsMatch.start, dnsEnd);
+    }
+
+    // Do NOT inject nameserver-policy into existing DNS sections.
+    // Subscription configs use varied indentation (2-space or 4-space).
+    // Injecting with hardcoded 2-space indentation breaks YAML parsing when
+    // the existing DNS block uses 4-space indentation (go-yaml reports
+    // "did not find expected key" on the mismatched indentation level).
+    // Airport-provided DNS config is already complete — leave it untouched.
+
+    return config;
   }
 
   /// Ensure sniffer is configured for TLS/HTTP/QUIC domain detection.

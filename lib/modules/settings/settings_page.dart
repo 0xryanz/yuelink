@@ -1160,12 +1160,19 @@ class _SplitTunnelSectionState extends ConsumerState<_SplitTunnelSection> {
         builder: (ctx, setModal) {
           final apps = _apps ?? [];
           final filtered = _search.isEmpty
-              ? apps
+              ? List<Map<String, String>>.from(apps)
               : apps
                   .where((a) =>
                       (a['appName'] ?? '').toLowerCase().contains(_search) ||
                       (a['packageName'] ?? '').toLowerCase().contains(_search))
                   .toList();
+          // Sort selected apps to the top, then alphabetically by name
+          filtered.sort((a, b) {
+            final aSelected = localSelected.contains(a['packageName']);
+            final bSelected = localSelected.contains(b['packageName']);
+            if (aSelected != bSelected) return aSelected ? -1 : 1;
+            return (a['appName'] ?? '').compareTo(b['appName'] ?? '');
+          });
 
           return DraggableScrollableSheet(
             initialChildSize: 0.85,

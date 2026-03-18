@@ -68,13 +68,17 @@ class OverwriteService {
       r'^([a-z][a-z0-9-]*):\s*(.+)$',
       multiLine: true,
     );
+    // Keys that have block children — replacing the top-level line would
+    // destroy all child content. These should only be merged, not replaced.
+    const blockKeys = {
+      'rules', 'proxies', 'proxy-groups', 'dns', 'tun', 'sniffer',
+      'hosts', 'tunnels', 'listeners', 'sub-rules',
+    };
     for (final match in scalarPattern.allMatches(overwrite)) {
       final key = match.group(1)!;
       final value = match.group(2)!;
-      // Skip list-type keys — handled separately
-      if (key == 'rules' || key == 'proxies' || key == 'proxy-groups') {
-        continue;
-      }
+      // Skip block-type keys — replacing a scalar line would lose all children
+      if (blockKeys.contains(key)) continue;
       final keyRegex = RegExp('^$key:.*\$', multiLine: true);
       if (keyRegex.hasMatch(config)) {
         config = config.replaceAll(keyRegex, '$key: $value');

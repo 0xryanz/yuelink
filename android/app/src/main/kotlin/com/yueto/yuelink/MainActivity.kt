@@ -186,8 +186,10 @@ class MainActivity : FlutterActivity() {
         }
         startForegroundService(serviceIntent)
 
-        val bindIntent = Intent(this, YueLinkVpnService::class.java)
-        bindService(bindIntent, serviceConnection, Context.BIND_AUTO_CREATE)
+        if (!serviceBound) {
+            val bindIntent = Intent(this, YueLinkVpnService::class.java)
+            bindService(bindIntent, serviceConnection, Context.BIND_AUTO_CREATE)
+        }
 
         // Poll for TUN fd with retry instead of fixed 500ms delay.
         // The VPN service may take varying time to bind and establish().
@@ -257,20 +259,27 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun stopVpnService(result: MethodChannel.Result) {
-        try {
-            val serviceIntent = Intent(this, YueLinkVpnService::class.java).apply {
-                action = YueLinkVpnService.ACTION_STOP
+        // Prefer direct call on bound service — avoids startService() which
+        // can throw ForegroundServiceStartNotAllowedException on Android 12+
+        // when app is transitioning to background.
+        val bound = vpnService
+        if (bound != null) {
+            bound.stopTunnel()
+        } else {
+            // Fallback: deliver stop via intent if not bound
+            try {
+                val serviceIntent = Intent(this, YueLinkVpnService::class.java).apply {
+                    action = YueLinkVpnService.ACTION_STOP
+                }
+                startService(serviceIntent)
+            } catch (e: Exception) {
+                android.util.Log.w("YueLinkVpn", "startService(STOP) failed: ${e.message}")
             }
-            startService(serviceIntent)
-        } catch (e: Exception) {
-            // startService can throw on Android 12+ background restrictions
-            android.util.Log.w("YueLinkVpn", "startService(STOP) failed: ${e.message}")
         }
         if (serviceBound) {
             try {
                 unbindService(serviceConnection)
             } catch (e: Exception) {
-                // IllegalArgumentException if service not registered
                 android.util.Log.w("YueLinkVpn", "unbindService failed: ${e.message}")
             }
             serviceBound = false

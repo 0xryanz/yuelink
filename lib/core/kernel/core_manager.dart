@@ -70,10 +70,24 @@ class CoreManager {
     }
   }
 
-  /// Restore the Dart _running flag to true after detecting that the Go core
-  /// survived a Flutter engine restart. Called from _onAppResumed recovery.
-  void markRunning() {
+  /// Restore the Dart _running flag and port config after detecting that the
+  /// Go core survived a Flutter engine restart. Called from _onAppResumed.
+  Future<void> markRunning() async {
     _running = true;
+    // Restore ports from persisted settings (engine restart loses Dart state)
+    final savedApiPort = await SettingsService.get<int>('lastApiPort');
+    final savedMixedPort = await SettingsService.get<int>('lastMixedPort');
+    if (savedApiPort != null) _apiPort = savedApiPort;
+    if (savedMixedPort != null) _mixedPort = savedMixedPort;
+    // Recreate API/stream clients with restored ports
+    _api = null;
+    _stream = null;
+  }
+
+  /// Persist current ports so they can be restored after engine restart.
+  Future<void> _persistPorts() async {
+    await SettingsService.set('lastApiPort', _apiPort);
+    await SettingsService.set('lastMixedPort', _mixedPort);
   }
   int _mixedPort = 7890;
 
@@ -306,6 +320,7 @@ class CoreManager {
       });
 
       // ── Success ────────────────────────────────────────────────────
+      await _persistPorts();
       await _finishReport(steps, true, null);
       return true;
     } catch (e) {

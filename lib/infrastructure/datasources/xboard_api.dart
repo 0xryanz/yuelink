@@ -357,6 +357,7 @@ class XBoardApi {
       }
 
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
+      _assertSuccess(json);
       final data = json['data'];
       if (data is Map<String, dynamic>) return data;
       // Some endpoints wrap data differently
@@ -385,6 +386,7 @@ class XBoardApi {
       }
 
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
+      _assertSuccess(json);
       final data = json['data'];
       if (data is Map<String, dynamic>) return data;
       return json;

@@ -4,7 +4,10 @@ import FlutterMacOS
 @main
 class AppDelegate: FlutterAppDelegate {
     override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        return true
+        // Return false so the app stays alive in the tray when the window is hidden.
+        // window_manager's setPreventClose(true) intercepts close events, but if the
+        // NSWindow is ever destroyed by the system, returning true would kill the process.
+        return false
     }
 
     override func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {

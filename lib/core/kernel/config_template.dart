@@ -473,9 +473,10 @@ class ConfigTemplate {
   }
 
   /// Remove a top-level YAML section (key + all indented content below it).
+  /// Handles blank lines within the section (e.g., tun blocks with spacing).
   static String _removeSection(String config, String key) {
     final pattern = RegExp(
-      '^$key:.*\n(?:[ \t]+.*\n)*',
+      '^$key:.*\n(?:(?:[ \t]+.*|[ \t]*)\n)*',
       multiLine: true,
     );
     return config.replaceFirst(pattern, '');

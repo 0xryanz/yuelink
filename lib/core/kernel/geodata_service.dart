@@ -101,15 +101,19 @@ class GeoDataService {
   }
 
   /// Try downloading from CDN mirrors. First success wins.
-  /// Total timeout: 60 seconds.
+  /// Total timeout: 60 seconds. Uses a write guard to prevent concurrent
+  /// writes to the same file from parallel mirror downloads.
   static Future<bool> _downloadFromMirrors(
       String remoteName, File dest) async {
     try {
       final completer = Completer<bool>();
       var remaining = _mirrors.length;
+      var written = false; // Guard: only the first successful download writes
 
       for (final mirror in _mirrors) {
-        _tryDownload('$mirror/$remoteName', dest).then((ok) {
+        _tryDownload('$mirror/$remoteName', dest, () => written, () {
+          written = true;
+        }).then((ok) {
           if (ok && !completer.isCompleted) {
             completer.complete(true);
           } else {
@@ -164,7 +168,12 @@ class GeoDataService {
     }
   }
 
-  static Future<bool> _tryDownload(String url, File dest) async {
+  static Future<bool> _tryDownload(
+    String url,
+    File dest, [
+    bool Function()? isWritten,
+    void Function()? markWritten,
+  ]) async {
     try {
       final response = await http.get(
         Uri.parse(url),
@@ -172,7 +181,10 @@ class GeoDataService {
       ).timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 && response.bodyBytes.length > 1024) {
+        // Check if another mirror already wrote the file
+        if (isWritten != null && isWritten()) return true;
         if (dest.existsSync() && dest.lengthSync() > 1024) return true;
+        markWritten?.call();
         await dest.writeAsBytes(response.bodyBytes, flush: true);
         return true;
       }

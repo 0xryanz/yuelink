@@ -12,7 +12,6 @@ import '../shared/app_notifier.dart';
 import '../shared/event_log.dart';
 import '../core/kernel/core_manager.dart';
 import '../infrastructure/datasources/mihomo_api.dart';
-import '../core/platform/vpn_service.dart';
 
 // Re-export traffic stream providers and chart UI state
 // (defined in modules/dashboard to avoid circular imports)
@@ -83,19 +82,7 @@ class CoreActions {
     final manager = CoreManager.instance;
 
     try {
-      // 1. Check VPN Permission (Android only — always needed for VpnService)
-      if (Platform.isAndroid && !manager.isMockMode) {
-        final hasPerm = await VpnService.requestPermission();
-        if (!hasPerm) {
-          ref.read(coreStatusProvider.notifier).state = CoreStatus.stopped;
-          ref.read(coreStartupErrorProvider.notifier).state =
-              'vpnPermission: ${S.current.errVpnPermission}';
-          AppNotifier.error(S.current.errVpnPermission);
-          return false;
-        }
-      }
-
-      // 2. Start Core — all steps are tracked inside CoreManager
+      // Start Core — all steps (including VPN permission) are tracked inside CoreManager
       final ok = await manager.start(configYaml);
       if (!ok) {
         ref.read(coreStatusProvider.notifier).state = CoreStatus.stopped;
@@ -203,7 +190,7 @@ class CoreActions {
   }
 
   Future<void> clearSystemProxy() async {
-    await _clearSystemProxy();
+    await clearSystemProxyStatic();
   }
 
   static Future<bool> _setSystemProxy(int mixedPort) async {
@@ -257,22 +244,34 @@ class CoreActions {
       }
       return false;
     } else if (Platform.isWindows) {
+      const regKey =
+          r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings';
       final r1 = await Process.run('reg', [
-        'add',
-        r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings',
+        'add', regKey,
         '/v', 'ProxyEnable', '/t', 'REG_DWORD', '/d', '1', '/f'
       ]);
       final r2 = await Process.run('reg', [
-        'add',
-        r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings',
+        'add', regKey,
         '/v', 'ProxyServer', '/t', 'REG_SZ',
         '/d', '127.0.0.1:$mixedPort', '/f'
       ]);
+      // Bypass list: skip proxy for localhost, LAN, and local addresses
+      final r3 = await Process.run('reg', [
+        'add', regKey,
+        '/v', 'ProxyOverride', '/t', 'REG_SZ',
+        '/d', 'localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*'
+            ';172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*'
+            ';172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*'
+            ';192.168.*;<local>',
+        '/f'
+      ]);
       if (r1.exitCode != 0 || r2.exitCode != 0) {
         debugPrint('[SystemProxy] Windows registry update failed: '
-            'r1=${r1.exitCode} r2=${r2.exitCode}');
+            'r1=${r1.exitCode} r2=${r2.exitCode} r3=${r3.exitCode}');
         return false;
       }
+      // Notify WinINet of the proxy change so browsers pick it up immediately
+      _notifyWindowsProxyChanged();
       return true;
     }
     return false;
@@ -316,7 +315,7 @@ class CoreActions {
     }
   }
 
-  static Future<void> _clearSystemProxy() async {
+  static Future<void> clearSystemProxyStatic() async {
     if (Platform.isMacOS) {
       final services = await _listNetworkServices();
       for (final svc in services) {
@@ -333,15 +332,41 @@ class CoreActions {
         }
       }
     } else if (Platform.isWindows) {
+      const regKey =
+          r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings';
       final r = await Process.run('reg', [
-        'add',
-        r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings',
+        'add', regKey,
         '/v', 'ProxyEnable', '/t', 'REG_DWORD', '/d', '0', '/f'
       ]);
       if (r.exitCode != 0) {
         debugPrint('[SystemProxy] Windows registry clear failed: ${r.stderr}');
       }
+      // Also remove bypass list
+      await Process.run('reg', [
+        'delete', regKey, '/v', 'ProxyOverride', '/f'
+      ]);
+      // Notify WinINet of the proxy change
+      _notifyWindowsProxyChanged();
     }
+  }
+
+  /// Notify WinINet/WinHTTP that system proxy settings changed.
+  /// Without this, some apps won't pick up the change until restart.
+  static Future<void> _notifyWindowsProxyChanged() async {
+    // InternetSetOption with INTERNET_OPTION_SETTINGS_CHANGED (39) and
+    // INTERNET_OPTION_REFRESH (37) via PowerShell P/Invoke.
+    const ps = 'Add-Type -TypeDefinition @"'
+        '\nusing System; using System.Runtime.InteropServices;'
+        '\npublic class WinINet {'
+        '\n  [DllImport("wininet.dll", SetLastError=true)]'
+        '\n  public static extern bool InternetSetOption(IntPtr h, int o, IntPtr b, int l);'
+        '\n}'
+        '\n"@;'
+        '\n[WinINet]::InternetSetOption([IntPtr]::Zero,39,[IntPtr]::Zero,0);'
+        '\n[WinINet]::InternetSetOption([IntPtr]::Zero,37,[IntPtr]::Zero,0)';
+    try {
+      await Process.run('powershell', ['-NoProfile', '-Command', ps]);
+    } catch (_) {}
   }
 
   /// Enumerate all active network services on macOS.
@@ -394,6 +419,10 @@ final coreHeartbeatProvider = Provider<void>((ref) {
         ref.read(coreStatusProvider.notifier).state = CoreStatus.stopped;
         ref.read(trafficProvider.notifier).state = const Traffic();
         ref.read(trafficHistoryProvider.notifier).state = TrafficHistory();
+        // Clear desktop system proxy to prevent dead-proxy network blackout
+        if (Platform.isMacOS || Platform.isWindows) {
+          CoreActions.clearSystemProxyStatic().catchError((_) {});
+        }
         manager.stop().catchError((_) {});
         failures = 0;
       }

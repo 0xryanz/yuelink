@@ -55,7 +55,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// Scans open fds for a utun device (public API, no private KVC).
     private func findTunFd() -> Int32 {
         var buf = [CChar](repeating: 0, count: Int(IFNAMSIZ))
-        for fd: Int32 in 0...1024 {
+        for fd: Int32 in 3...4096 {
             var len = socklen_t(buf.count)
             // SYSPROTO_CONTROL = 2, UTUN_OPT_IFNAME = 2
             if getsockopt(fd, 2, 2, &buf, &len) == 0 {
@@ -190,8 +190,14 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             )
         } else if !dnsBlock.contains("enable: true") {
             if let dnsLineEnd = result.range(of: #"(?m)^dns:.*$"#, options: .regularExpression) {
-                let insertPos = result.index(after: dnsLineEnd.upperBound)
-                result.insert(contentsOf: "  enable: true\n", at: insertPos)
+                // Insert "enable: true" on the line after "dns:".
+                // Guard against end-of-string to avoid index(after: endIndex) crash.
+                if dnsLineEnd.upperBound < result.endIndex {
+                    let insertPos = result.index(after: dnsLineEnd.upperBound)
+                    result.insert(contentsOf: "  enable: true\n", at: insertPos)
+                } else {
+                    result.append("\n  enable: true\n")
+                }
             }
         }
 
@@ -255,7 +261,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler: @escaping () -> Void
     ) {
         StopCore()
-        completionHandler()
+        // Wait briefly for Go runtime to finish shutdown (close sockets,
+        // flush fake-ip store) before the system kills the extension process.
+        DispatchQueue.global().async {
+            for _ in 0..<20 {
+                if IsRunning() == 0 { break }
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            completionHandler()
+        }
     }
 
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
@@ -275,6 +289,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         // Write new config to app group and reload
         writeConfig(configYaml)
 
+        // Stop existing core before restarting to avoid resource leaks
+        if IsRunning() == 1 {
+            StopCore()
+        }
         let startOk = startCoreWithConfig(configYaml)
         let response = Data([startOk ? 1 : 0])
         completionHandler?(response)

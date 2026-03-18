@@ -85,6 +85,10 @@ class YueLinkVpnService : VpnService() {
     }
 
     private fun startTunnel(mixedPort: Int, mode: String, apps: List<String>) {
+        // Reset stop guard so stopTunnel() works on subsequent stop calls.
+        // Android can reuse the same Service instance across start/stop cycles.
+        stopped = false
+
         // Must call startForeground ASAP (within 5s of startForegroundService)
         // to avoid ANR. Call it before establish() which may take time.
         startForeground(NOTIFICATION_ID, createNotification())
@@ -156,7 +160,7 @@ class YueLinkVpnService : VpnService() {
 
     private var stopped = false
 
-    private fun stopTunnel() {
+    fun stopTunnel() {
         // Guard against double-call from onStartCommand(STOP) + onDestroy/onRevoke
         if (stopped) return
         stopped = true

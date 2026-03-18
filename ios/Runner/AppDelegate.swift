@@ -206,5 +206,41 @@ import NetworkExtension
             atomically: true,
             encoding: .utf8
         )
+
+        // Copy geo data files from main app's Application Support to the
+        // App Group container so the PacketTunnel extension can use them.
+        // Without these, GEOIP/GEOSITE rules fail on first launch.
+        copyGeoFilesToAppGroup(mihomoDir)
+    }
+
+    /// Copy GeoIP/GeoSite files from the main app sandbox to the App Group
+    /// mihomo directory. Only copies if the source is newer or dest is missing.
+    private func copyGeoFilesToAppGroup(_ destDir: URL) {
+        let geoFiles = ["GeoIP.dat", "GeoSite.dat", "country.mmdb", "ASN.mmdb"]
+        guard let appSupportDir = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return }
+
+        let fm = FileManager.default
+        for name in geoFiles {
+            let src = appSupportDir.appendingPathComponent(name)
+            let dst = destDir.appendingPathComponent(name)
+
+            guard fm.fileExists(atPath: src.path) else { continue }
+
+            // Skip if destination already exists and is same size or newer
+            if fm.fileExists(atPath: dst.path) {
+                let srcAttrs = try? fm.attributesOfItem(atPath: src.path)
+                let dstAttrs = try? fm.attributesOfItem(atPath: dst.path)
+                let srcSize = srcAttrs?[.size] as? Int ?? 0
+                let dstSize = dstAttrs?[.size] as? Int ?? 0
+                if dstSize >= srcSize && dstSize > 1024 { continue }
+            }
+
+            try? fm.removeItem(at: dst)
+            try? fm.copyItem(at: src, to: dst)
+            NSLog("[GeoData] Copied %@ to App Group (%d bytes)",
+                  name, (try? fm.attributesOfItem(atPath: dst.path))?[.size] as? Int ?? 0)
+        }
     }
 }

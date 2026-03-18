@@ -277,8 +277,8 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
         final apiOk = coreAlive ? await manager.api.isAvailable() : false;
         if (coreAlive && apiOk) {
           debugPrint('[AppLifecycle] core alive but Dart state was $status — recovering');
-          // Restore Dart state to match reality
-          manager.markRunning();
+          // Restore Dart state + ports to match reality
+          await manager.markRunning();
           ref.read(coreStatusProvider.notifier).state = CoreStatus.running;
           // Kick off streams and data refresh
           ref.invalidate(trafficStreamProvider);
@@ -302,6 +302,10 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
         ref.read(coreStatusProvider.notifier).state = CoreStatus.stopped;
         ref.read(trafficProvider.notifier).state = const Traffic();
         ref.read(trafficHistoryProvider.notifier).state = TrafficHistory();
+        // Clear desktop system proxy to prevent dead-proxy network blackout
+        if (Platform.isMacOS || Platform.isWindows) {
+          CoreActions.clearSystemProxyStatic().catchError((_) {});
+        }
         manager.stop().catchError((_) {});
       } else {
         // Core alive — force reconnect stale WebSocket streams.

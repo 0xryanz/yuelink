@@ -61,7 +61,7 @@ void main() async {
   final savedCloseBehavior = await SettingsService.getCloseBehavior();
   final savedToggleHotkey = await SettingsService.getToggleHotkey();
   final savedDelayResults = await SettingsService.getDelayResults();
-  final savedExpandedGroups = await SettingsService.getExpandedGroups();
+
 
   // Apply global strings language before runApp (for tray etc.)
   S.setLanguage(savedLanguage);
@@ -119,7 +119,7 @@ void main() async {
       closeBehaviorProvider.overrideWith((ref) => savedCloseBehavior),
       toggleHotkeyProvider.overrideWith((ref) => savedToggleHotkey),
       delayResultsProvider.overrideWith((ref) => savedDelayResults),
-      expandedGroupNamesProvider.overrideWith((ref) => Set<String>.from(savedExpandedGroups)),
+      expandedGroupNamesProvider.overrideWith((ref) => <String>{}),
     ],
     child: const YueLinkApp(),
   ));

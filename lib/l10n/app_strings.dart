@@ -381,6 +381,9 @@ class S {
   String get sectionTools => _e ? 'Tools' : '工具';
   String get sectionAbout => _e ? 'About' : '关于';
   String get sectionSettings => _e ? 'Settings' : '设置';
+  String get sectionService => _e ? 'Service' : '服务';
+  String get sectionSupport => _e ? 'Support' : '支持';
+  String get sectionAccountActions => _e ? 'Account' : '账号';
   // Upstream proxy
   String get upstreamProxy => _e ? 'Upstream Proxy' : '上游代理';
   String get upstreamProxySub =>

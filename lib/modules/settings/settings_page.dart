@@ -13,7 +13,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../constants.dart';
 import '../../l10n/app_strings.dart';
 import '../../modules/profiles/profiles_page.dart';
+import '../../modules/store/store_page.dart';
+import '../../modules/store/order_history_page.dart';
 import '../../modules/yue_auth/providers/yue_auth_providers.dart';
+import '../../core/storage/auth_token_service.dart';
+import '../../infrastructure/datasources/xboard_api.dart';
 import '../../shared/formatters/subscription_parser.dart' show formatBytes;
 import '../../providers/core_provider.dart';
 import '../../providers/split_tunnel_provider.dart';
@@ -25,7 +29,6 @@ import '../../core/platform/vpn_service.dart';
 import '../../modules/nodes/providers/nodes_providers.dart';
 import '../../services/update_checker.dart';
 import '../../theme.dart';
-import '../mine/widgets/account_actions_card.dart';
 import '../mine/widgets/account_card.dart';
 import '../mine/widgets/traffic_usage_card.dart';
 
@@ -181,6 +184,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final status = ref.watch(coreStatusProvider);
     final routingMode = ref.watch(routingModeProvider);
     final isDesktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+    final isGuest = ref.watch(authProvider).isGuest;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final dividerColor = isDark
@@ -218,24 +222,58 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
                   children: [
 
-              // ══ 0. Account center (top) ═══════════════════════════
-              if (ref.watch(authProvider).isGuest) ...[
+              // ══ 0. Account card (top) ═════════════════════════════
+              if (isGuest) ...[
                 _GuestLoginCard(isDark: isDark),
-                const SizedBox(height: 12),
-                _GuestActionsCard(isDark: isDark),
-                const SizedBox(height: 8),
               ] else ...[
                 const AccountCard(),
                 const SizedBox(height: 12),
                 if (status == CoreStatus.running) ...[
                   const TrafficUsageCard(),
-                  const SizedBox(height: 12),
                 ],
-                const AccountActionsCard(),
-                const SizedBox(height: 8),
+              ],
 
-              // ══ 1. General ════════════════════════════════════════
-              _SectionTitle(s.sectionAppearance),
+              // ══ 1. Service (订阅相关) ══════════════════════════════
+              _SectionTitle(s.sectionService),
+              _SettingsCard(
+                child: Column(
+                  children: [
+                    YLInfoRow(
+                      label: s.mineSubscriptionManage,
+                      trailing: const Icon(Icons.chevron_right,
+                          size: 18, color: YLColors.zinc400),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const ProfilePage()),
+                      ),
+                    ),
+                    if (!isGuest) ...[
+                      Divider(height: 1, thickness: 0.5, color: dividerColor),
+                      YLInfoRow(
+                        label: s.mineRenew,
+                        trailing: const Icon(Icons.chevron_right,
+                            size: 18, color: YLColors.zinc400),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) => const StorePage()),
+                        ),
+                      ),
+                      Divider(height: 1, thickness: 0.5, color: dividerColor),
+                      YLInfoRow(
+                        label: s.storeOrderHistory,
+                        trailing: const Icon(Icons.chevron_right,
+                            size: 18, color: YLColors.zinc400),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) => const OrderHistoryPage()),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              // ══ 2. Settings (设置) ═════════════════════════════════
+              _SectionTitle(s.sectionSettings),
               _SettingsCard(
                 child: Column(
                   children: [
@@ -295,52 +333,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         ),
                       ),
                     ),
-                    if (isDesktop) ...[
-                      Divider(height: 1, thickness: 0.5, color: dividerColor),
-                      YLSettingsRow(
-                        title: s.launchAtStartupLabel,
-                        description: s.launchAtStartupSub,
-                        trailing: CupertinoSwitch(
-                          value: _launchAtStartup,
-                          activeTrackColor: YLColors.connected,
-                          onChanged: (v) async {
-                            setState(() => _launchAtStartup = v);
-                            await SettingsService.setLaunchAtStartup(v);
-                            if (v) {
-                              await launchAtStartup.enable();
-                            } else {
-                              await launchAtStartup.disable();
-                            }
-                          },
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-
-              // ══ 1b. Desktop (desktop-only) ════════════════════════
-              if (isDesktop) ...[
-                _SectionTitle(s.sectionDesktop),
-                _SettingsCard(
-                  child: Column(
-                    children: [
-                      // Close behavior: tray mode only meaningful on macOS/Windows
-                      if (!Platform.isLinux) ...[
-                        _CloseBehaviorRow(),
-                        Divider(height: 1, thickness: 0.5, color: dividerColor),
-                      ],
-                      _HotkeyRow(),
-                    ],
-                  ),
-                ),
-              ],
-
-              // ══ 2. Connection ═════════════════════════════════════
-              _SectionTitle(s.sectionConnection),
-              _SettingsCard(
-                child: Column(
-                  children: [
+                    Divider(height: 1, thickness: 0.5, color: dividerColor),
                     // Auto connect
                     YLSettingsRow(
                       title: s.autoConnect,
@@ -354,7 +347,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       ),
                     ),
                     Divider(height: 1, thickness: 0.5, color: dividerColor),
-                    // Routing mode — all platforms
+                    // Routing mode
                     YLInfoRow(
                       label: s.routingModeSetting,
                       trailing: SizedBox(
@@ -433,18 +426,34 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             },
                           ),
                         ),
+                      Divider(height: 1, thickness: 0.5, color: dividerColor),
+                      YLSettingsRow(
+                        title: s.launchAtStartupLabel,
+                        description: s.launchAtStartupSub,
+                        trailing: CupertinoSwitch(
+                          value: _launchAtStartup,
+                          activeTrackColor: YLColors.connected,
+                          onChanged: (v) async {
+                            setState(() => _launchAtStartup = v);
+                            await SettingsService.setLaunchAtStartup(v);
+                            if (v) {
+                              await launchAtStartup.enable();
+                            } else {
+                              await launchAtStartup.disable();
+                            }
+                          },
+                        ),
+                      ),
+                      Divider(height: 1, thickness: 0.5, color: dividerColor),
+                      if (!Platform.isLinux) ...[
+                        _CloseBehaviorRow(),
+                        Divider(height: 1, thickness: 0.5, color: dividerColor),
+                      ],
+                      _HotkeyRow(),
                     ],
-                    // Hidden for 悦通 client: upstream proxy, test URL
                   ],
                 ),
               ),
-              ], // end of logged-in only sections (appearance, desktop, connection)
-
-              // ══ 3. Subscription & Config ══════════════════════════
-              // Hidden: Config Overwrite, Proxy Providers, WebDAV
-              // (underlying code retained; UI entry removed for 悦通 client)
-
-              // Hidden for 悦通 client: Network (GeoData), Core, Diagnostics
 
               /* ══ 3b. Network ══════════════════════════════════════
               _SectionTitle(s.sectionNetwork),
@@ -571,6 +580,56 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 ),
               */ // end hidden sections
 
+              // ══ 3. Support (支持) ═════════════════════════════════
+              _SectionTitle(s.sectionSupport),
+              _SettingsCard(
+                child: Column(
+                  children: [
+                    YLInfoRow(
+                      label: s.mineTelegramGroup,
+                      trailing: const Icon(Icons.chevron_right,
+                          size: 18, color: YLColors.zinc400),
+                      onTap: () async {
+                        final tgUri = Uri.parse('tg://resolve?domain=yue_to');
+                        if (await canLaunchUrl(tgUri)) {
+                          await launchUrl(tgUri);
+                        } else {
+                          await launchUrl(
+                            Uri.parse('https://t.me/yue_to'),
+                            mode: LaunchMode.externalApplication,
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+
+              // ══ 4. Account actions (仅登录) ════════════════════════
+              if (!isGuest) ...[
+                _SectionTitle(s.sectionAccountActions),
+                _SettingsCard(
+                  child: Column(
+                    children: [
+                      YLInfoRow(
+                        label: s.mineChangePassword,
+                        trailing: const Icon(Icons.chevron_right,
+                            size: 18, color: YLColors.zinc400),
+                        onTap: () => _showChangePasswordDialog(context, s),
+                      ),
+                      Divider(height: 1, thickness: 0.5, color: dividerColor),
+                      YLInfoRow(
+                        label: s.authLogout,
+                        labelStyle: YLText.body.copyWith(color: YLColors.error),
+                        trailing: const Icon(Icons.chevron_right,
+                            size: 18, color: YLColors.error),
+                        onTap: () => _confirmLogout(context, s, ref),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               // Split tunnel (Android only)
               if (Platform.isAndroid) ...[
                 _SectionTitle(s.sectionSplitTunnel),
@@ -662,6 +721,99 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
+  void _showChangePasswordDialog(BuildContext context, S s) {
+    final oldPwCtrl = TextEditingController();
+    final newPwCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(s.mineChangePassword),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: oldPwCtrl,
+              obscureText: true,
+              decoration: InputDecoration(labelText: s.oldPassword),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: newPwCtrl,
+              obscureText: true,
+              decoration: InputDecoration(labelText: s.newPassword),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(s.cancel),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final oldPw = oldPwCtrl.text.trim();
+              final newPw = newPwCtrl.text.trim();
+              if (oldPw.isEmpty || newPw.isEmpty) return;
+              Navigator.pop(ctx);
+              await _doChangePassword(oldPw, newPw);
+            },
+            child: Text(s.confirm),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _doChangePassword(String oldPassword, String newPassword) async {
+    final s = S.current;
+    final token = ref.read(authProvider).token;
+    if (token == null) return;
+    try {
+      final host = await AuthTokenService.instance.getApiHost() ??
+          'https://d7ccm19ki90mg.cloudfront.net';
+      final api = XBoardApi(baseUrl: host);
+      await api.changePassword(
+        token: token,
+        oldPassword: oldPassword,
+        newPassword: newPassword,
+      );
+      AppNotifier.success(s.passwordChangedSuccess);
+    } on XBoardApiException catch (e) {
+      final msg = e.message;
+      AppNotifier.error(
+        msg.isNotEmpty && msg.length < 80 && !msg.startsWith('{')
+            ? msg
+            : s.passwordChangeFailed,
+      );
+    } catch (_) {
+      AppNotifier.error(s.passwordChangeFailed);
+    }
+  }
+
+  void _confirmLogout(BuildContext context, S s, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(s.authLogout),
+        content: Text(s.authLogoutConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(s.cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: YLColors.error),
+            onPressed: () {
+              Navigator.pop(ctx);
+              ref.read(authProvider.notifier).logout();
+            },
+            child: Text(s.authLogout),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ── Account section (superseded by AccountCard; retained for reference) ────────
@@ -823,340 +975,6 @@ class _GuestLoginCard extends ConsumerWidget {
   }
 }
 
-/// Actions available in guest mode (no login required).
-class _GuestActionsCard extends ConsumerWidget {
-  final bool isDark;
-  const _GuestActionsCard({required this.isDark});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final s = S.of(context);
-
-    final divider = Divider(
-      height: 1,
-      thickness: 0.5,
-      color: isDark
-          ? Colors.white.withValues(alpha: 0.06)
-          : Colors.black.withValues(alpha: 0.06),
-    );
-
-    return _SettingsCard(
-      child: Column(
-        children: [
-          // Subscription management
-          _GuestActionRow(
-            icon: Icons.cloud_sync_outlined,
-            label: s.mineSubscriptionManage,
-            isDark: isDark,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ProfilePage()),
-            ),
-          ),
-          divider,
-          // Appearance
-          _GuestActionRow(
-            icon: Icons.palette_outlined,
-            label: s.sectionAppearance,
-            isDark: isDark,
-            onTap: () => _showAppearanceSheet(context, ref),
-          ),
-          divider,
-          // Connection
-          _GuestActionRow(
-            icon: Icons.cable_outlined,
-            label: s.sectionConnection,
-            isDark: isDark,
-            onTap: () => _showConnectionSheet(context, ref),
-          ),
-          divider,
-          // Telegram group
-          _GuestActionRow(
-            icon: Icons.telegram,
-            label: s.mineTelegramGroup,
-            isDark: isDark,
-            onTap: () async {
-              final tgUri = Uri.parse('tg://resolve?domain=yue_to');
-              if (await canLaunchUrl(tgUri)) {
-                await launchUrl(tgUri);
-              } else {
-                await launchUrl(
-                  Uri.parse('https://t.me/yue_to'),
-                  mode: LaunchMode.externalApplication,
-                );
-              }
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showAppearanceSheet(BuildContext context, WidgetRef ref) {
-    final s = S.of(context);
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _AppearanceSheet(title: s.sectionAppearance),
-    );
-  }
-
-  void _showConnectionSheet(BuildContext context, WidgetRef ref) {
-    final s = S.of(context);
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _ConnectionSheet(title: s.sectionConnection),
-    );
-  }
-}
-
-/// Bottom sheet for appearance settings.
-class _AppearanceSheet extends ConsumerWidget {
-  final String title;
-  const _AppearanceSheet({required this.title});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final s = S.of(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final theme = ref.watch(themeProvider);
-    final language = ref.watch(languageProvider);
-    final dividerColor = isDark
-        ? Colors.white.withValues(alpha: 0.06)
-        : Colors.black.withValues(alpha: 0.06);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? YLColors.zinc900 : Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom +
-            MediaQuery.of(context).padding.bottom + 16,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 12),
-          Container(
-            width: 36, height: 4,
-            decoration: BoxDecoration(
-              color: YLColors.zinc400,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(title, style: YLText.titleMedium),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: _SettingsCard(
-              child: Column(
-                children: [
-                  YLInfoRow(
-                    label: s.themeLabel,
-                    trailing: SizedBox(
-                      width: 240,
-                      child: SegmentedButton<ThemeMode>(
-                        showSelectedIcon: false,
-                        style: SegmentedButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          textStyle: const TextStyle(fontSize: 12),
-                        ),
-                        segments: [
-                          ButtonSegment(
-                              value: ThemeMode.system,
-                              label: Text(s.themeSystem)),
-                          ButtonSegment(
-                              value: ThemeMode.light,
-                              label: Text(s.themeLight)),
-                          ButtonSegment(
-                              value: ThemeMode.dark,
-                              label: Text(s.themeDark)),
-                        ],
-                        selected: {theme},
-                        onSelectionChanged: (v) {
-                          ref.read(themeProvider.notifier).state = v.first;
-                          SettingsService.setThemeMode(v.first);
-                        },
-                      ),
-                    ),
-                  ),
-                  Divider(height: 1, thickness: 0.5, color: dividerColor),
-                  YLInfoRow(
-                    label: s.sectionLanguage,
-                    trailing: SizedBox(
-                      width: 160,
-                      child: SegmentedButton<String>(
-                        showSelectedIcon: false,
-                        style: SegmentedButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          textStyle: const TextStyle(fontSize: 12),
-                        ),
-                        segments: [
-                          ButtonSegment(
-                              value: 'zh', label: Text(s.languageChinese)),
-                          ButtonSegment(
-                              value: 'en', label: Text(s.languageEnglish)),
-                        ],
-                        selected: {language},
-                        onSelectionChanged: (v) async {
-                          ref.read(languageProvider.notifier).state = v.first;
-                          await SettingsService.setLanguage(v.first);
-                        },
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-}
-
-/// Bottom sheet for connection settings.
-class _ConnectionSheet extends ConsumerWidget {
-  final String title;
-  const _ConnectionSheet({required this.title});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final s = S.of(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final autoConnect = ref.watch(autoConnectProvider);
-    final routingMode = ref.watch(routingModeProvider);
-    final status = ref.watch(coreStatusProvider);
-    final dividerColor = isDark
-        ? Colors.white.withValues(alpha: 0.06)
-        : Colors.black.withValues(alpha: 0.06);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? YLColors.zinc900 : Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom +
-            MediaQuery.of(context).padding.bottom + 16,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 12),
-          Container(
-            width: 36, height: 4,
-            decoration: BoxDecoration(
-              color: YLColors.zinc400,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(title, style: YLText.titleMedium),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: _SettingsCard(
-              child: Column(
-                children: [
-                  YLSettingsRow(
-                    title: s.autoConnect,
-                    trailing: CupertinoSwitch(
-                      value: autoConnect,
-                      activeTrackColor: YLColors.connected,
-                      onChanged: (v) async {
-                        ref.read(autoConnectProvider.notifier).state = v;
-                        await SettingsService.setAutoConnect(v);
-                      },
-                    ),
-                  ),
-                  Divider(height: 1, thickness: 0.5, color: dividerColor),
-                  YLInfoRow(
-                    label: s.routingModeSetting,
-                    trailing: SizedBox(
-                      width: 200,
-                      child: SegmentedButton<String>(
-                        showSelectedIcon: false,
-                        style: SegmentedButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          textStyle: const TextStyle(fontSize: 12),
-                        ),
-                        segments: [
-                          ButtonSegment(
-                              value: 'rule',
-                              label: Text(s.routeModeRule)),
-                          ButtonSegment(
-                              value: 'global',
-                              label: Text(s.routeModeGlobal)),
-                          ButtonSegment(
-                              value: 'direct',
-                              label: Text(s.routeModeDirect)),
-                        ],
-                        selected: {routingMode},
-                        onSelectionChanged: (v) async {
-                          final mode = v.first;
-                          ref.read(routingModeProvider.notifier).state = mode;
-                          await SettingsService.setRoutingMode(mode);
-                          if (status == CoreStatus.running) {
-                            try {
-                              await CoreManager.instance.api
-                                  .setRoutingMode(mode);
-                            } catch (_) {}
-                          }
-                        },
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-}
-
-class _GuestActionRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isDark;
-  final VoidCallback? onTap;
-
-  const _GuestActionRow({
-    required this.icon,
-    required this.label,
-    required this.isDark,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: YLColors.zinc500),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(label, style: YLText.body),
-            ),
-            const Icon(Icons.chevron_right,
-                size: 18, color: YLColors.zinc400),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 // ── Settings page helper widgets ─────────────────────────────────────────────
 
@@ -1451,6 +1269,7 @@ class YLInfoRow extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   final bool enabled;
+  final TextStyle? labelStyle;
 
   const YLInfoRow({
     super.key,
@@ -1459,6 +1278,7 @@ class YLInfoRow extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.enabled = true,
+    this.labelStyle,
   });
 
   @override
@@ -1476,7 +1296,7 @@ class YLInfoRow extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Text(label, style: YLText.body.copyWith(color: labelColor)),
+            child: Text(label, style: labelStyle ?? YLText.body.copyWith(color: labelColor)),
           ),
           if (value != null)
             Text(value!, style: YLText.body.copyWith(color: valueColor)),

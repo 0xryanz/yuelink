@@ -58,6 +58,23 @@ class CoreManager {
   bool get isMockMode => _mode == CoreMode.mock;
   bool get isRunning => _running;
   int get mixedPort => _mixedPort;
+
+  /// Check Go core's actual running state via FFI (not the Dart _running flag).
+  /// Use this to detect if the core is still alive after Flutter engine restart.
+  bool get isCoreActuallyRunning {
+    if (isMockMode) return _running;
+    try {
+      return _core.isRunning;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Restore the Dart _running flag to true after detecting that the Go core
+  /// survived a Flutter engine restart. Called from _onAppResumed recovery.
+  void markRunning() {
+    _running = true;
+  }
   int _mixedPort = 7890;
 
   void configure({int? port, String? secret, CoreMode? mode}) {

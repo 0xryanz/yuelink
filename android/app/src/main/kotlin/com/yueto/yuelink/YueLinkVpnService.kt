@@ -251,11 +251,11 @@ class YueLinkVpnService : VpnService() {
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "YueLink VPN",
+            "YueLink",
             // IMPORTANCE_MIN: notification only visible when shade is pulled down,
             // no status bar icon from the app (system VPN key icon remains).
             NotificationManager.IMPORTANCE_MIN
-        ).apply { description = "YueLink VPN service status" }
+        ).apply { description = "YueLink service status" }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 

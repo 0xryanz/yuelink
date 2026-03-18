@@ -262,12 +262,38 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     // 1. Refresh auth / user profile in background (catches token expiry)
     ref.read(authProvider.notifier).refreshUserInfo().ignore();
 
-    // 2. Check core liveness (only relevant if core was running)
-    final status = ref.read(coreStatusProvider);
-    if (status != CoreStatus.running) return;
     final manager = CoreManager.instance;
     if (manager.isMockMode) return;
 
+    final status = ref.read(coreStatusProvider);
+
+    // 2. Recovery: Dart thinks stopped but Go core is actually still running.
+    //    This happens on Android when the OS kills the Flutter engine in the
+    //    background but the VPN service + Go core survive. On resume, the
+    //    engine is recreated with default state (stopped), but the core is alive.
+    if (status != CoreStatus.running) {
+      try {
+        final coreAlive = manager.isCoreActuallyRunning;
+        final apiOk = coreAlive ? await manager.api.isAvailable() : false;
+        if (coreAlive && apiOk) {
+          debugPrint('[AppLifecycle] core alive but Dart state was $status — recovering');
+          // Restore Dart state to match reality
+          manager.markRunning();
+          ref.read(coreStatusProvider.notifier).state = CoreStatus.running;
+          // Kick off streams and data refresh
+          ref.invalidate(trafficStreamProvider);
+          ref.invalidate(memoryStreamProvider);
+          ref.invalidate(connectionsStreamProvider);
+          ref.invalidate(exitIpInfoProvider);
+          ref.read(proxyGroupsProvider.notifier).refresh();
+        }
+      } catch (e) {
+        debugPrint('[AppLifecycle] recovery check failed: $e');
+      }
+      return;
+    }
+
+    // 3. Normal case: Dart says running — verify core is still alive
     try {
       final running = manager.isRunning;
       final apiOk = await manager.api.isAvailable();

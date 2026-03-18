@@ -13,6 +13,9 @@ func StartCore(_ configYaml: UnsafePointer<CChar>!) -> UnsafeMutablePointer<CCha
 @_silgen_name("StopCore")
 func StopCore()
 
+@_silgen_name("IsRunning")
+func IsRunning() -> Int32
+
 @_silgen_name("FreeCString")
 func FreeCString(_ s: UnsafeMutablePointer<CChar>!)
 

@@ -428,6 +428,11 @@ class CoreManager {
     // Always stop VPN regardless of core stop result — the VPN service must
     // be cleaned up (notification removed, TUN fd closed) even if FFI crashed.
     if (Platform.isAndroid || Platform.isIOS) {
+      // Small delay on Android to let Go runtime finish closing TUN fd
+      // via executor.Shutdown() before we tear down the VPN service.
+      if (Platform.isAndroid) {
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
       try {
         await vpn.VpnService.stopVpn();
       } catch (e) {

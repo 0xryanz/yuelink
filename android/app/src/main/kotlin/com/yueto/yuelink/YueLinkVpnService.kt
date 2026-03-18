@@ -166,15 +166,12 @@ class YueLinkVpnService : VpnService() {
         try {
             nativeStopProtect()
         } catch (_: Exception) {}
-        // Close the raw fd we own (adopted back into PFD for safe close).
-        // The Go core's Shutdown() may have already closed the fd via
-        // sing-tun — catch all exceptions to handle double-close safely.
-        if (tunFd >= 0) {
-            try {
-                ParcelFileDescriptor.adoptFd(tunFd).close()
-            } catch (_: Exception) {}
-            tunFd = -1
-        }
+        // Do NOT close the TUN fd here — Go core's executor.Shutdown()
+        // (called from StopCore FFI) already closes it via sing-tun.
+        // Calling ParcelFileDescriptor.adoptFd(tunFd).close() on an
+        // already-closed fd causes a native SIGABRT/SIGSEGV that crashes
+        // the entire Flutter process. Just reset the reference.
+        tunFd = -1
         onTunReady = null
         try {
             stopForeground(STOP_FOREGROUND_REMOVE)

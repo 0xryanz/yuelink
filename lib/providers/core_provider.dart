@@ -57,7 +57,7 @@ final logLevelProvider = StateProvider<String>((ref) => 'info');
 final systemProxyOnConnectProvider = StateProvider<bool>((ref) => true);
 
 /// Whether to auto-connect on startup
-final autoConnectProvider = StateProvider<bool>((ref) => true);
+final autoConnectProvider = StateProvider<bool>((ref) => false);
 
 /// Set to true when the user explicitly stops the VPN.
 /// Prevents auto-connect from re-enabling on app resume.

@@ -116,7 +116,7 @@ class SettingsService {
   // ── Auto connect ─────────────────────────────────────────────────────────
 
   static Future<bool> getAutoConnect() async {
-    return (await get<bool>('autoConnect')) ?? true;
+    return (await get<bool>('autoConnect')) ?? false;
   }
 
   static Future<void> setAutoConnect(bool value) async {

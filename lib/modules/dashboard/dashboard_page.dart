@@ -18,6 +18,7 @@ import 'widgets/announcement_banner.dart';
 import 'widgets/chart_card.dart';
 import 'widgets/exit_ip_card.dart';
 import 'widgets/hero_card.dart';
+import 'widgets/carrier_card.dart';
 import 'widgets/stats_card.dart';
 import 'widgets/subscription_card.dart';
 
@@ -150,9 +151,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       const SizedBox(height: 12),
                       const AnnouncementBanner(),
 
-                      // ── Running: exit IP, chart, stats ──────────────
+                      // ── Running: carrier, exit IP, chart, stats ─────
                       if (isRunning) ...[
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
+                        const RepaintBoundary(child: CarrierCard()),
+                        const SizedBox(height: 12),
                         if (isWide)
                           SizedBox(
                             height: 190,

@@ -1,0 +1,289 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/storage/settings_service.dart';
+import '../../infrastructure/datasources/yueops_api.dart';
+import '../../l10n/app_strings.dart';
+import '../nodes/providers/nodes_providers.dart';
+import '../../shared/app_notifier.dart';
+import '../../shared/event_log.dart';
+import '../yue_auth/providers/yue_auth_providers.dart';
+
+// ── YueOps API provider ─────────────────────────────────────────────────────
+
+import '../../constants.dart';
+
+final yueOpsApiProvider = Provider<YueOpsApi>((ref) {
+  return YueOpsApi(baseUrl: AppConstants.yueOpsBaseUrl);
+});
+
+// ── Carrier state ───────────────────────────────────────────────────────────
+
+class CarrierState {
+  final String? carrier; // ct, cu, cm, or null
+  final String carrierName;
+  final String? recommendedNodeId;
+  final String sniDomain;
+  final String sniStatus;
+  final DateTime? lastChecked;
+
+  const CarrierState({
+    this.carrier,
+    this.carrierName = '',
+    this.recommendedNodeId,
+    this.sniDomain = '',
+    this.sniStatus = 'unknown',
+    this.lastChecked,
+  });
+
+  CarrierState copyWith({
+    String? carrier,
+    String? carrierName,
+    String? recommendedNodeId,
+    String? sniDomain,
+    String? sniStatus,
+    DateTime? lastChecked,
+  }) {
+    return CarrierState(
+      carrier: carrier ?? this.carrier,
+      carrierName: carrierName ?? this.carrierName,
+      recommendedNodeId: recommendedNodeId ?? this.recommendedNodeId,
+      sniDomain: sniDomain ?? this.sniDomain,
+      sniStatus: sniStatus ?? this.sniStatus,
+      lastChecked: lastChecked ?? this.lastChecked,
+    );
+  }
+
+  bool get isDetected => carrier != null && carrier!.isNotEmpty;
+  bool get isSniHealthy => sniStatus == 'healthy';
+}
+
+// ── Carrier notifier ────────────────────────────────────────────────────────
+
+final carrierProvider =
+    StateNotifierProvider<CarrierNotifier, CarrierState>((ref) {
+  return CarrierNotifier(ref);
+});
+
+class CarrierNotifier extends StateNotifier<CarrierState> {
+  CarrierNotifier(this._ref) : super(const CarrierState()) {
+    _loadCached();
+  }
+
+  final Ref _ref;
+  Timer? _pollingTimer;
+
+  /// Polling interval for SNI status checks.
+  static const _pollInterval = Duration(minutes: 30);
+
+  /// Load cached carrier info from settings.
+  Future<void> _loadCached() async {
+    final carrier = await SettingsService.get<String>('detectedCarrier');
+    final carrierName =
+        await SettingsService.get<String>('detectedCarrierName') ?? '';
+    final sniDomain = await SettingsService.get<String>('cachedSniDomain') ?? '';
+    if (carrier != null) {
+      state = CarrierState(
+        carrier: carrier,
+        carrierName: carrierName,
+        sniDomain: sniDomain,
+      );
+    }
+  }
+
+  /// Detect carrier by fetching the user's real (direct) public IP,
+  /// then querying YueOps for ASN-based carrier identification.
+  ///
+  /// Uses a direct HTTP request (no proxy) to get the real ISP IP.
+  Future<void> detectCarrier() async {
+    final api = _ref.read(yueOpsApiProvider);
+    try {
+      // Step 1: Get user's real IP (direct, bypassing proxy)
+      final realIp = await _fetchRealIp();
+      if (realIp == null) {
+        debugPrint('[Carrier] Could not fetch real IP');
+        return;
+      }
+
+      // Step 2: Parallel — detect carrier + fetch config
+      final results = await Future.wait([
+        api.detectCarrier(realIp),
+        api.getConfig(),
+      ]);
+      final carrierInfo = results[0] as CarrierInfo;
+      final config = results[1] as ClientConfig;
+
+      state = CarrierState(
+        carrier: carrierInfo.carrier,
+        carrierName: carrierInfo.carrierName,
+        recommendedNodeId: carrierInfo.recommendedNodeId,
+        sniDomain: config.sniDomain,
+        sniStatus: config.sniStatus,
+        lastChecked: DateTime.now(),
+      );
+
+      // Cache to settings
+      await SettingsService.set('detectedCarrier', carrierInfo.carrier ?? '');
+      await SettingsService.set(
+          'detectedCarrierName', carrierInfo.carrierName);
+      await SettingsService.set('cachedSniDomain', config.sniDomain);
+
+      EventLog.write(
+          '[Carrier] ip=$realIp detected=${carrierInfo.carrier} sni=${config.sniDomain} status=${config.sniStatus}');
+
+      // Auto-select carrier-optimized proxy node
+      if (carrierInfo.isDetected) {
+        _autoSelectCarrierNode(carrierInfo.carrier!);
+      }
+    } catch (e) {
+      debugPrint('[Carrier] Detection failed: $e');
+    }
+  }
+
+  // ── Carrier keyword mapping for proxy node name matching ──────────────────
+
+  static const _carrierKeywords = <String, List<String>>{
+    'ct': ['电信', 'CT', 'Telecom', 'telecom'],
+    'cu': ['联通', 'CU', 'Unicom', 'unicom'],
+    'cm': ['移动', 'CM', 'CMCC', 'Mobile', 'mobile'],
+  };
+
+  /// Auto-select the best proxy node for the detected carrier.
+  ///
+  /// Searches all Selector-type proxy groups for nodes whose names
+  /// contain carrier keywords (e.g., "电信", "CT", "联通").
+  /// Only switches if the group has a carrier-specific node and it's
+  /// not already selected.
+  Future<void> _autoSelectCarrierNode(String carrier) async {
+    final keywords = _carrierKeywords[carrier];
+    if (keywords == null) return;
+
+    final groups = _ref.read(proxyGroupsProvider);
+    final notifier = _ref.read(proxyGroupsProvider.notifier);
+
+    for (final group in groups) {
+      // Only auto-select in Selector groups (user-switchable)
+      if (group.type != 'Selector') continue;
+
+      // Find a carrier-matching node in this group
+      String? matchingNode;
+      for (final nodeName in group.all) {
+        for (final keyword in keywords) {
+          if (nodeName.contains(keyword)) {
+            matchingNode = nodeName;
+            break;
+          }
+        }
+        if (matchingNode != null) break;
+      }
+
+      // Skip if no match or already selected
+      if (matchingNode == null || group.now == matchingNode) continue;
+
+      final ok = await notifier.changeProxy(group.name, matchingNode);
+      if (ok) {
+        EventLog.write(
+            '[Carrier] Auto-selected "$matchingNode" in group "${group.name}" for $carrier');
+        final s = S.current;
+        AppNotifier.success(
+            s.isEn
+                ? 'Auto-switched to $matchingNode'
+                : '已自动切换到 $matchingNode');
+      }
+    }
+  }
+
+  /// Fetch the user's real public IP directly (no proxy).
+  /// This returns the ISP-assigned IP, which is what we need for
+  /// carrier detection (CT/CU/CM).
+  static Future<String?> _fetchRealIp() async {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 5);
+    try {
+      final req = await client.getUrl(Uri.parse('https://api.ip.sb/ip'));
+      req.headers.set('User-Agent', 'YueLink/1.0');
+      final resp = await req.close().timeout(const Duration(seconds: 5));
+      if (resp.statusCode != 200) return null;
+      final body = await resp.transform(utf8.decoder).join();
+      return body.trim();
+    } catch (e) {
+      debugPrint('[Carrier] Real IP fetch failed: $e');
+      return null;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// Start periodic SNI polling.
+  ///
+  /// Checks YueOps every 30 minutes for SNI domain changes.
+  /// If domain changed, returns true (caller should trigger subscription refresh).
+  void startPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(_pollInterval, (_) => _pollAndRefresh());
+    // Also run immediately
+    _pollAndRefresh();
+  }
+
+  /// Poll SNI and auto-refresh subscription if domain changed.
+  Future<void> _pollAndRefresh() async {
+    final changed = await _pollSni();
+    if (changed) {
+      // SNI domain rotated — trigger subscription re-download
+      try {
+        await _ref.read(authProvider.notifier).syncSubscription();
+        AppNotifier.info('线路已自动更新');
+      } catch (e) {
+        debugPrint('[Carrier] Subscription refresh after SNI change failed: $e');
+      }
+    }
+  }
+
+  /// Stop polling (e.g., on logout).
+  void stopPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
+  }
+
+  /// Single SNI poll. Returns true if SNI domain changed.
+  Future<bool> _pollSni() async {
+    final api = _ref.read(yueOpsApiProvider);
+    try {
+      final config = await api.getConfig();
+      final oldDomain = state.sniDomain;
+      final newDomain = config.sniDomain;
+
+      state = state.copyWith(
+        sniDomain: newDomain,
+        sniStatus: config.sniStatus,
+        lastChecked: DateTime.now(),
+      );
+      await SettingsService.set('cachedSniDomain', newDomain);
+
+      if (oldDomain.isNotEmpty &&
+          newDomain.isNotEmpty &&
+          oldDomain != newDomain) {
+        EventLog.write(
+            '[Carrier] SNI changed: $oldDomain → $newDomain, triggering refresh');
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('[Carrier] SNI poll failed: $e');
+      return false;
+    }
+  }
+
+  /// Force check SNI and return whether it changed.
+  Future<bool> checkSni() => _pollSni();
+
+  @override
+  void dispose() {
+    _pollingTimer?.cancel();
+    super.dispose();
+  }
+}

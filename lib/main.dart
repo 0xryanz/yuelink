@@ -22,6 +22,7 @@ import 'domain/models/proxy.dart';
 import 'modules/nodes/providers/nodes_providers.dart';
 import 'modules/store/store_page.dart';
 import 'modules/onboarding/onboarding_page.dart';
+import 'modules/carrier/carrier_provider.dart';
 import 'modules/yue_auth/presentation/yue_auth_page.dart';
 import 'modules/yue_auth/providers/yue_auth_providers.dart';
 import 'domain/models/traffic.dart';
@@ -149,6 +150,7 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
   ProviderSubscription? _groupsSub;
   ProviderSubscription? _profilesSub;
   ProviderSubscription? _hotkeySub;
+  ProviderSubscription? _carrierSub;
 
   @override
   void initState() {
@@ -227,6 +229,23 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
         if (prev != null && prev != next) _reregisterHotkeys(next);
       });
     }
+
+    // Carrier detection + SNI polling: start when core is running
+    _carrierSub = ref.listenManual(coreStatusProvider, (prev, next) {
+      if (next == CoreStatus.running && prev != CoreStatus.running) {
+        _startCarrierDetection();
+      } else if (next == CoreStatus.stopped && prev == CoreStatus.running) {
+        ref.read(carrierProvider.notifier).stopPolling();
+      }
+    });
+  }
+
+  /// Detect carrier via YueOps after VPN connects.
+  /// Fetches the user's real (direct) IP to determine ISP (CT/CU/CM).
+  void _startCarrierDetection() {
+    final carrier = ref.read(carrierProvider.notifier);
+    carrier.startPolling();
+    carrier.detectCarrier();
   }
 
   @override
@@ -236,6 +255,7 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     _groupsSub?.close();
     _profilesSub?.close();
     _hotkeySub?.close();
+    _carrierSub?.close();
     WidgetsBinding.instance.removeObserver(this);
     _appLinksSub?.cancel();
     if (_trayInitialized) trayManager.removeListener(this);

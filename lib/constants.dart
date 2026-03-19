@@ -17,4 +17,7 @@ class AppConstants {
   /// Default ports (aligned with standard mihomo config).
   static const defaultMixedPort = 7890;
   static const defaultApiPort = 9090;
+
+  /// YueOps operations API base URL.
+  static const yueOpsBaseUrl = 'https://ops.yue.to';
 }

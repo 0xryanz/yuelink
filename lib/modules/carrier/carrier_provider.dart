@@ -7,9 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/storage/settings_service.dart';
 import '../../infrastructure/datasources/yueops_api.dart';
-import '../../l10n/app_strings.dart';
 import '../nodes/providers/nodes_providers.dart';
-import '../../shared/app_notifier.dart';
 import '../../shared/event_log.dart';
 import '../yue_auth/providers/yue_auth_providers.dart';
 
@@ -188,11 +186,6 @@ class CarrierNotifier extends StateNotifier<CarrierState> {
       if (ok) {
         EventLog.write(
             '[Carrier] Auto-selected "$matchingNode" in group "${group.name}" for $carrier');
-        final s = S.current;
-        AppNotifier.success(
-            s.isEn
-                ? 'Auto-switched to $matchingNode'
-                : '已自动切换到 $matchingNode');
       }
     }
   }
@@ -233,10 +226,9 @@ class CarrierNotifier extends StateNotifier<CarrierState> {
   Future<void> _pollAndRefresh() async {
     final changed = await _pollSni();
     if (changed) {
-      // SNI domain rotated — trigger subscription re-download
+      // SNI domain rotated — trigger subscription re-download silently
       try {
         await _ref.read(authProvider.notifier).syncSubscription();
-        AppNotifier.info('线路已自动更新');
       } catch (e) {
         debugPrint('[Carrier] Subscription refresh after SNI change failed: $e');
       }

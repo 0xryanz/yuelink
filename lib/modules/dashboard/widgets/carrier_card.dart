@@ -16,8 +16,10 @@ class CarrierCard extends ConsumerWidget {
     final s = S.of(context);
     final carrier = ref.watch(carrierProvider);
 
-    // Don't show if no carrier detected
-    if (!carrier.isDetected) return const SizedBox.shrink();
+    // Only show when there's an issue (degraded/blocked) — seamless when healthy
+    if (!carrier.isDetected || carrier.isSniHealthy) {
+      return const SizedBox.shrink();
+    }
 
     final statusColor = carrier.isSniHealthy
         ? YLColors.connected

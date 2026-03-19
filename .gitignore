@@ -52,6 +52,7 @@ core/mihomo/
 # Installed native libraries
 android/app/src/main/jniLibs/
 ios/Frameworks/libclash.*
+ios/Frameworks/sim/
 macos/Frameworks/
 windows/libs/
 linux/libs/

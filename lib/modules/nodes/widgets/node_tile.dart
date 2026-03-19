@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../l10n/app_strings.dart';
 import '../../../shared/app_notifier.dart';
 import '../../../theme.dart';
+import '../protocol_color.dart';
 import '../providers/node_providers.dart';
 import '../providers/nodes_providers.dart';
 
@@ -160,17 +161,19 @@ class _NodeTypeBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final color = protocolColor(label);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
       decoration: BoxDecoration(
-        color: isDark ? YLColors.zinc700 : YLColors.zinc100,
+        color: color?.withValues(alpha: isDark ? 0.15 : 0.10)
+            ?? (isDark ? YLColors.zinc700 : YLColors.zinc100),
         borderRadius: BorderRadius.circular(YLRadius.sm),
       ),
       child: Text(
         label,
         style: YLText.caption.copyWith(
           fontSize: 9,
-          color: YLColors.zinc500,
+          color: color ?? YLColors.zinc500,
           fontWeight: FontWeight.w600,
         ),
       ),

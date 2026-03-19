@@ -53,17 +53,12 @@ class HeroCard extends ConsumerWidget {
     // Pills data
     final profiles = ref.watch(profilesProvider);
     final activeId = ref.watch(activeProfileIdProvider);
-    final isMock = ref.watch(isMockModeProvider);
     final routingMode = ref.watch(routingModeProvider);
 
-    String? profileName;
-    if (isMock) {
-      profileName = s.mockModeLabel;
-    } else {
-      profileName = profiles.whenOrNull(
-        data: (list) => list.where((p) => p.id == activeId).firstOrNull?.name,
-      );
-    }
+    // Show active profile name (mock mode uses same logic as real mode)
+    final profileName = profiles.whenOrNull(
+      data: (list) => list.where((p) => p.id == activeId).firstOrNull?.name,
+    );
 
     final routeLabel = routingMode == 'rule'
         ? s.routeModeRule

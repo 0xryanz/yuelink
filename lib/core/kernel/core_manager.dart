@@ -135,8 +135,17 @@ class CoreManager {
 
       // ── Step 2: initCore ───────────────────────────────────────────
       await _step(steps, 'initCore', StartupError.initCoreFailed, () async {
-        if (_initialized || _mode == CoreMode.mock) {
-          return 'skip (mode=$_mode, initialized=$_initialized)';
+        if (_initialized) {
+          return 'skip (already initialized)';
+        }
+        if (_mode == CoreMode.mock) {
+          // Mock mode: call init so CoreMock._isInit = true (required for
+          // mock start/getProxies to return data).
+          final appDir = await getApplicationSupportDirectory();
+          homeDir = appDir.path;
+          _core.init(homeDir!);
+          _initialized = true;
+          return 'mock init, homeDir=$homeDir';
         }
         final appDir = await getApplicationSupportDirectory();
         homeDir = appDir.path;
@@ -281,6 +290,7 @@ class CoreManager {
 
       // ── Step 7: waitApi ────────────────────────────────────────────
       await _step(steps, 'waitApi', StartupError.apiTimeout, () async {
+        if (isMockMode) return 'skip (mock)';
         for (var i = 1; i <= 50; i++) {
           if (await api.isAvailable()) {
             return 'ready after $i attempts';
@@ -294,6 +304,7 @@ class CoreManager {
 
       // ── Step 8: verify ─────────────────────────────────────────────
       await _step(steps, 'verify', StartupError.coreDiedAfterStart, () async {
+        if (isMockMode) return 'skip (mock)';
         final goRunning = _core.isRunning;
         final apiOk = await api.isAvailable();
 

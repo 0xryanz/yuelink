@@ -745,4 +745,35 @@ class S {
   String get syncComplete => _e ? 'Sync complete' : '同步完成';
   String get syncFailed => _e ? 'Sync failed' : '同步失败';
   String get notConnected => _e ? 'Not connected' : '未连接';
+
+  // ── Profile switch confirmation ──────────────────────────────
+  String get switchProfileTitle => _e ? 'Switch Subscription' : '切换订阅';
+  String switchProfileMessage(String name) => _e
+      ? 'Switch to "$name"? This will use its nodes and rules.'
+      : '切换到「$name」？将使用该订阅的节点和规则。';
+  String get switchProfileReconnectHint => _e
+      ? 'VPN is running. You need to reconnect after switching.'
+      : 'VPN 正在运行中，切换后需要重新连接才能生效。';
+  String get switchProfileConfirm => _e ? 'Switch' : '确认切换';
+
+  // ── Onboarding ──────────────────────────────────────────────
+  String get onboardingWelcome => _e ? 'Welcome to YueLink' : '欢迎使用悦通';
+  String get onboardingWelcomeDesc => _e
+      ? 'A modern proxy client for secure and fast internet access.'
+      : '一款现代化的代理客户端，安全高速地访问互联网。';
+  String get onboardingConnect => _e ? 'One-Tap Connect' : '一键连接';
+  String get onboardingConnectDesc => _e
+      ? 'Tap the power button on the home page to connect instantly.'
+      : '在首页点击电源按钮即可快速连接。';
+  String get onboardingNodes => _e ? 'Choose Your Line' : '选择线路';
+  String get onboardingNodesDesc => _e
+      ? 'Switch between nodes on the Lines page for the best speed.'
+      : '在线路页面切换节点，选择最快的线路。';
+  String get onboardingStore => _e ? 'Get a Plan' : '购买套餐';
+  String get onboardingStoreDesc => _e
+      ? 'Visit the Store to subscribe and start using the service.'
+      : '前往商店页面订阅套餐，开始使用服务。';
+  String get onboardingSkip => _e ? 'Skip' : '跳过';
+  String get onboardingNext => _e ? 'Next' : '下一步';
+  String get onboardingDone => _e ? 'Get Started' : '开始使用';
 }

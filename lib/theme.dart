@@ -169,7 +169,7 @@ ThemeData buildTheme(Brightness brightness) {
     fontFamily: Platform.isLinux ? 'Noto Sans' : null,
 
     // Surfaces
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       elevation: 0,
       color: surface,
       margin: EdgeInsets.zero,

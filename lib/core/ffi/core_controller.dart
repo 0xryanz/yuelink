@@ -12,7 +12,12 @@ import 'core_mock.dart';
 class CoreController {
   CoreController._() {
     try {
-      _bindings = CoreBindings.instance;
+      final bindings = CoreBindings.instance;
+      // On iOS, DynamicLibrary.process() always succeeds but the Go symbols
+      // may not exist (e.g. simulator or Runner without static lib).
+      // Probe a symbol to verify the core is actually linked.
+      bindings.isRunning;
+      _bindings = bindings;
       _useMock = false;
     } catch (_) {
       // Native library not found — use mock for UI development
@@ -68,8 +73,8 @@ class CoreController {
   /// Start the core. Returns null on success, error message on failure.
   String? start(String configYaml) {
     if (_useMock) {
-      _mock.start(configYaml);
-      return null;
+      final ok = _mock.start(configYaml);
+      return ok ? null : 'mock start failed (not initialized)';
     }
     return _callStringFn(_bindings!.startCore, configYaml);
   }

@@ -42,3 +42,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; It is intentionally independent of the desktopicon task above.
 [Run]
 Filename: "{app}\yuelink.exe"; Description: "{cm:LaunchProgram,YueLink}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function InitializeSetup(): Boolean;
+var ResultCode: Integer;
+begin
+  Exec('taskkill', '/F /IM yuelink.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := True;
+end;

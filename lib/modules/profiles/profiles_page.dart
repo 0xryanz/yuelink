@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_strings.dart';
 import '../../main.dart' show deepLinkUrlProvider;
 import '../../domain/models/profile.dart';
+import '../../providers/core_provider.dart';
 import 'providers/profiles_providers.dart';
 import '../../shared/app_notifier.dart';
 import '../../services/profile_service.dart';
@@ -69,6 +70,11 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             padding: EdgeInsets.fromLTRB(32, MediaQuery.of(context).padding.top + 16, 32, 20),
             child: Row(
               children: [
+                if (Navigator.canPop(context))
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: BackButton(onPressed: () => Navigator.pop(context)),
+                  ),
                 Expanded(
                   child: Text(
                     s.navProfile,
@@ -164,9 +170,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                         profile: profile,
                         isActive: isActive,
                         onTap: () {
-                          ref
-                              .read(activeProfileIdProvider.notifier)
-                              .select(profile.id);
+                          if (isActive) return;
+                          _confirmSwitchProfile(context, ref, profile);
                         },
                         onUpdate: () => _doUpdateProfile(context, ref, profile),
                         onEdit: () => _showEditDialog(context, ref, profile),
@@ -281,6 +286,45 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     if (context.mounted) {
       _showAddDialog(context, ref, prefilledUrl: text);
     }
+  }
+
+  void _confirmSwitchProfile(
+      BuildContext context, WidgetRef ref, Profile profile) {
+    final s = S.of(context);
+    final isRunning = ref.read(coreStatusProvider) == CoreStatus.running;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(s.switchProfileTitle),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(s.switchProfileMessage(profile.name)),
+            if (isRunning) ...[
+              const SizedBox(height: 8),
+              Text(
+                s.switchProfileReconnectHint,
+                style: TextStyle(color: Colors.orange.shade700, fontSize: 13),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(s.cancel),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              ref.read(activeProfileIdProvider.notifier).select(profile.id);
+            },
+            child: Text(s.switchProfileConfirm),
+          ),
+        ],
+      ),
+    );
   }
 
   void _confirmDelete(

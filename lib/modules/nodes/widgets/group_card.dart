@@ -8,6 +8,7 @@ import '../../../l10n/app_strings.dart';
 import '../../../shared/app_notifier.dart';
 import '../../../theme.dart';
 import '../group_type_label.dart';
+import '../protocol_color.dart';
 import '../providers/node_providers.dart';
 import '../providers/nodes_providers.dart';
 
@@ -386,7 +387,8 @@ class _NodeCardItemState extends ConsumerState<NodeCardItem> {
             Row(
               children: [
                 if (nodeType != null) ...[
-                  _Badge(label: nodeType, isDark: isDark),
+                  _Badge(label: nodeType, isDark: isDark,
+                      protocolColor: protocolColor(nodeType)),
                   const SizedBox(width: 4),
                 ],
                 GestureDetector(
@@ -410,14 +412,28 @@ class _Badge extends StatelessWidget {
   final String label;
   final bool isDark;
   final bool accent;
-  const _Badge({required this.label, required this.isDark, this.accent = false});
+  final Color? protocolColor;
+  const _Badge({
+    required this.label,
+    required this.isDark,
+    this.accent = false,
+    this.protocolColor,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final bg = accent
-        ? YLColors.connected.withValues(alpha: 0.12)
-        : (isDark ? YLColors.zinc700 : YLColors.zinc100);
-    final fg = accent ? YLColors.connected : YLColors.zinc500;
+    final Color bg;
+    final Color fg;
+    if (protocolColor != null) {
+      bg = protocolColor!.withValues(alpha: isDark ? 0.15 : 0.10);
+      fg = protocolColor!;
+    } else if (accent) {
+      bg = YLColors.connected.withValues(alpha: 0.12);
+      fg = YLColors.connected;
+    } else {
+      bg = isDark ? YLColors.zinc700 : YLColors.zinc100;
+      fg = YLColors.zinc500;
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(

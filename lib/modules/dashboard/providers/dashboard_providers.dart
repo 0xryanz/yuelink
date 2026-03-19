@@ -46,6 +46,11 @@ final exitIpInfoProvider = FutureProvider.autoDispose<ExitIpInfo?>((ref) async {
   final status = ref.watch(coreStatusProvider);
   if (status != CoreStatus.running) return null;
 
+  // Mock mode: no real proxy — fetch local public IP directly (same as direct mode)
+  if (CoreManager.instance.isMockMode) {
+    return _fetchPublicIp();
+  }
+
   // Watch routing mode so the IP refreshes when user switches mode
   final routingMode = ref.watch(routingModeProvider);
 

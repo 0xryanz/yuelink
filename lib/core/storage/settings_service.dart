@@ -289,6 +289,26 @@ class SettingsService {
     await set('delayResults', results);
   }
 
+  // ── Last tab index (Android process restore) ──────────────────────────────
+
+  static Future<int> getLastTabIndex() async {
+    return (await get<int>('lastTabIndex')) ?? 0;
+  }
+
+  static Future<void> setLastTabIndex(int index) async {
+    await set('lastTabIndex', index);
+  }
+
+  // ── Onboarding ─────────────────────────────────────────────────────────────
+
+  static Future<bool> getHasSeenOnboarding() async {
+    return (await get<bool>('hasSeenOnboarding')) ?? false;
+  }
+
+  static Future<void> setHasSeenOnboarding(bool value) async {
+    await set('hasSeenOnboarding', value);
+  }
+
   // ── WebDAV (credentials stored in OS secure storage, not plain JSON) ────────
 
   static Future<Map<String, String>> getWebDavConfig() =>

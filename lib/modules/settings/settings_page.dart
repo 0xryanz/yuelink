@@ -11,6 +11,7 @@ import 'package:launch_at_startup/launch_at_startup.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants.dart';
+import 'web_page.dart';
 import '../../l10n/app_strings.dart';
 import '../../modules/profiles/profiles_page.dart';
 import '../../modules/store/store_page.dart';
@@ -689,10 +690,20 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       trailing: const Icon(Icons.chevron_right,
                           size: 18, color: YLColors.zinc400),
                       onTap: () async {
-                        final uri = Uri.parse('https://yue.to/tos.html');
-                        if (await canLaunchUrl(uri)) {
-                          await launchUrl(uri,
-                              mode: LaunchMode.externalApplication);
+                        const tosUrl = 'https://yue.to/tos.html';
+                        if (Platform.isAndroid || Platform.isIOS) {
+                          Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => InAppWebPage(
+                              title: s.minePrivacyPolicy,
+                              url: tosUrl,
+                            ),
+                          ));
+                        } else {
+                          final uri = Uri.parse(tosUrl);
+                          if (await canLaunchUrl(uri)) {
+                            await launchUrl(uri,
+                                mode: LaunchMode.externalApplication);
+                          }
                         }
                       },
                     ),

@@ -28,6 +28,8 @@ class StorePage extends ConsumerWidget {
         appBar: AppBar(
           backgroundColor: isDark ? YLColors.bgDark : YLColors.bgLight,
           elevation: 0,
+          leading: Navigator.canPop(context) ? const BackButton() : null,
+          automaticallyImplyLeading: false,
           title: Text(isEn ? 'Plans' : '订阅套餐',
               style: YLText.titleMedium.copyWith(fontWeight: FontWeight.w700)),
         ),
@@ -58,6 +60,8 @@ class StorePage extends ConsumerWidget {
       appBar: AppBar(
         backgroundColor: isDark ? YLColors.bgDark : YLColors.bgLight,
         elevation: 0,
+        leading: Navigator.canPop(context) ? const BackButton() : null,
+        automaticallyImplyLeading: false,
         title: Text(
           isEn ? 'Plans' : '订阅套餐',
           style: YLText.titleMedium.copyWith(fontWeight: FontWeight.w700),

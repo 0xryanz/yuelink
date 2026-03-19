@@ -21,6 +21,7 @@ import 'pages/settings_page.dart';
 import 'domain/models/proxy.dart';
 import 'modules/nodes/providers/nodes_providers.dart';
 import 'modules/store/store_page.dart';
+import 'modules/onboarding/onboarding_page.dart';
 import 'modules/yue_auth/presentation/yue_auth_page.dart';
 import 'modules/yue_auth/providers/yue_auth_providers.dart';
 import 'domain/models/traffic.dart';
@@ -42,6 +43,9 @@ final navigatorKey = GlobalKey<NavigatorState>();
 /// Jump-to-profile-page notifier (deep link triggers this).
 final deepLinkUrlProvider = StateProvider<String?>((ref) => null);
 
+/// Initial tab index restored from SettingsService (Android process restore).
+final initialTabIndexProvider = Provider<int>((ref) => 0);
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -61,7 +65,7 @@ void main() async {
   final savedCloseBehavior = await SettingsService.getCloseBehavior();
   final savedToggleHotkey = await SettingsService.getToggleHotkey();
   final savedDelayResults = await SettingsService.getDelayResults();
-
+  final savedTabIndex = await SettingsService.getLastTabIndex();
 
   // Apply global strings language before runApp (for tray etc.)
   S.setLanguage(savedLanguage);
@@ -120,6 +124,7 @@ void main() async {
       toggleHotkeyProvider.overrideWith((ref) => savedToggleHotkey),
       delayResultsProvider.overrideWith((ref) => savedDelayResults),
       expandedGroupNamesProvider.overrideWith((ref) => <String>{}),
+      initialTabIndexProvider.overrideWithValue(savedTabIndex),
     ],
     child: const YueLinkApp(),
   ));
@@ -408,10 +413,13 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
             ? 'assets/app_icon.ico'
             : 'assets/tray_icon_macos.png',
       );
+      // Set _trayInitialized BEFORE _updateTrayMenu so the guard passes.
+      _trayInitialized = true;
       await _updateTrayMenu(isRunning: false);
       trayManager.addListener(this);
-      _trayInitialized = true;
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Tray] init failed: $e');
+    }
   }
 
   Future<void> _updateTrayMenu({
@@ -488,12 +496,8 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
 
   @override
   void onTrayIconMouseDown() {
-    if (Platform.isWindows) {
-      // Windows: left-click toggles window visibility
-      _toggleWindowVisibility();
-    } else {
-      trayManager.popUpContextMenu();
-    }
+    // All platforms: left-click toggles window visibility
+    _toggleWindowVisibility();
   }
 
   @override
@@ -560,7 +564,10 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     if (status == CoreStatus.running) {
       await ref.read(coreActionsProvider).stop();
     }
+    // Always clear system proxy on exit regardless of settings/state,
+    // so quitting the app never leaves a dead proxy configured.
     if (Platform.isMacOS || Platform.isWindows) {
+      await CoreActions.clearSystemProxyStatic().catchError((_) {});
       await windowManager.setPreventClose(false);
       await windowManager.close();
     } else {
@@ -660,23 +667,42 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
 // ── Auth gate ──────────────────────────────────────────────────────────────────
 
 /// Shows login page when not authenticated, main shell when logged in.
-class _AuthGate extends ConsumerWidget {
+/// On first login, shows onboarding before main shell.
+class _AuthGate extends ConsumerStatefulWidget {
   const _AuthGate();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends ConsumerState<_AuthGate> {
+  bool? _hasSeenOnboarding;
+
+  @override
+  void initState() {
+    super.initState();
+    SettingsService.getHasSeenOnboarding().then((v) {
+      if (mounted) setState(() => _hasSeenOnboarding = v);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
 
     switch (authState.status) {
       case AuthStatus.unknown:
-        // Auth resolves within ~100ms from cached token read.
-        // Use SizedBox.shrink() so native splash stays visible longer —
-        // Scaffold() causes a visible blank-page flash before the real UI.
         return const SizedBox.shrink();
       case AuthStatus.loggedOut:
         return const YueAuthPage();
       case AuthStatus.loggedIn:
       case AuthStatus.guest:
+        if (_hasSeenOnboarding == null) return const SizedBox.shrink();
+        if (_hasSeenOnboarding == false) {
+          return OnboardingPage(
+            onComplete: () => setState(() => _hasSeenOnboarding = true),
+          );
+        }
         return const MainShell();
     }
   }
@@ -700,10 +726,15 @@ class MainShell extends ConsumerStatefulWidget {
 }
 
 class _MainShellState extends ConsumerState<MainShell> {
-  int _currentIndex = 0;
+  late int _currentIndex;
+  final _builtTabs = <int, bool>{0: true};
 
   void switchTab(int index) {
-    setState(() => _currentIndex = index);
+    setState(() {
+      _currentIndex = index;
+      _builtTabs[index] = true;
+    });
+    SettingsService.setLastTabIndex(index);
   }
 
   static const _pages = [
@@ -716,7 +747,8 @@ class _MainShellState extends ConsumerState<MainShell> {
   @override
   void initState() {
     super.initState();
-    // Profile management is handled automatically via YueAuth auto-sync.
+    _currentIndex = ref.read(initialTabIndexProvider).clamp(0, _pages.length - 1);
+    _builtTabs[_currentIndex] = true;
   }
 
   @override
@@ -732,7 +764,7 @@ class _MainShellState extends ConsumerState<MainShell> {
             RepaintBoundary(
               child: _Sidebar(
                 currentIndex: _currentIndex,
-                onSelect: (i) => setState(() => _currentIndex = i),
+                onSelect: (i) => switchTab(i),
               ),
             ),
 
@@ -749,7 +781,10 @@ class _MainShellState extends ConsumerState<MainShell> {
               child: RepaintBoundary(
                 child: IndexedStack(
                   index: _currentIndex,
-                  children: _pages,
+                  children: [
+                    for (int i = 0; i < _pages.length; i++)
+                      _builtTabs[i] == true ? _pages[i] : const SizedBox.shrink(),
+                  ],
                 ),
               ),
             ),
@@ -775,13 +810,15 @@ class _MainShellState extends ConsumerState<MainShell> {
       body: RepaintBoundary(
         child: IndexedStack(
           index: _currentIndex,
-          children: _pages,
+          children: [
+            for (int i = 0; i < _pages.length; i++)
+              _builtTabs[i] == true ? _pages[i] : const SizedBox.shrink(),
+          ],
         ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (i) =>
-            setState(() => _currentIndex = i),
+        onDestinationSelected: (i) => switchTab(i),
         destinations: mobileItems
             .map((item) => NavigationDestination(
                   icon: item.$1,

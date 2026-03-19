@@ -102,6 +102,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             + "  dns-hijack:\n"
             + "    - any:53\n"
 
+        // Keep-alive interval: prevents NAT from dropping idle QUIC (hy2)
+        // and TLS (anytls) sessions. 15s is safe for mobile carrier NATs.
+        if !result.contains("keep-alive-interval:") {
+            result += "\nkeep-alive-interval: 15\n"
+        }
+
         // Ensure comprehensive DNS config for TUN fake-ip.
         // If subscription has no dns section, inject a full default.
         // If it does, patch it: ensure enable:true and inject nameserver-policy
@@ -134,6 +140,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 + "    - \"connectivitycheck.gstatic.com\"\n"
                 + "    - \"+.connectivitycheck.android.com\"\n"
                 + "    - \"clients3.google.com\"\n"
+                + "    - \"clients1.google.com\"\n"
+                + "    - \"connectivitycheck.platform.hicloud.com\"\n"
+                + "    - \"+.wifi.huawei.com\"\n"
+                + "    - \"connect.rom.miui.com\"\n"
+                + "    - \"wifi.vivo.com.cn\"\n"
+                + "    - \"connectivitycheck.samsung.com\"\n"
+                + "    - \"noisyfox.cn\"\n"
                 + "  default-nameserver:\n"
                 + "    - 223.5.5.5\n"
                 + "    - 119.29.29.29\n"
@@ -229,14 +242,31 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             entryIndent = String(updatedBlock[afterNl..<firstDash])
         }
 
+        // Inject prefer-h3 for DNS-over-HTTP/3 (QUIC) — faster DNS resolution,
+        // avoids TCP DNS blocking on some networks.
+        if !updatedBlock.contains("prefer-h3") {
+            // Re-find dns block for insertion
+            if let dnsLineRange = result.range(of: #"(?m)^dns:.*$"#, options: .regularExpression) {
+                if dnsLineRange.upperBound < result.endIndex {
+                    let insertPos = result.index(after: dnsLineRange.upperBound)
+                    result.insert(contentsOf: "\(indent)prefer-h3: true\n", at: insertPos)
+                }
+            }
+        }
+
         // Inject nameserver-policy for Apple/iCloud (used by main resolver).
         // On some networks, domestic UDP DNS returns 0.0.0.0 for Apple update
         // domains when subscription routes them DIRECT.
-        if !updatedBlock.contains("nameserver-policy:") {
+        // Re-capture dns block after possible prefer-h3 changes
+        guard let updatedRange2 = result.range(
+            of: #"(?m)^dns:.*\n(?:[ \t]+.*\n)*"#, options: .regularExpression
+        ) else { return result }
+        let updatedBlock2 = String(result[updatedRange2])
+        if !updatedBlock2.contains("nameserver-policy:") {
             let policy = "\(indent)nameserver-policy:\n"
                 + "\(entryIndent)\"+.apple.com\": [\"https://doh.pub/dns-query\", \"https://dns.alidns.com/dns-query\"]\n"
                 + "\(entryIndent)\"+.icloud.com\": [\"https://doh.pub/dns-query\", \"https://dns.alidns.com/dns-query\"]\n"
-            result.insert(contentsOf: policy, at: updatedRange.upperBound)
+            result.insert(contentsOf: policy, at: updatedRange2.upperBound)
         }
 
         // Inject direct-nameserver with DoH (used by direct resolver for
@@ -244,7 +274,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         // direct-nameserver (not nameserver-policy) to resolve domains
         // when the rule says DIRECT. Without DoH, plain UDP DNS may be
         // poisoned and return 0.0.0.0 for Apple/other domains.
-        if !updatedBlock.contains("direct-nameserver:") {
+        if !updatedBlock2.contains("direct-nameserver:") {
             // Re-find dns block end after possible nameserver-policy injection
             if let finalRange = result.range(
                 of: #"(?m)^dns:.*\n(?:[ \t]+.*\n)*"#, options: .regularExpression
@@ -253,6 +283,58 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                     + "\(entryIndent)- https://doh.pub/dns-query\n"
                     + "\(entryIndent)- https://dns.alidns.com/dns-query\n"
                 result.insert(contentsOf: directNs, at: finalRange.upperBound)
+            }
+        }
+
+        // Fix 3: ensure connectivity-check domains are in fake-ip-filter.
+        // Without these, Android/vendor connectivity checks resolve to fake IPs,
+        // causing "no internet" / WiFi exclamation mark.
+        let connectivityDomains = [
+            "connectivitycheck.gstatic.com",
+            "+.connectivitycheck.android.com",
+            "clients3.google.com",
+            "clients1.google.com",
+            "connectivitycheck.platform.hicloud.com",
+            "+.wifi.huawei.com",
+            "connect.rom.miui.com",
+            "wifi.vivo.com.cn",
+            "connectivitycheck.samsung.com",
+            "noisyfox.cn",
+        ]
+        // Re-capture dns block for fake-ip-filter check
+        if let fipRange = result.range(
+            of: #"(?m)^dns:.*\n(?:[ \t]+.*\n)*"#, options: .regularExpression
+        ) {
+            let fipBlock = String(result[fipRange])
+            if fipBlock.contains("fake-ip-filter:") {
+                // Append missing domains to existing fake-ip-filter
+                if let filterStart = fipBlock.range(of: #"fake-ip-filter:\s*\n"#, options: .regularExpression) {
+                    // Find end of list items
+                    let afterFilter = String(fipBlock[filterStart.upperBound...])
+                    var insertOffset = fipRange.lowerBound
+                    // Move to absolute position of filterStart.upperBound
+                    let relativeOffset = fipBlock.distance(from: fipBlock.startIndex, to: filterStart.upperBound)
+                    insertOffset = result.index(fipRange.lowerBound, offsetBy: relativeOffset)
+                    // Find where list items end
+                    if let listEnd = afterFilter.range(of: #"(?m)^(?![ \t]+- )"#, options: .regularExpression) {
+                        let listEndOffset = afterFilter.distance(from: afterFilter.startIndex, to: listEnd.lowerBound)
+                        insertOffset = result.index(insertOffset, offsetBy: listEndOffset)
+                    }
+                    var injection = ""
+                    for domain in connectivityDomains {
+                        if !fipBlock.contains(domain) {
+                            injection += "\(entryIndent)- \"\(domain)\"\n"
+                        }
+                    }
+                    if !injection.isEmpty {
+                        result.insert(contentsOf: injection, at: insertOffset)
+                    }
+                }
+            } else {
+                // No fake-ip-filter at all — inject one with connectivity domains
+                let items = connectivityDomains.map { "\(entryIndent)- \"\($0)\"" }.joined(separator: "\n")
+                let filterBlock = "\(indent)fake-ip-filter:\n\(items)\n"
+                result.insert(contentsOf: filterBlock, at: fipRange.upperBound)
             }
         }
 

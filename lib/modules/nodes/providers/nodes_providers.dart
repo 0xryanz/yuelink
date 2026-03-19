@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yaml/yaml.dart';
 
@@ -10,6 +11,7 @@ import '../../../providers/profile_provider.dart';
 import '../../../core/kernel/core_manager.dart';
 import '../../../infrastructure/repositories/profile_repository.dart';
 import '../../../infrastructure/repositories/proxy_repository.dart';
+import '../../../services/profile_service.dart';
 
 // ------------------------------------------------------------------
 // Node sort / view mode
@@ -96,7 +98,12 @@ class ProxyGroupsNotifier extends StateNotifier<List<ProxyGroup>> {
 
     Map<String, dynamic> data;
     if (manager.isMockMode) {
-      data = CoreController.instance.getProxies();
+      // Parse real subscription YAML instead of using hardcoded mock data
+      data = await _parseMockProxiesFromProfile();
+      if (data.isEmpty) {
+        // Fallback to CoreMock data if no profile available
+        data = CoreController.instance.getProxies();
+      }
     } else {
       try {
         data = await _repo.getProxies();
@@ -156,6 +163,110 @@ class ProxyGroupsNotifier extends StateNotifier<List<ProxyGroup>> {
     // Append any remaining groups not in GLOBAL
     groups.addAll(groupsMap.values.where((g) => g.name != 'GLOBAL'));
     state = groups;
+  }
+
+  /// Parse proxy groups and nodes from the active profile's YAML config.
+  /// Returns data in the same format as the mihomo REST API /proxies response.
+  Future<Map<String, dynamic>> _parseMockProxiesFromProfile() async {
+    try {
+      final activeId = _ref.read(activeProfileIdProvider);
+      if (activeId == null) return {};
+      final config = await ProfileService.loadConfig(activeId);
+      if (config == null || config.isEmpty) return {};
+
+      final yaml = loadYaml(config);
+      if (yaml is! YamlMap) return {};
+
+      final proxiesMap = <String, dynamic>{};
+
+      // Parse individual proxies to get their types
+      final rawProxies = yaml['proxies'];
+      final proxyNames = <String>[];
+      if (rawProxies is YamlList) {
+        for (final p in rawProxies) {
+          if (p is! YamlMap) continue;
+          final name = p['name']?.toString() ?? '';
+          final type = p['type']?.toString() ?? '';
+          if (name.isEmpty) continue;
+          proxyNames.add(name);
+          proxiesMap[name] = {'type': type, 'name': name};
+        }
+      }
+
+      // Parse proxy-groups
+      final rawGroups = yaml['proxy-groups'];
+      final groupNames = <String>[];
+      if (rawGroups is YamlList) {
+        for (final g in rawGroups) {
+          if (g is! YamlMap) continue;
+          final name = g['name']?.toString() ?? '';
+          final type = g['type']?.toString() ?? '';
+          if (name.isEmpty) continue;
+          if (name == 'DIRECT' || name == 'REJECT') continue;
+
+          final allRaw = g['proxies'];
+          final all = <String>[];
+          if (allRaw is YamlList) {
+            for (final n in allRaw) {
+              if (n != null) all.add(n.toString());
+            }
+          }
+
+          // For 'use' field (proxy-provider references), expand provider nodes
+          final useRaw = g['use'];
+          if (useRaw is YamlList) {
+            // Can't resolve proxy-provider nodes without mihomo API,
+            // just note them as placeholder
+            for (final providerName in useRaw) {
+              all.add('[$providerName]');
+            }
+          }
+
+          final now = all.isNotEmpty ? all.first : '';
+          groupNames.add(name);
+          proxiesMap[name] = {
+            'type': _capitalizeGroupType(type),
+            'name': name,
+            'now': now,
+            'all': all,
+          };
+        }
+      }
+
+      // Build GLOBAL group from all top-level groups
+      if (groupNames.isNotEmpty) {
+        proxiesMap['GLOBAL'] = {
+          'type': 'Selector',
+          'name': 'GLOBAL',
+          'now': groupNames.first,
+          'all': [...groupNames, 'DIRECT'],
+        };
+      }
+
+      debugPrint('[MockProxy] parsed ${proxyNames.length} proxies, '
+          '${groupNames.length} groups from profile');
+      return {'proxies': proxiesMap};
+    } catch (e) {
+      debugPrint('[MockProxy] parse error: $e');
+      return {};
+    }
+  }
+
+  static String _capitalizeGroupType(String type) {
+    switch (type.toLowerCase()) {
+      case 'select':
+        return 'Selector';
+      case 'url-test':
+        return 'URLTest';
+      case 'fallback':
+        return 'Fallback';
+      case 'load-balance':
+        return 'LoadBalance';
+      case 'relay':
+        return 'Relay';
+      default:
+        return type;
+    }
   }
 
   /// Change the selected proxy in a group.

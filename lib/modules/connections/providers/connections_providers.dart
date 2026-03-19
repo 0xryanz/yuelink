@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ffi/core_mock.dart';
 import '../../../domain/models/connection.dart';
 import '../../../core/kernel/core_manager.dart';
 import '../../../infrastructure/repositories/connection_repository.dart';
@@ -32,10 +33,10 @@ final connectionsStreamProvider = Provider<void>((ref) {
   final manager = CoreManager.instance;
 
   if (manager.isMockMode) {
-    // Mock mode: poll REST API every 2 seconds
+    // Mock mode: use CoreMock data directly (no REST API in mock mode)
     Future<void> poll() async {
       try {
-        final data = await manager.api.getConnections();
+        final data = CoreMock.instance.getConnections();
         final snapshot = ConnectionsSnapshot.fromJson(data);
         ref.read(connectionsSnapshotProvider.notifier).state = snapshot;
       } catch (_) {}

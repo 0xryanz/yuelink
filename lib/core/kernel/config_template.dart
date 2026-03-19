@@ -259,11 +259,18 @@ class ConfigTemplate {
           '    - "+.cdn-apple.com"\n'
           '    - "+.mzstatic.com"\n'
           '    - "+.push.apple.com"\n'
-          // Android connectivity check domains — must resolve to real IPs
-          // to avoid "no internet" / WiFi exclamation mark on Samsung etc.
+          // Android / vendor connectivity check domains — must resolve to real IPs
+          // to avoid "no internet" / WiFi exclamation mark on Samsung, Huawei etc.
           '    - "connectivitycheck.gstatic.com"\n'
           '    - "+.connectivitycheck.android.com"\n'
           '    - "clients3.google.com"\n'
+          '    - "clients1.google.com"\n'
+          '    - "connectivitycheck.platform.hicloud.com"\n'
+          '    - "+.wifi.huawei.com"\n'
+          '    - "connect.rom.miui.com"\n'
+          '    - "wifi.vivo.com.cn"\n'
+          '    - "connectivitycheck.samsung.com"\n'
+          '    - "noisyfox.cn"\n'
           '  default-nameserver:\n'
           '    - 223.5.5.5\n'
           '    - 119.29.29.29\n'
@@ -356,6 +363,19 @@ class ConfigTemplate {
       final listMatch = RegExp(r'\n( +)- ').firstMatch(dnsSection);
       final entryIndent = listMatch?.group(1) ?? '$indent  ';
 
+      // Fix 1b: inject prefer-h3 for DNS-over-HTTPS/3 (QUIC).
+      // Benefits: faster DNS resolution over QUIC (matches hy2 transport),
+      // avoids TCP DNS blocking on some networks.
+      if (!dnsSection.contains('prefer-h3')) {
+        final injection = '${indent}prefer-h3: true\n';
+        config = config.substring(0, afterDns) +
+            injection +
+            config.substring(afterDns);
+        dnsEnd += injection.length;
+        afterDns += injection.length;
+        dnsSection = config.substring(dnsMatch.start, dnsEnd);
+      }
+
       if (!dnsSection.contains('nameserver-policy:')) {
         final policy = '$indent' 'nameserver-policy:\n'
             '$entryIndent' '"+.apple.com": ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"]\n'
@@ -371,6 +391,51 @@ class ConfigTemplate {
             '$entryIndent' '- https://dns.alidns.com/dns-query\n';
         config =
             config.substring(0, dnsEnd) + directNs + config.substring(dnsEnd);
+        dnsEnd += directNs.length;
+      }
+
+      // Fix 3: ensure connectivity-check domains are in fake-ip-filter.
+      // Without these, Android/vendor connectivity checks resolve to fake IPs,
+      // causing "no internet" / WiFi exclamation mark.
+      dnsSection = config.substring(dnsMatch.start, dnsEnd);
+      const connectivityDomains = [
+        'connectivitycheck.gstatic.com',
+        '+.connectivitycheck.android.com',
+        'clients3.google.com',
+        'clients1.google.com',
+        'connectivitycheck.platform.hicloud.com',
+        '+.wifi.huawei.com',
+        'connect.rom.miui.com',
+        'wifi.vivo.com.cn',
+        'connectivitycheck.samsung.com',
+        'noisyfox.cn',
+      ];
+      if (dnsSection.contains('fake-ip-filter:')) {
+        // Append missing domains to existing fake-ip-filter
+        final filterMatch = RegExp(r'fake-ip-filter:\s*\n').firstMatch(dnsSection);
+        if (filterMatch != null) {
+          var insertOffset = dnsMatch.start + filterMatch.end;
+          // Find end of list items (lines starting with entryIndent + "- ")
+          final afterFilter = config.substring(insertOffset);
+          final listEnd = RegExp(r'^(?![ \t]+- )', multiLine: true).firstMatch(afterFilter);
+          if (listEnd != null) insertOffset += listEnd.start;
+          final existingFilter = dnsSection;
+          var injection = '';
+          for (final domain in connectivityDomains) {
+            if (!existingFilter.contains(domain)) {
+              injection += '$entryIndent- "$domain"\n';
+            }
+          }
+          if (injection.isNotEmpty) {
+            config = config.substring(0, insertOffset) + injection + config.substring(insertOffset);
+            dnsEnd += injection.length;
+          }
+        }
+      } else {
+        // No fake-ip-filter at all — inject one with connectivity domains
+        final filterBlock = '${indent}fake-ip-filter:\n'
+            '${connectivityDomains.map((d) => '$entryIndent- "$d"').join('\n')}\n';
+        config = config.substring(0, dnsEnd) + filterBlock + config.substring(dnsEnd);
       }
     }
 
@@ -442,6 +507,12 @@ class ConfigTemplate {
     }
     if (!_hasKey(config, 'global-client-fingerprint')) {
       config += 'global-client-fingerprint: chrome\n';
+    }
+    // Keep-alive interval: prevents NAT/firewall from dropping idle QUIC (hy2)
+    // and TLS (anytls) sessions. 15s is safe for most mobile carrier NATs
+    // (which typically timeout UDP at 30-120s).
+    if (!_hasKey(config, 'keep-alive-interval')) {
+      config += 'keep-alive-interval: 15\n';
     }
     return config;
   }

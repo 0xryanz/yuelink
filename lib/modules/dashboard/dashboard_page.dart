@@ -92,9 +92,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    final s = S.of(context);
     final status = ref.watch(coreStatusProvider);
-    final isMock = ref.watch(isMockModeProvider);
     final isRunning = status == CoreStatus.running;
 
     // coreHeartbeatProvider is watched globally in _YueLinkAppState so it
@@ -115,22 +113,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // ── Mock mode banner ──────────────────────────────────
-                if (isMock)
-                  Container(
-                    color: Colors.amber.withValues(alpha: 0.12),
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-                    child: Row(
-                      children: [
-                        Icon(Icons.science_outlined,
-                            size: 13, color: Colors.amber.shade700),
-                        const SizedBox(width: 6),
-                        Text(s.mockModeBanner,
-                            style: TextStyle(
-                                fontSize: 12, color: Colors.amber.shade700)),
-                      ],
-                    ),
-                  ),
+                // Mock mode banner removed — not shown in production/screenshots
 
                 // ── Scrollable content ────────────────────────────────
                 Expanded(

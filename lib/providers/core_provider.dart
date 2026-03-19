@@ -101,8 +101,9 @@ class CoreActions {
       // 3. Apply routing mode (non-blocking — errors logged, not thrown)
       await _applyRoutingMode(manager);
 
-      // 4. System proxy (desktop)
-      if ((Platform.isMacOS || Platform.isWindows) &&
+      // 4. System proxy (desktop, real mode only — mock has no proxy port)
+      if (!manager.isMockMode &&
+          (Platform.isMacOS || Platform.isWindows) &&
           ref.read(systemProxyOnConnectProvider)) {
         await applySystemProxy();
       }
@@ -148,9 +149,9 @@ class CoreActions {
     ref.read(coreStatusProvider.notifier).state = CoreStatus.stopping;
 
     try {
-      // Clear system proxy on macOS/Windows
-      if ((Platform.isMacOS || Platform.isWindows) &&
-          ref.read(systemProxyOnConnectProvider)) {
+      // Always clear system proxy on stop — even if the user disabled
+      // "set system proxy on connect", a previous session may have set it.
+      if (Platform.isMacOS || Platform.isWindows) {
         await clearSystemProxy();
       }
 

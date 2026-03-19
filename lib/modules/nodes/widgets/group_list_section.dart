@@ -70,7 +70,7 @@ class GroupListSection extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final testing = ref.watch(delayTestingProvider);
     // Read delays for sort order only; NodeTile handles rendering.
-    final delays = ref.read(delayResultsProvider);
+    final delays = ref.watch(delayResultsProvider);
     final sorted = _sortedNodes(group.all, sortMode, delays);
     final query = searchQuery.trim().toLowerCase();
     final nodeList = query.isEmpty
@@ -119,7 +119,7 @@ class GroupListSection extends ConsumerWidget {
                 ),
                 const SizedBox(width: 4),
                 IconButton(
-                  onPressed: testing.isNotEmpty
+                  onPressed: testing.any((n) => group.all.contains(n))
                       ? null
                       : () {
                           ref
@@ -128,7 +128,7 @@ class GroupListSection extends ConsumerWidget {
                           AppNotifier.info(
                               S.of(context).testingGroup(group.name));
                         },
-                  icon: testing.isNotEmpty
+                  icon: testing.any((n) => group.all.contains(n))
                       ? const CupertinoActivityIndicator(radius: 7)
                       : const Icon(Icons.bolt_rounded),
                   iconSize: 18,

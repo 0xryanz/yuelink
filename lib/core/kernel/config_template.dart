@@ -244,40 +244,135 @@ class ConfigTemplate {
   ///
   /// This is a fallback for subscriptions that don't inject ech-opts themselves
   /// (e.g., third-party subscriptions). Our own XBoard already injects it.
+  ///
+  /// Uses string manipulation only — never parses/re-serializes the full YAML,
+  /// which would destroy comments, anchors, and formatting.
   static String _ensureEch(String config) {
     try {
-      final yaml = loadYaml(config);
-      if (yaml is! YamlMap) return config;
-      final mutable = _toMutable(yaml) as Map<String, dynamic>;
+      // Find the proxies: section
+      final proxiesMatch = _reProxiesSection.firstMatch(config);
+      if (proxiesMatch == null) return config;
 
-      final proxies = mutable['proxies'];
-      if (proxies is! List || proxies.isEmpty) return config;
+      final proxiesStart = proxiesMatch.end;
 
+      // Find where the proxies section ends (next top-level key or EOF)
+      final afterProxies = config.substring(proxiesStart);
+      final nextTopMatch = _reTopLevel.firstMatch(afterProxies);
+      final proxiesEnd = nextTopMatch != null
+          ? proxiesStart + nextTopMatch.start
+          : config.length;
+
+      final proxiesSection = config.substring(proxiesStart, proxiesEnd);
+      if (proxiesSection.trim().isEmpty) return config;
+
+      // Process each proxy entry using string ops
+      final result = StringBuffer(config.substring(0, proxiesStart));
       var modified = false;
-      for (final proxy in proxies) {
-        if (proxy is! Map<String, dynamic>) continue;
-        final type = proxy['type']?.toString() ?? '';
-        if (!_echTlsTypes.contains(type)) continue;
 
-        // Skip if ECH already configured
-        if (proxy.containsKey('ech-opts')) continue;
+      // Split into individual proxy entries.
+      // Each entry starts with whitespace + "- " (block style) or whitespace + "- {" (flow style).
+      final entryPattern = RegExp(r'^([ \t]*)- ', multiLine: true);
+      final entryStarts = <int>[];
+      for (final m in entryPattern.allMatches(proxiesSection)) {
+        entryStarts.add(m.start);
+      }
 
-        // Skip REALITY (vless with reality-opts) — incompatible with ECH
-        if (proxy.containsKey('reality-opts')) continue;
+      if (entryStarts.isEmpty) return config;
 
-        // For vmess/vless, only add ECH when TLS is enabled
-        if ((type == 'vmess' || type == 'vless') && proxy['tls'] != true) continue;
+      for (var i = 0; i < entryStarts.length; i++) {
+        final start = entryStarts[i];
+        final end = i + 1 < entryStarts.length
+            ? entryStarts[i + 1]
+            : proxiesSection.length;
+        final entry = proxiesSection.substring(start, end);
 
-        proxy['ech-opts'] = <String, dynamic>{'enable': true};
-        modified = true;
+        final processed = _processProxyEntryForEch(entry);
+        if (processed != entry) modified = true;
+        result.write(processed);
       }
 
       if (!modified) return config;
-      return YamlWriter().write(mutable);
+
+      result.write(config.substring(proxiesEnd));
+      return result.toString();
     } catch (e) {
       debugPrint('[Config] ECH injection failed: $e');
       return config;
     }
+  }
+
+  /// Process a single proxy entry (block or flow style) for ECH injection.
+  /// Returns the entry unchanged if ECH should not be added.
+  static String _processProxyEntryForEch(String entry) {
+    // Detect flow style: "  - {name: ..., type: trojan, ...}"
+    final flowMatch = RegExp(r'^([ \t]*)- \{(.+)\}\s*$', dotAll: true).firstMatch(entry);
+    if (flowMatch != null) {
+      return _processFlowProxyForEch(entry, flowMatch);
+    }
+    // Block style: "  - name: xxx\n    type: trojan\n    ..."
+    return _processBlockProxyForEch(entry);
+  }
+
+  /// Process a flow-style proxy entry like "  - {name: x, type: trojan, ...}\n"
+  static String _processFlowProxyForEch(String entry, RegExpMatch flowMatch) {
+    final content = flowMatch.group(2)!;
+
+    // Extract type
+    final typeMatch = RegExp(r'\btype:\s*(\w+)').firstMatch(content);
+    if (typeMatch == null) return entry;
+    final type = typeMatch.group(1)!;
+    if (!_echTlsTypes.contains(type)) return entry;
+
+    // Skip if already has ech-opts
+    if (content.contains('ech-opts')) return entry;
+
+    // Skip if has reality-opts
+    if (content.contains('reality-opts')) return entry;
+
+    // For vmess/vless, require tls: true
+    if (type == 'vmess' || type == 'vless') {
+      final tlsMatch = RegExp(r'\btls:\s*(true|false)').firstMatch(content);
+      if (tlsMatch == null || tlsMatch.group(1) != 'true') return entry;
+    }
+
+    // Inject ", ech-opts: {enable: true}" before the closing "}"
+    final closingBrace = entry.lastIndexOf('}');
+    if (closingBrace < 0) return entry;
+    return '${entry.substring(0, closingBrace)}, ech-opts: {enable: true}${entry.substring(closingBrace)}';
+  }
+
+  /// Process a block-style proxy entry like "  - name: xxx\n    type: trojan\n    ...\n"
+  static String _processBlockProxyForEch(String entry) {
+    // Extract type
+    final typeMatch = RegExp(r'\btype:\s*(\w+)').firstMatch(entry);
+    if (typeMatch == null) return entry;
+    final type = typeMatch.group(1)!;
+    if (!_echTlsTypes.contains(type)) return entry;
+
+    // Skip if already has ech-opts
+    if (entry.contains('ech-opts')) return entry;
+
+    // Skip if has reality-opts
+    if (entry.contains('reality-opts')) return entry;
+
+    // For vmess/vless, require tls: true
+    if (type == 'vmess' || type == 'vless') {
+      final tlsMatch = RegExp(r'\btls:\s*(true|false)').firstMatch(entry);
+      if (tlsMatch == null || tlsMatch.group(1) != 'true') return entry;
+    }
+
+    // Detect indentation from the entry itself.
+    // Entry starts with "  - name: ..." — the field indent is typically
+    // the leading whitespace + 2 more spaces (aligning with content after "- ").
+    final indentMatch = RegExp(r'\n([ \t]+)\w').firstMatch(entry);
+    if (indentMatch == null) return entry; // single-line block entry, unusual
+
+    final fieldIndent = indentMatch.group(1)!;
+
+    // Append ech-opts at the end of the entry, before trailing whitespace.
+    final trimmed = entry.trimRight();
+    final trailing = entry.substring(trimmed.length);
+    return '$trimmed\n${fieldIndent}ech-opts:\n$fieldIndent  enable: true\n$trailing';
   }
 
   /// Ensure DNS is enabled with comprehensive fake-ip + fallback config.

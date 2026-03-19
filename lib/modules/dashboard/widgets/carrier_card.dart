@@ -21,17 +21,14 @@ class CarrierCard extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
-    final statusColor = carrier.isSniHealthy
-        ? YLColors.connected
-        : (carrier.sniStatus == 'degraded'
-            ? const Color(0xFFF59E0B) // Amber-500
-            : YLColors.error);
+    final isDegraded = carrier.sniStatus == 'degraded';
+    final statusColor = isDegraded
+        ? const Color(0xFFF59E0B) // Amber-500
+        : YLColors.error;
 
-    final statusText = carrier.isSniHealthy
-        ? (s.isEn ? 'Healthy' : '正常')
-        : (carrier.sniStatus == 'degraded'
-            ? (s.isEn ? 'Degraded' : '降级')
-            : (s.isEn ? 'Blocked' : '受阻'));
+    final statusText = isDegraded
+        ? (s.isEn ? 'Degraded' : '降级')
+        : (s.isEn ? 'Blocked' : '受阻');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

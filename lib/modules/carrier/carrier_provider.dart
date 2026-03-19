@@ -74,6 +74,7 @@ class CarrierNotifier extends StateNotifier<CarrierState> {
 
   final Ref _ref;
   Timer? _pollingTimer;
+  bool _detecting = false;
 
   /// Polling interval for SNI status checks.
   static const _pollInterval = Duration(minutes: 30);
@@ -85,6 +86,7 @@ class CarrierNotifier extends StateNotifier<CarrierState> {
         await SettingsService.get<String>('detectedCarrierName') ?? '';
     final sniDomain = await SettingsService.get<String>('cachedSniDomain') ?? '';
     if (carrier != null) {
+      if (!mounted) return;
       state = CarrierState(
         carrier: carrier,
         carrierName: carrierName,
@@ -98,8 +100,10 @@ class CarrierNotifier extends StateNotifier<CarrierState> {
   ///
   /// Uses a direct HTTP request (no proxy) to get the real ISP IP.
   Future<void> detectCarrier() async {
-    final api = _ref.read(yueOpsApiProvider);
+    if (_detecting) return;
+    _detecting = true;
     try {
+      final api = _ref.read(yueOpsApiProvider);
       // Step 1: Get user's real IP (direct, bypassing proxy)
       final realIp = await _fetchRealIp();
       if (realIp == null) {
@@ -115,6 +119,7 @@ class CarrierNotifier extends StateNotifier<CarrierState> {
       final carrierInfo = results[0] as CarrierInfo;
       final config = results[1] as ClientConfig;
 
+      if (!mounted) return;
       state = CarrierState(
         carrier: carrierInfo.carrier,
         carrierName: carrierInfo.carrierName,
@@ -139,6 +144,8 @@ class CarrierNotifier extends StateNotifier<CarrierState> {
       }
     } catch (e) {
       debugPrint('[Carrier] Detection failed: $e');
+    } finally {
+      _detecting = false;
     }
   }
 
@@ -195,6 +202,7 @@ class CarrierNotifier extends StateNotifier<CarrierState> {
   /// carrier detection (CT/CU/CM).
   static Future<String?> _fetchRealIp() async {
     final client = HttpClient();
+    client.findProxy = (uri) => 'DIRECT';
     client.connectionTimeout = const Duration(seconds: 5);
     try {
       final req = await client.getUrl(Uri.parse('https://api.ip.sb/ip'));
@@ -249,6 +257,7 @@ class CarrierNotifier extends StateNotifier<CarrierState> {
       final oldDomain = state.sniDomain;
       final newDomain = config.sniDomain;
 
+      if (!mounted) return false;
       state = state.copyWith(
         sniDomain: newDomain,
         sniStatus: config.sniStatus,

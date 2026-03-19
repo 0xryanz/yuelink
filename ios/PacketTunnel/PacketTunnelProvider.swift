@@ -149,10 +149,6 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 + "    - \"captive.apple.com\"\n"
                 + "    - \"gsp-ssl.ls.apple.com\"\n"
                 + "    - \"gsp-ssl.ls-apple.com.akadns.net\"\n"
-                // Microsoft
-                + "    - \"www.msftconnecttest.com\"\n"
-                + "    - \"www.msftncsi.com\"\n"
-                + "    - \"dns.msftncsi.com\"\n"
                 // Huawei
                 + "    - \"connectivitycheck.platform.hicloud.com\"\n"
                 + "    - \"+.wifi.huawei.com\"\n"

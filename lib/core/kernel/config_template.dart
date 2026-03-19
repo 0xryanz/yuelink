@@ -329,10 +329,11 @@ class ConfigTemplate {
     // Skip if has reality-opts
     if (content.contains('reality-opts')) return entry;
 
-    // For vmess/vless, require tls: true
+    // For vmess/vless, require tls: true or tls: 1
+    // (subscription configs may use either boolean or integer for TLS)
     if (type == 'vmess' || type == 'vless') {
-      final tlsMatch = RegExp(r'\btls:\s*(true|false)').firstMatch(content);
-      if (tlsMatch == null || tlsMatch.group(1) != 'true') return entry;
+      final tlsMatch = RegExp(r'\btls:\s*(true|false|1|0)').firstMatch(content);
+      if (tlsMatch == null || (tlsMatch.group(1) != 'true' && tlsMatch.group(1) != '1')) return entry;
     }
 
     // Inject ", ech-opts: {enable: true}" before the closing "}"
@@ -355,10 +356,11 @@ class ConfigTemplate {
     // Skip if has reality-opts
     if (entry.contains('reality-opts')) return entry;
 
-    // For vmess/vless, require tls: true
+    // For vmess/vless, require tls: true or tls: 1
+    // (subscription configs may use either boolean or integer for TLS)
     if (type == 'vmess' || type == 'vless') {
-      final tlsMatch = RegExp(r'\btls:\s*(true|false)').firstMatch(entry);
-      if (tlsMatch == null || tlsMatch.group(1) != 'true') return entry;
+      final tlsMatch = RegExp(r'\btls:\s*(true|false|1|0)').firstMatch(entry);
+      if (tlsMatch == null || (tlsMatch.group(1) != 'true' && tlsMatch.group(1) != '1')) return entry;
     }
 
     // Detect indentation from the entry itself.
@@ -418,10 +420,6 @@ class ConfigTemplate {
           '    - "captive.apple.com"\n'
           '    - "gsp-ssl.ls.apple.com"\n'
           '    - "gsp-ssl.ls-apple.com.akadns.net"\n'
-          // Microsoft
-          '    - "www.msftconnecttest.com"\n'
-          '    - "www.msftncsi.com"\n'
-          '    - "dns.msftncsi.com"\n'
           // Huawei
           '    - "connectivitycheck.platform.hicloud.com"\n'
           '    - "+.wifi.huawei.com"\n'

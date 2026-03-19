@@ -75,23 +75,29 @@ class CarrierNotifier extends StateNotifier<CarrierState> {
   final Ref _ref;
   Timer? _pollingTimer;
   bool _detecting = false;
+  final Completer<void> _cacheLoaded = Completer<void>();
 
   /// Polling interval for SNI status checks.
   static const _pollInterval = Duration(minutes: 30);
 
   /// Load cached carrier info from settings.
   Future<void> _loadCached() async {
-    final carrier = await SettingsService.get<String>('detectedCarrier');
-    final carrierName =
-        await SettingsService.get<String>('detectedCarrierName') ?? '';
-    final sniDomain = await SettingsService.get<String>('cachedSniDomain') ?? '';
-    if (carrier != null) {
-      if (!mounted) return;
-      state = CarrierState(
-        carrier: carrier,
-        carrierName: carrierName,
-        sniDomain: sniDomain,
-      );
+    try {
+      final carrier = await SettingsService.get<String>('detectedCarrier');
+      final carrierName =
+          await SettingsService.get<String>('detectedCarrierName') ?? '';
+      final sniDomain =
+          await SettingsService.get<String>('cachedSniDomain') ?? '';
+      if (carrier != null) {
+        if (!mounted) return;
+        state = CarrierState(
+          carrier: carrier,
+          carrierName: carrierName,
+          sniDomain: sniDomain,
+        );
+      }
+    } finally {
+      _cacheLoaded.complete();
     }
   }
 
@@ -100,6 +106,7 @@ class CarrierNotifier extends StateNotifier<CarrierState> {
   ///
   /// Uses a direct HTTP request (no proxy) to get the real ISP IP.
   Future<void> detectCarrier() async {
+    await _cacheLoaded.future;
     if (_detecting) return;
     _detecting = true;
     try {

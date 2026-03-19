@@ -26,13 +26,15 @@ class _OnboardingPageState extends State<OnboardingPage> {
     super.dispose();
   }
 
-  void _finish() {
-    SettingsService.setHasSeenOnboarding(true);
+  Future<void> _finish() async {
+    await SettingsService.setHasSeenOnboarding(true);
     widget.onComplete();
   }
 
+  static const _lastPage = 3;
+
   void _next() {
-    if (_currentPage < 3) {
+    if (_currentPage < _lastPage) {
       if (_isDesktop) {
         setState(() => _currentPage++);
       } else {
@@ -216,7 +218,7 @@ class _DesktopOnboarding extends StatelessWidget {
                 // Indicators + button row
                 Row(
                   children: [
-                    ...List.generate(4, (i) {
+                    ...List.generate(steps.length, (i) {
                       final active = i == current;
                       return AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
@@ -246,7 +248,7 @@ class _DesktopOnboarding extends StatelessWidget {
                         ),
                       ),
                       child: Text(
-                        current == 3 ? s.onboardingDone : s.onboardingNext,
+                        current == steps.length - 1 ? s.onboardingDone : s.onboardingNext,
                         style:
                             YLText.label.copyWith(fontWeight: FontWeight.w600),
                       ),
@@ -370,7 +372,7 @@ class _MobileOnboarding extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 28),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(4, (i) {
+                    children: List.generate(steps.length, (i) {
                       final active = i == current;
                       return AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
@@ -406,7 +408,7 @@ class _MobileOnboarding extends StatelessWidget {
                         ),
                       ),
                       child: Text(
-                        current == 3 ? s.onboardingDone : s.onboardingNext,
+                        current == steps.length - 1 ? s.onboardingDone : s.onboardingNext,
                         style:
                             YLText.label.copyWith(fontWeight: FontWeight.w600),
                       ),

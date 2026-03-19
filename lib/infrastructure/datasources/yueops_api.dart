@@ -36,7 +36,13 @@ class YueOpsApi {
       if (resp.statusCode != 200) {
         throw YueOpsApiException('Config fetch failed: ${resp.statusCode}');
       }
-      final json = jsonDecode(resp.body) as Map<String, dynamic>;
+      Map<String, dynamic> json;
+      try {
+        json = jsonDecode(resp.body) as Map<String, dynamic>;
+      } catch (e) {
+        throw YueOpsApiException(
+            'Invalid JSON response from YueOps: ${resp.statusCode}');
+      }
       return ClientConfig.fromJson(json);
     } finally {
       client.close();
@@ -57,7 +63,13 @@ class YueOpsApi {
       if (resp.statusCode != 200) {
         throw YueOpsApiException('Carrier detect failed: ${resp.statusCode}');
       }
-      final json = jsonDecode(resp.body) as Map<String, dynamic>;
+      Map<String, dynamic> json;
+      try {
+        json = jsonDecode(resp.body) as Map<String, dynamic>;
+      } catch (e) {
+        throw YueOpsApiException(
+            'Invalid JSON response from YueOps: ${resp.statusCode}');
+      }
       return CarrierInfo.fromJson(json);
     } finally {
       client.close();
@@ -81,22 +93,27 @@ class ClientConfig {
   });
 
   factory ClientConfig.fromJson(Map<String, dynamic> json) {
-    final carriersRaw = json['carriers'] as Map<String, dynamic>? ?? {};
-    final carriers = carriersRaw.map((k, v) => MapEntry(
-          k,
-          CarrierEntry(
-            domain: (v as Map<String, dynamic>)['domain'] as String? ?? '',
-            name: v['name'] as String? ?? '',
-          ),
-        ));
+    final carriersRaw =
+        (json['carriers'] is Map ? json['carriers'] as Map<String, dynamic> : null) ?? {};
+    final carriers = carriersRaw.map((k, v) {
+      final entry = v is Map<String, dynamic> ? v : <String, dynamic>{};
+      return MapEntry(
+        k,
+        CarrierEntry(
+          domain: entry['domain']?.toString() ?? '',
+          name: entry['name']?.toString() ?? '',
+        ),
+      );
+    });
 
-    final nodeMappingRaw = json['node_mapping'] as Map<String, dynamic>? ?? {};
+    final nodeMappingRaw =
+        (json['node_mapping'] is Map ? json['node_mapping'] as Map<String, dynamic> : null) ?? {};
     final nodeMapping =
         nodeMappingRaw.map((k, v) => MapEntry(k, v?.toString() ?? ''));
 
     return ClientConfig(
-      sniDomain: json['sni_domain'] as String? ?? '',
-      sniStatus: json['sni_status'] as String? ?? 'unknown',
+      sniDomain: json['sni_domain']?.toString() ?? '',
+      sniStatus: json['sni_status']?.toString() ?? 'unknown',
       carriers: carriers,
       nodeMapping: nodeMapping,
     );
@@ -127,10 +144,10 @@ class CarrierInfo {
 
   factory CarrierInfo.fromJson(Map<String, dynamic> json) {
     return CarrierInfo(
-      ip: json['ip'] as String? ?? '',
-      carrier: json['carrier'] as String?,
-      carrierName: json['carrier_name'] as String? ?? '',
-      recommendedNodeId: json['recommended_node_id'] as String?,
+      ip: json['ip']?.toString() ?? '',
+      carrier: json['carrier']?.toString(),
+      carrierName: json['carrier_name']?.toString() ?? '',
+      recommendedNodeId: json['recommended_node_id']?.toString(),
     );
   }
 

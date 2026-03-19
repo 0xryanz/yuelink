@@ -204,7 +204,7 @@ class _NodesPageState extends ConsumerState<NodesPage> {
     final globalGroup = ref.watch(globalGroupProvider);
     final displayGroups = routingMode == 'global' && globalGroup != null
         ? [globalGroup, ...groups]
-        : List<ProxyGroup>.from(groups);
+        : groups;
 
     final bool showBanner = routingMode != 'rule';
     final int listCount = displayGroups.length + (showBanner ? 1 : 0);

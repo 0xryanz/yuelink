@@ -20,6 +20,21 @@ Color? protocolColor(String type) {
       return const Color(0xFF10B981); // Emerald
     case 'tuic':
       return const Color(0xFFEC4899); // Pink — QUIC
+    case 'ssr':
+    case 'shadowsocksr':
+      return const Color(0xFF78716C); // Stone — legacy protocol
+    case 'snell':
+      return const Color(0xFF14B8A6); // Teal
+    case 'socks5':
+    case 'socks':
+      return const Color(0xFF9CA3AF); // Gray — basic proxy
+    case 'http':
+      return const Color(0xFFA8A29E); // Warm gray — basic proxy
+    case 'wireguard':
+    case 'wg':
+      return const Color(0xFF0EA5E9); // Sky blue — VPN tunnel
+    case 'ssh':
+      return const Color(0xFF84CC16); // Lime — terminal/shell
     default:
       return null;
   }

@@ -13,11 +13,10 @@ import '../../providers/connectivity_provider.dart';
 import '../../theme.dart';
 import '../announcements/providers/announcements_providers.dart';
 import 'widgets/announcement_banner.dart';
-import 'widgets/chart_card.dart';
-import 'widgets/exit_ip_card.dart';
+import 'widgets/live_status_card.dart';
+import 'widgets/metrics_row.dart';
 import 'widgets/hero_card.dart';
 import 'widgets/carrier_card.dart';
-import 'widgets/stats_card.dart';
 import 'widgets/subscription_card.dart';
 import '../checkin/checkin_card.dart';
 
@@ -49,8 +48,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         bottom: false,
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final isWide = constraints.maxWidth > 560;
-
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -89,9 +86,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                         ),
                       ),
 
-                      // ── Running: carrier, exit IP, chart, stats ─────
-                      // Placed immediately after HeroCard so live data
-                      // flows continuously from the connect status.
+                      // ── Running: carrier, live status, metrics ───────
                       AnimatedSize(
                         duration: const Duration(milliseconds: 300),
                         curve: Curves.easeInOut,
@@ -100,40 +95,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                           opacity: isRunning ? 1.0 : 0.0,
                           duration: const Duration(milliseconds: 250),
                           child: isRunning
-                              ? Column(
+                              ? const Column(
                                   children: [
-                                    const SizedBox(height: 12),
-                                    const RepaintBoundary(child: CarrierCard()),
-                                    const SizedBox(height: 12),
-                                    if (isWide)
-                                      SizedBox(
-                                        height: 190,
-                                        child: Row(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.stretch,
-                                          children: const [
-                                            Expanded(
-                                                flex: 1,
-                                                child: RepaintBoundary(
-                                                    child: ExitIpCard())),
-                                            SizedBox(width: 12),
-                                            Expanded(
-                                              flex: 2,
-                                              child: RepaintBoundary(
-                                                  child: ChartCard()),
-                                            ),
-                                          ],
-                                        ),
-                                      )
-                                    else ...[
-                                      const RepaintBoundary(
-                                          child: ExitIpCard()),
-                                      const SizedBox(height: 12),
-                                      const RepaintBoundary(
-                                          child: ChartCard()),
-                                    ],
-                                    const SizedBox(height: 12),
-                                    const RepaintBoundary(child: StatsCard()),
+                                    SizedBox(height: 12),
+                                    RepaintBoundary(child: CarrierCard()),
+                                    SizedBox(height: 12),
+                                    RepaintBoundary(child: LiveStatusCard()),
+                                    SizedBox(height: 12),
+                                    RepaintBoundary(child: MetricsRow()),
                                   ],
                                 )
                               : const SizedBox.shrink(),

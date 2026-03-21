@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_strings.dart';
+import '../../modules/yue_auth/providers/yue_auth_providers.dart';
 import '../../theme.dart';
 import 'checkin_provider.dart';
 
@@ -14,6 +15,9 @@ class CheckinCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authProvider);
+    if (!auth.isLoggedIn) return const SizedBox.shrink();
+
     final s = S.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final state = ref.watch(checkinProvider);

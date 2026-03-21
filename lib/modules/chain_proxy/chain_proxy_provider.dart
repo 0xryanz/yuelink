@@ -11,6 +11,7 @@ import '../../core/kernel/core_manager.dart';
 import '../../core/storage/settings_service.dart';
 import '../../shared/app_notifier.dart';
 import '../../l10n/app_strings.dart';
+import '../nodes/providers/node_providers.dart';
 import '../nodes/providers/nodes_providers.dart';
 
 // ------------------------------------------------------------------
@@ -22,25 +23,32 @@ class ChainProxyState {
   final bool connected;
   final bool loading;
   final String? activeGroup; // which proxy group the chain applies to
+  final String? previousNode; // selected node in activeGroup before connect
 
   const ChainProxyState({
     this.nodes = const [],
     this.connected = false,
     this.loading = false,
     this.activeGroup,
+    this.previousNode,
   });
+
+  static const _clear = Object();
 
   ChainProxyState copyWith({
     List<String>? nodes,
     bool? connected,
     bool? loading,
     String? activeGroup,
+    Object? previousNode = _clear,
   }) =>
       ChainProxyState(
         nodes: nodes ?? this.nodes,
         connected: connected ?? this.connected,
         loading: loading ?? this.loading,
         activeGroup: activeGroup ?? this.activeGroup,
+        previousNode:
+            identical(previousNode, _clear) ? this.previousNode : previousNode as String?,
       );
 
   bool get canConnect => nodes.length >= 2 && !loading;
@@ -122,6 +130,12 @@ class ChainProxyNotifier extends Notifier<ChainProxyState> {
       return;
     }
 
+    // Snapshot the currently selected node before we overwrite it
+    final groupName = state.activeGroup;
+    final previousNode = groupName != null
+        ? ref.read(groupSelectedNodeProvider(groupName))
+        : null;
+
     state = state.copyWith(loading: true);
     try {
       // 1. Read current running config
@@ -147,7 +161,6 @@ class ChainProxyNotifier extends Notifier<ChainProxyState> {
       await Future.delayed(const Duration(milliseconds: 300));
 
       // 6. Select exit node in the proxy group
-      final groupName = state.activeGroup;
       final exitNode = state.exitNode;
       if (groupName != null && exitNode != null) {
         await manager.api.changeProxy(groupName, exitNode);
@@ -156,7 +169,8 @@ class ChainProxyNotifier extends Notifier<ChainProxyState> {
       // 7. Refresh proxy groups
       ref.read(proxyGroupsProvider.notifier).refresh();
 
-      state = state.copyWith(connected: true, loading: false);
+      state = state.copyWith(
+          connected: true, loading: false, previousNode: previousNode);
       AppNotifier.success(S.current.chainConnected);
     } catch (e) {
       debugPrint('[ChainProxy] connect error: $e');
@@ -186,6 +200,15 @@ class ChainProxyNotifier extends Notifier<ChainProxyState> {
         await Future.delayed(const Duration(milliseconds: 300));
       }
 
+      // Restore the node that was selected before the chain was connected
+      final groupName = state.activeGroup;
+      final prev = state.previousNode;
+      if (groupName != null && prev != null && prev.isNotEmpty) {
+        try {
+          await manager.api.changeProxy(groupName, prev);
+        } catch (_) {}
+      }
+
       // Close all existing connections to force reconnect without chain
       try {
         await manager.api.closeAllConnections();
@@ -193,7 +216,7 @@ class ChainProxyNotifier extends Notifier<ChainProxyState> {
 
       ref.read(proxyGroupsProvider.notifier).refresh();
 
-      state = state.copyWith(connected: false, loading: false);
+      state = state.copyWith(connected: false, loading: false, previousNode: null);
       AppNotifier.info(S.current.chainDisconnected);
     } catch (e) {
       debugPrint('[ChainProxy] disconnect error: $e');

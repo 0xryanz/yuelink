@@ -169,14 +169,14 @@ class ChainProxyNotifier extends Notifier<ChainProxyState> {
       // force=true reload can take >300ms on large configs / slow devices.
       await Future.delayed(const Duration(milliseconds: 400));
 
-      // 6. Select the exit wrapper group — retry up to 3× if mihomo isn't ready.
-      final exitGroupName =
-          '${ConfigTemplate.chainGroupPrefix}${state.nodes.length - 1}';
+      // 6. Select the exit node in the active group — retry up to 3× if mihomo isn't ready.
+      // dialer-proxy is set on the node itself, so selecting it triggers the chain.
+      final exitNodeName = state.nodes.last;
       bool selected = false;
       for (var attempt = 0; attempt < 3 && !selected; attempt++) {
         if (attempt > 0) await Future.delayed(const Duration(milliseconds: 300));
         try {
-          await manager.api.changeProxy(resolvedGroup, exitGroupName);
+          await manager.api.changeProxy(resolvedGroup, exitNodeName);
           selected = true;
         } catch (e) {
           debugPrint('[ChainProxy] changeProxy attempt ${attempt + 1} failed: $e');

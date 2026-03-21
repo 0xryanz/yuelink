@@ -157,42 +157,23 @@ proxy-groups:
       - JP
 ''';
 
-    test('creates per-node wrapper groups with dialer-proxy chain', () {
+    test('sets dialer-proxy directly on exit proxy node', () {
       final result =
           ConfigTemplate.injectProxyChain(baseConfig, ['HK', 'JP'], '自动选择');
-      // Both wrapper groups must exist
-      expect(result, contains('_YueLink_Chain_0'));
-      expect(result, contains('_YueLink_Chain_1'));
-      // type: relay must NOT appear (removed from mihomo)
-      expect(result, isNot(anyOf(contains('type: relay'), contains('type: "relay"'))));
-      // Original node definitions must NOT have dialer-proxy
-      expect(result, isNot(contains('dialer-proxy: HK')));
-      expect(result, isNot(contains('dialer-proxy: "HK"')));
-      // _Chain_1 must dial through _Chain_0
+      // JP (exit) must have dialer-proxy: HK
       expect(result,
-          anyOf(contains('dialer-proxy: _YueLink_Chain_0'),
-              contains('dialer-proxy: "_YueLink_Chain_0"')));
+          anyOf(contains('dialer-proxy: HK'), contains('dialer-proxy: "HK"')));
+      // HK (entry) must NOT have dialer-proxy pointing to JP
+      expect(result, isNot(contains('dialer-proxy: JP')));
+      expect(result, isNot(contains('dialer-proxy: "JP"')));
+      // No chain wrapper groups should be created
+      expect(result, isNot(contains('_YueLink_Chain_')));
+      // No relay type
+      expect(result,
+          isNot(anyOf(contains('type: relay'), contains('type: "relay"'))));
     });
 
-    test('inserts exit wrapper at front of activeGroup.proxies', () {
-      final result =
-          ConfigTemplate.injectProxyChain(baseConfig, ['HK', 'JP'], '自动选择');
-      // Exit wrapper must appear in the result
-      expect(result, contains('_YueLink_Chain_1'));
-      // In the 自动选择 group block, _Chain_1 must appear before HK/JP
-      // (proxy-groups section comes after proxies section in YAML output)
-      final groupsIdx = result.indexOf('proxy-groups:');
-      expect(groupsIdx, greaterThan(-1));
-      final afterGroups = result.substring(groupsIdx);
-      final chainInGroup = afterGroups.indexOf('_YueLink_Chain_1');
-      final hkInGroup = afterGroups.indexOf('"HK"') > -1
-          ? afterGroups.indexOf('"HK"')
-          : afterGroups.indexOf('HK');
-      expect(chainInGroup, greaterThan(-1));
-      expect(chainInGroup, lessThan(hkInGroup));
-    });
-
-    test('3-node chain creates correct dialer-proxy links', () {
+    test('3-node chain sets correct dialer-proxy links on nodes', () {
       const config = '''
 proxies:
   - name: A
@@ -214,29 +195,24 @@ proxy-groups:
 ''';
       final result =
           ConfigTemplate.injectProxyChain(config, ['A', 'B', 'C'], '选择');
-      expect(result, contains('_YueLink_Chain_0'));
-      expect(result, contains('_YueLink_Chain_1'));
-      expect(result, contains('_YueLink_Chain_2'));
-      // Chain_1 dials through Chain_0, Chain_2 dials through Chain_1
+      // B dials through A
       expect(result,
-          anyOf(contains('dialer-proxy: _YueLink_Chain_0'),
-              contains('dialer-proxy: "_YueLink_Chain_0"')));
+          anyOf(contains('dialer-proxy: A'), contains('dialer-proxy: "A"')));
+      // C dials through B
       expect(result,
-          anyOf(contains('dialer-proxy: _YueLink_Chain_1'),
-              contains('dialer-proxy: "_YueLink_Chain_1"')));
+          anyOf(contains('dialer-proxy: B'), contains('dialer-proxy: "B"')));
+      // A (entry) has no dialer-proxy
+      expect(result, isNot(contains('dialer-proxy: C')));
+      expect(result, isNot(contains('dialer-proxy: "C"')));
     });
 
-    test('is idempotent — re-inject removes old groups before inserting new', () {
+    test('is idempotent — re-inject clears old dialer-proxy before re-setting', () {
       var result =
           ConfigTemplate.injectProxyChain(baseConfig, ['HK', 'JP'], '自动选择');
       result =
           ConfigTemplate.injectProxyChain(result, ['HK', 'JP'], '自动选择');
-      // Exactly one _Chain_1 group definition
-      expect('_YueLink_Chain_1'.allMatches(result).length,
-          greaterThanOrEqualTo(1));
-      // No duplicate _Chain_0 definitions (only 1 group with that name)
-      final groupMatches = RegExp(r'name:.*_YueLink_Chain_0').allMatches(result);
-      expect(groupMatches.length, 1);
+      // Exactly one dialer-proxy in the entire config (JP → HK)
+      expect(RegExp(r'dialer-proxy:').allMatches(result).length, 1);
     });
 
     test('returns original config for less than 2 nodes', () {
@@ -276,6 +252,43 @@ proxy-groups:
           legacyConfig, ['HK', 'JP'], '自动选择');
       expect(result, isNot(contains('dialer-proxy: SomeNode')));
       expect(result, isNot(contains('dialer-proxy: "SomeNode"')));
+      // JP should now have dialer-proxy: HK
+      expect(result,
+          anyOf(contains('dialer-proxy: HK'), contains('dialer-proxy: "HK"')));
+    });
+
+    test('removes old _YueLink_Chain_* groups on re-inject (backward compat)', () {
+      const oldChainConfig = '''
+proxies:
+  - name: HK
+    type: ss
+    server: 1.2.3.4
+    port: 443
+  - name: JP
+    type: vmess
+    server: 5.6.7.8
+    port: 443
+proxy-groups:
+  - name: 自动选择
+    type: select
+    proxies:
+      - _YueLink_Chain_1
+      - HK
+      - JP
+  - name: _YueLink_Chain_0
+    type: select
+    proxies:
+      - HK
+  - name: _YueLink_Chain_1
+    type: select
+    proxies:
+      - JP
+''';
+      final result = ConfigTemplate.injectProxyChain(
+          oldChainConfig, ['HK', 'JP'], '自动选择');
+      expect(result, isNot(contains('_YueLink_Chain_')));
+      expect(result,
+          anyOf(contains('dialer-proxy: HK'), contains('dialer-proxy: "HK"')));
     });
   });
 

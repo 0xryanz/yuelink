@@ -19,12 +19,14 @@ class ChainProxySheet extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      isDismissible: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => DraggableScrollableSheet(
         initialChildSize: 0.6,
         minChildSize: 0.3,
         maxChildSize: 0.85,
+        expand: false,
         builder: (context, scrollController) => Container(
           decoration: BoxDecoration(
             color: Theme.of(context).scaffoldBackgroundColor,
@@ -273,12 +275,14 @@ class _ChainPickerSheet extends ConsumerStatefulWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      isDismissible: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => DraggableScrollableSheet(
         initialChildSize: 0.75,
         minChildSize: 0.4,
         maxChildSize: 0.92,
+        expand: false,
         builder: (context, _) => Container(
           decoration: BoxDecoration(
             color: Theme.of(context).scaffoldBackgroundColor,
@@ -544,31 +548,36 @@ class _PickerItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 6),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: inChain
-              ? (isDark
-                  ? YLColors.zinc700.withValues(alpha: 0.4)
-                  : YLColors.zinc50)
-              : (isDark ? YLColors.zinc800 : Colors.white),
-          borderRadius: BorderRadius.circular(YLRadius.md),
-          border: Border.all(
-            color: inChain
-                ? (isDark
-                    ? Colors.white.withValues(alpha: 0.06)
-                    : Colors.black.withValues(alpha: 0.06))
-                : (isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : Colors.black.withValues(alpha: 0.06)),
-            width: 0.5,
-          ),
-        ),
-        child: Row(
+    final radius = BorderRadius.circular(YLRadius.md);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: inChain
+            ? (isDark
+                ? YLColors.zinc700.withValues(alpha: 0.4)
+                : YLColors.zinc50)
+            : (isDark ? YLColors.zinc800 : Colors.white),
+        borderRadius: radius,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: radius,
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: radius,
+              border: Border.all(
+                color: inChain
+                    ? (isDark
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : Colors.black.withValues(alpha: 0.06))
+                    : (isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : Colors.black.withValues(alpha: 0.06)),
+                width: 0.5,
+              ),
+            ),
+            child: Row(
           children: [
             Icon(icon,
                 size: 15,
@@ -611,6 +620,8 @@ class _PickerItem extends StatelessWidget {
                   size: 16,
                   color: isDark ? YLColors.zinc500 : YLColors.zinc400),
           ],
+        ),
+          ),
         ),
       ),
     );

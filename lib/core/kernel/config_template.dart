@@ -170,19 +170,16 @@ class ConfigTemplate {
     }
   }
 
-  /// Inject a proxy chain scoped to [activeGroup] using per-node select wrapper
-  /// groups connected via `dialer-proxy`.
+  /// Inject a proxy chain by setting `dialer-proxy` directly on proxy nodes.
   ///
-  /// mihomo removed `type: relay` — this is the recommended replacement.
-  /// Creates N wrapper groups (_YueLink_Chain_0 … _YueLink_Chain_N-1), each
-  /// wrapping one chain node, linked via dialer-proxy. Only the exit wrapper
-  /// group is inserted into [activeGroup].proxies — original node definitions
-  /// are never modified, so other groups are not polluted.
+  /// mihomo only allows `dialer-proxy` on proxy nodes in `proxies:`, NOT on
+  /// proxy-groups. For chain [A, B, C]:
+  ///   - A (entry): unchanged
+  ///   - B: dialer-proxy: A   (B connects through A)
+  ///   - C (exit): dialer-proxy: B  (C → B → A)
   ///
-  /// Example for chain [NodeA, NodeB]:
-  ///   _YueLink_Chain_0: select [NodeA]          (entry, no dialer-proxy)
-  ///   _YueLink_Chain_1: select [NodeB], dialer-proxy: _YueLink_Chain_0
-  ///   activeGroup.proxies: [_YueLink_Chain_1, NodeA, NodeB, ...]
+  /// After calling this, the caller should select the exit node (chainNames.last)
+  /// in the active proxy group via the REST API.
   static String injectProxyChain(
       String config, List<String> chainNames, String activeGroup) {
     if (chainNames.length < 2) return config;
@@ -198,51 +195,43 @@ class ConfigTemplate {
           (mutable['proxy-groups'] as List<dynamic>?)?.cast<dynamic>() ??
               <dynamic>[];
 
-      // Strip legacy dialer-proxy on raw proxy nodes (backward compat)
+      // Strip any existing chain dialer-proxy on nodes (idempotent re-inject).
+      // Preserve _upstream dialer-proxy (soft-router pass-through feature).
       for (final p in proxies) {
         if (p is Map<String, dynamic> && p['dialer-proxy'] != '_upstream') {
           p.remove('dialer-proxy');
         }
       }
 
-      // Remove any stale chain wrapper groups (idempotent re-inject)
+      // Remove stale _YueLink_Chain_* wrapper groups (backward compat with
+      // the old proxy-group-based implementation).
       proxyGroups.removeWhere(
           (g) => g is Map && _isChainGroup(g['name'] as String? ?? ''));
-
-      // Locate the target proxy-group
-      Map<String, dynamic>? targetGroup;
       for (final g in proxyGroups) {
-        if (g is Map<String, dynamic> && g['name'] == activeGroup) {
-          targetGroup = g;
-          break;
+        if (g is Map<String, dynamic>) {
+          final gp = (g['proxies'] as List<dynamic>?)?.toList();
+          if (gp != null) {
+            final before = gp.length;
+            gp.removeWhere((p) => _isChainGroup(p as String? ?? ''));
+            if (gp.length != before) g['proxies'] = gp;
+          }
         }
       }
-      if (targetGroup == null) return config;
 
-      // Sanitise targetGroup.proxies: remove any stale chain entries
-      final groupProxies =
-          ((targetGroup['proxies'] as List<dynamic>?) ?? []).toList();
-      groupProxies.removeWhere(
-          (p) => _isChainGroup(p as String? ?? ''));
+      // Verify that the active group exists in this config.
+      final hasGroup = proxyGroups.any(
+          (g) => g is Map<String, dynamic> && g['name'] == activeGroup);
+      if (!hasGroup) return config;
 
-      // Build per-node wrapper groups, chained via dialer-proxy
-      String? prevName;
-      for (var i = 0; i < chainNames.length; i++) {
-        final name = '$chainGroupPrefix$i';
-        final group = <String, dynamic>{
-          'name': name,
-          'type': 'select',
-          'proxies': <String>[chainNames[i]],
-        };
-        if (prevName != null) group['dialer-proxy'] = prevName;
-        proxyGroups.add(group);
-        prevName = name;
+      // Set dialer-proxy on nodes[1..N-1]: each node dials through the previous.
+      for (var i = 1; i < chainNames.length; i++) {
+        for (final p in proxies) {
+          if (p is Map<String, dynamic> && p['name'] == chainNames[i]) {
+            p['dialer-proxy'] = chainNames[i - 1];
+            break;
+          }
+        }
       }
-
-      // Insert exit wrapper at front of targetGroup.proxies and select it
-      final exitName = '$chainGroupPrefix${chainNames.length - 1}';
-      groupProxies.insert(0, exitName);
-      targetGroup['proxies'] = groupProxies;
 
       mutable['proxies'] = proxies;
       mutable['proxy-groups'] = proxyGroups;
@@ -451,6 +440,9 @@ class ConfigTemplate {
           '    - https://doh.pub/dns-query\n'
           '    - https://dns.alidns.com/dns-query\n'
           '  proxy-server-nameserver:\n'
+          '    - 223.5.5.5\n'
+          '    - 119.29.29.29\n'
+          '    - 8.8.8.8\n'
           '    - https://doh.pub/dns-query\n'
           '    - https://dns.alidns.com/dns-query\n'
           '  nameserver-policy:\n'
@@ -561,9 +553,29 @@ class ConfigTemplate {
         config =
             config.substring(0, dnsEnd) + directNs + config.substring(dnsEnd);
         dnsEnd += directNs.length;
+        dnsSection = config.substring(dnsMatch.start, dnsEnd);
       }
 
-      // Fix 3: ensure connectivity-check domains are in fake-ip-filter.
+      // Fix 4: ensure proxy-server-nameserver has plain UDP DNS fallbacks.
+      // Problem: if proxy-server-nameserver only has DoH (HTTPS) servers,
+      // mihomo can't resolve proxy server hostnames before connecting — the
+      // DoH query itself requires the proxy to be up (chicken-and-egg).
+      // Plain UDP DNS (223.5.5.5 / 8.8.8.8) bypass the proxy and bootstrap
+      // resolution so the proxy can start in the first place.
+      if (!dnsSection.contains('proxy-server-nameserver:')) {
+        final proxyNs = '${indent}proxy-server-nameserver:\n'
+            '${entryIndent}- 223.5.5.5\n'
+            '${entryIndent}- 119.29.29.29\n'
+            '${entryIndent}- 8.8.8.8\n'
+            '${entryIndent}- https://doh.pub/dns-query\n'
+            '${entryIndent}- https://dns.alidns.com/dns-query\n';
+        config =
+            config.substring(0, dnsEnd) + proxyNs + config.substring(dnsEnd);
+        dnsEnd += proxyNs.length;
+        dnsSection = config.substring(dnsMatch.start, dnsEnd);
+      }
+
+      // Fix 5: ensure connectivity-check domains are in fake-ip-filter.
       // Without these, connectivity checks resolve to fake IPs, causing
       // "no internet" / WiFi exclamation mark on Android, iOS, Windows, etc.
       dnsSection = config.substring(dnsMatch.start, dnsEnd);

@@ -20,12 +20,40 @@ class CheckinResult {
   });
 
   factory CheckinResult.fromJson(Map<String, dynamic> json) {
+    final type = json['type'] as String? ?? 'traffic';
+    final amount = _toInt(json['amount']) ?? 0;
+    // Prefer server-provided text; fall back to local formatting so the UI
+    // always shows a meaningful value even if the server omits amount_text.
+    final serverText = json['amount_text'] as String?;
+    final amountText = (serverText != null && serverText.isNotEmpty)
+        ? serverText
+        : _formatAmount(type, amount);
+
     return CheckinResult(
-      type: json['type'] as String? ?? 'traffic',
-      amount: _toInt(json['amount']) ?? 0,
-      amountText: json['amount_text'] as String? ?? '',
+      type: type,
+      amount: amount,
+      amountText: amountText,
       alreadyChecked: json['already_checked'] == true,
     );
+  }
+
+  /// Format amount locally: traffic → human-readable bytes, balance → yuan.
+  static String _formatAmount(String type, int amount) {
+    if (type == 'balance') {
+      // amount is in cents (分)
+      final yuan = amount / 100.0;
+      return '${yuan.toStringAsFixed(2)}元';
+    }
+    // traffic: amount is in bytes
+    if (amount <= 0) return '0 MB';
+    const kb = 1024;
+    const mb = kb * 1024;
+    const gb = mb * 1024;
+    const tb = gb * 1024;
+    if (amount >= tb) return '${(amount / tb).toStringAsFixed(2)} TB';
+    if (amount >= gb) return '${(amount / gb).toStringAsFixed(2)} GB';
+    if (amount >= mb) return '${(amount / mb).toStringAsFixed(2)} MB';
+    return '${(amount / kb).toStringAsFixed(2)} KB';
   }
 
   static int? _toInt(dynamic v) {

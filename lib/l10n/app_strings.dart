@@ -802,6 +802,10 @@ class S {
       ? 'Long-press any node or group on the Lines page to add it'
       : '在线路页面长按节点或策略组即可加入链路';
   String get chainAddHint => _e ? 'Added to proxy chain' : '已添加到链式代理';
+  String get chainPickerTitle => _e ? 'Add to Chain' : '添加到链路';
+  String get chainPickerSearch => _e ? 'Search nodes / groups...' : '搜索节点 / 策略组…';
+  String get chainSectionGroups => _e ? 'Proxy Groups' : '策略组';
+  String get chainSectionNodes => _e ? 'Nodes' : '节点';
   String get msgSystemProxyConflict => _e
       ? 'Another proxy client took over — stopping YueLink proxy'
       : '检测到其他代理客户端已接管系统代理，已停止 YueLink 代理';

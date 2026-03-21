@@ -783,4 +783,39 @@ class S {
   String get onboardingSkip => _e ? 'Skip' : '跳过';
   String get onboardingNext => _e ? 'Next' : '下一步';
   String get onboardingDone => _e ? 'Get Started' : '开始使用';
+
+  // ── Chain proxy ──────────────────────────────────────────────
+  String get chainProxy => _e ? 'Proxy Chain' : '链式代理';
+  String get chainEntry => _e ? 'Entry' : '入口';
+  String get chainExit => _e ? 'Exit' : '出口';
+  String get chainConnect => _e ? 'Connect Chain' : '连接链路';
+  String get chainDisconnect => _e ? 'Disconnect' : '断开链路';
+  String get chainConnected => _e ? 'Proxy chain connected' : '链式代理已连接';
+  String get chainDisconnected => _e ? 'Proxy chain disconnected' : '链式代理已断开';
+  String get chainConnectFailed => _e ? 'Chain connect failed' : '链路连接失败';
+  String get chainNeedConnect => _e ? 'Connect VPN first' : '请先连接 VPN';
+  String get chainNeedTwoNodes => _e ? 'Need 2+ nodes' : '至少需要 2 个节点';
+  String get chainNodeDuplicate => _e ? 'Node already in chain' : '节点已在链路中';
+  String get chainClear => _e ? 'Clear' : '清空';
+  String get chainEmptyHint => _e ? 'No nodes in chain' : '暂无链路节点';
+  String get chainEmptyDesc => _e
+      ? 'Tap nodes on the Lines page to add them'
+      : '在线路页面点击节点添加到链路';
+  String get chainAddHint => _e ? 'Added to proxy chain' : '已添加到链式代理';
+
+  // ── Checkin ──────────────────────────────────────────────────
+  String get checkinTitle => _e ? 'Daily Check-in' : '每日签到';
+  String get checkinDesc => _e
+      ? 'Check in to get traffic or balance rewards'
+      : '签到领取流量或余额奖励';
+  String get checkinAction => _e ? 'Check in' : '签到';
+  String get checkinDone => _e ? 'Checked in' : '已签到';
+  String get checkinAlready => _e ? 'Already checked in today' : '今日已签到';
+  String get checkinNeedLogin => _e ? 'Please login first' : '请先登录';
+  String get checkinFailed => _e ? 'Check-in failed' : '签到失败';
+  String get checkinReward => _e ? 'Reward' : '奖励';
+  String checkinTrafficReward(String amount) =>
+      _e ? 'Got $amount traffic!' : '获得 $amount 流量！';
+  String checkinBalanceReward(String amount) =>
+      _e ? 'Got ¥$amount balance!' : '获得 ¥$amount 余额！';
 }

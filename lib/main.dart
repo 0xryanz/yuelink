@@ -184,32 +184,17 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
   /// Guard to prevent onWindowClose from interfering during programmatic quit.
   bool _isQuitting = false;
 
-  /// Guard to prevent VPN revocation callback from resetting state during
-  /// Android engine-recreate recovery. Without this, onVpnRevoked can fire
-  /// during _onAppResumed() and race with the recovery logic.
-  bool _isRecovering = false;
+  /// True while the initial post-frame recovery has run.
+  /// Prevents didChangeAppLifecycleState(resumed) from re-running
+  /// _onAppResumed() on the same engine-create cycle.
+  bool _initialRecoveryDone = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     if (Platform.isAndroid) {
-      VpnService.listenForRevocation(() {
-        // Skip if recovery is in progress — the recovery logic will handle
-        // state correctly. Without this guard, onVpnRevoked races with
-        // _onAppResumed() on engine recreate and resets state prematurely.
-        if (_isRecovering) {
-          debugPrint('[App] VPN revoked during recovery — ignoring');
-          return;
-        }
-        debugPrint('[App] VPN revoked — resetting state');
-        ref.read(coreStatusProvider.notifier).state = CoreStatus.stopped;
-        ref.read(trafficProvider.notifier).state = const Traffic();
-        ref.read(trafficHistoryProvider.notifier).state = TrafficHistory();
-        ref.read(trafficHistoryVersionProvider.notifier).state = 0;
-        CoreManager.instance.stop().catchError((_) {});
-        AppNotifier.warning(S.current.disconnectedUnexpected);
-      });
+      _setupVpnRevocationListener();
     }
     if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
       windowManager.addListener(this);
@@ -228,8 +213,17 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
         // instead of waiting up to 10s for the heartbeat.
         if (Platform.isAndroid) {
           await _onAppResumed();
+          // Mark initial recovery as done so didChangeAppLifecycleState
+          // doesn't re-run _onAppResumed() on this same engine create cycle.
+          _initialRecoveryDone = true;
         }
         await _maybeAutoConnect();
+        // Clear the recovery guard AFTER auto-connect completes.
+        // This ensures heartbeat and VPN revocation callbacks don't interfere
+        // during the entire recovery + auto-connect sequence.
+        if (Platform.isAndroid) {
+          ref.read(recoveryInProgressProvider.notifier).state = false;
+        }
         _checkSubscriptionExpiry();
         _initDeepLinks();
         if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
@@ -237,6 +231,10 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
         }
       } catch (e) {
         debugPrint('[Init] post-frame init error (non-fatal): $e');
+        // Always clear recovery guard even on error
+        if (Platform.isAndroid) {
+          ref.read(recoveryInProgressProvider.notifier).state = false;
+        }
       }
     });
   }
@@ -261,9 +259,11 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
         groups: ref.read(proxyGroupsProvider),
       );
       if (prev == CoreStatus.running && next == CoreStatus.stopped) {
-        // Only show "unexpected disconnect" if the user did NOT initiate stop.
+        // Only show "unexpected disconnect" if the user did NOT initiate stop
+        // AND we're not in the middle of recovery (which temporarily resets state).
         // userStoppedProvider is set true in CoreActions.stop() before status changes.
-        if (!ref.read(userStoppedProvider)) {
+        if (!ref.read(userStoppedProvider) &&
+            !ref.read(recoveryInProgressProvider)) {
           AppNotifier.warning(S.current.disconnectedUnexpected);
         }
         if (_trayInitialized) {
@@ -306,6 +306,30 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     });
   }
 
+  /// Register VPN revocation listener (Android only).
+  ///
+  /// Uses the recoveryInProgressProvider as the guard instead of a local
+  /// bool, so it stays in sync with the provider-level guard that heartbeat
+  /// also respects. This prevents VPN revocation from racing with recovery.
+  void _setupVpnRevocationListener() {
+    VpnService.listenForRevocation(() {
+      // Skip if recovery is in progress — the recovery logic will handle
+      // state correctly. Without this guard, onVpnRevoked races with
+      // _onAppResumed() on engine recreate and resets state prematurely.
+      if (ref.read(recoveryInProgressProvider)) {
+        debugPrint('[App] VPN revoked during recovery — ignoring');
+        return;
+      }
+      debugPrint('[App] VPN revoked — resetting state');
+      ref.read(coreStatusProvider.notifier).state = CoreStatus.stopped;
+      ref.read(trafficProvider.notifier).state = const Traffic();
+      ref.read(trafficHistoryProvider.notifier).state = TrafficHistory();
+      ref.read(trafficHistoryVersionProvider.notifier).state = 0;
+      CoreManager.instance.stop().catchError((_) {});
+      AppNotifier.warning(S.current.disconnectedUnexpected);
+    });
+  }
+
   /// Detect carrier via YueOps after VPN connects.
   /// Fetches the user's real (direct) IP to determine ISP (CT/CU/CM).
   void _startCarrierDetection() {
@@ -339,7 +363,22 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _onAppResumed();
+      // On Android, the first resume after engine recreate is already handled
+      // by addPostFrameCallback. Without this guard, _onAppResumed() runs
+      // TWICE on the same cycle: once from post-frame, once from here.
+      // The double call causes race conditions (concurrent API checks,
+      // duplicate stream invalidations, state flip-flop).
+      if (Platform.isAndroid && !_initialRecoveryDone) {
+        debugPrint('[AppLifecycle] skipping resumed — initial recovery pending');
+        return;
+      }
+      _onAppResumed().then((_) {
+        // Clear recovery guard for subsequent resume calls (background→foreground).
+        // The initial engine-create path clears this in the post-frame callback.
+        if (Platform.isAndroid) {
+          ref.read(recoveryInProgressProvider.notifier).state = false;
+        }
+      });
     }
   }
 
@@ -362,8 +401,14 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     //    This happens on Android when the OS kills the Flutter engine in the
     //    background but the VPN service + Go core survive. On resume, the
     //    engine is recreated with default state (stopped), but the core is alive.
+    //
+    //    The recovery guard is set on the PROVIDER (not a local bool) so that
+    //    both the heartbeat timer and the VPN revocation callback respect it.
+    //    The guard stays up until auto-connect also completes — this prevents
+    //    the status listener from firing "unexpected disconnect" during the
+    //    brief stopped→running transition.
     if (status != CoreStatus.running) {
-      _isRecovering = true;
+      ref.read(recoveryInProgressProvider.notifier).state = true;
       try {
         final coreAlive = manager.isCoreActuallyRunning;
         final apiOk = coreAlive ? await manager.api.isAvailable() : false;
@@ -371,22 +416,27 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
           debugPrint('[AppLifecycle] core alive but Dart state was $status — recovering');
           // Restore Dart state + ports to match reality
           await manager.markRunning();
+          // Invalidate streams BEFORE setting status to running.
+          // This ensures streams reconnect before heartbeat or listeners
+          // check for data, preventing a brief "no data" state.
+          ref.invalidate(trafficStreamProvider);
+          ref.invalidate(memoryStreamProvider);
+          ref.invalidate(connectionsStreamProvider);
+          ref.invalidate(exitIpInfoProvider);
+          // Now set state — this triggers the status listener and heartbeat
           ref.read(coreStatusProvider.notifier).state = CoreStatus.running;
           // Clear any stale startup error from previous session
           ref.read(coreStartupErrorProvider.notifier).state = null;
           // Also reset the user-stopped flag so the UI shows connected state
           ref.read(userStoppedProvider.notifier).state = false;
-          // Kick off streams and data refresh
-          ref.invalidate(trafficStreamProvider);
-          ref.invalidate(memoryStreamProvider);
-          ref.invalidate(connectionsStreamProvider);
-          ref.invalidate(exitIpInfoProvider);
           ref.read(proxyGroupsProvider.notifier).refresh();
         }
+        // Note: recovery guard stays up — cleared after _maybeAutoConnect
+        // in the post-frame callback, or at the end of this method for
+        // subsequent resume calls (not engine-create).
       } catch (e) {
         debugPrint('[AppLifecycle] recovery check failed: $e');
-      } finally {
-        _isRecovering = false;
+        ref.read(recoveryInProgressProvider.notifier).state = false;
       }
       return;
     }

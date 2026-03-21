@@ -23,6 +23,7 @@ import 'widgets/hero_card.dart';
 import 'widgets/carrier_card.dart';
 import 'widgets/stats_card.dart';
 import 'widgets/subscription_card.dart';
+import '../checkin/checkin_card.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
@@ -240,6 +241,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       // ── Subscription info ───────────────────────────
                       const SizedBox(height: 16),
                       const RepaintBoundary(child: SubscriptionCard()),
+
+                      // ── Daily check-in ────────────────────────────
+                      const SizedBox(height: 12),
+                      const RepaintBoundary(child: CheckinCard()),
 
                       const SizedBox(height: 8),
                     ],

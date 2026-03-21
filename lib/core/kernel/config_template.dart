@@ -167,6 +167,86 @@ class ConfigTemplate {
     }
   }
 
+  /// Inject a proxy chain: set `dialer-proxy` on each node to form a chain.
+  ///
+  /// [chainNames] is ordered [entry, hop1, ..., exit].
+  /// Entry node has no dialer-proxy (direct out).
+  /// Each subsequent node gets `dialer-proxy: previous_node`.
+  ///
+  /// Clears any existing dialer-proxy fields first to avoid conflicts.
+  static String injectProxyChain(String config, List<String> chainNames) {
+    if (chainNames.length < 2) return config;
+    try {
+      final yaml = loadYaml(config);
+      if (yaml is! YamlMap) return config;
+      final mutable = _toMutable(yaml) as Map<String, dynamic>;
+
+      final proxies =
+          (mutable['proxies'] as List<dynamic>?)?.cast<dynamic>() ??
+              <dynamic>[];
+
+      // Build name→proxy index for quick lookup
+      final nameIndex = <String, int>{};
+      for (var i = 0; i < proxies.length; i++) {
+        if (proxies[i] is Map) {
+          nameIndex[proxies[i]['name'] as String? ?? ''] = i;
+        }
+      }
+
+      // 1. Clear ALL existing dialer-proxy (clean slate)
+      for (final proxy in proxies) {
+        if (proxy is Map<String, dynamic>) {
+          proxy.remove('dialer-proxy');
+        }
+      }
+
+      // 2. Set chain: from index 1 onwards, dialer-proxy = chainNames[i-1]
+      for (var i = 1; i < chainNames.length; i++) {
+        final idx = nameIndex[chainNames[i]];
+        if (idx != null && proxies[idx] is Map<String, dynamic>) {
+          (proxies[idx] as Map<String, dynamic>)['dialer-proxy'] =
+              chainNames[i - 1];
+        }
+      }
+
+      mutable['proxies'] = proxies;
+      return YamlWriter().write(mutable);
+    } catch (e) {
+      debugPrint('[ConfigTemplate] injectProxyChain error: $e');
+      return config;
+    }
+  }
+
+  /// Remove all `dialer-proxy` fields from proxies (disconnect chain).
+  static String removeProxyChain(String config) {
+    try {
+      final yaml = loadYaml(config);
+      if (yaml is! YamlMap) return config;
+      final mutable = _toMutable(yaml) as Map<String, dynamic>;
+
+      final proxies =
+          (mutable['proxies'] as List<dynamic>?)?.cast<dynamic>() ??
+              <dynamic>[];
+
+      var changed = false;
+      for (final proxy in proxies) {
+        if (proxy is Map<String, dynamic> && proxy.containsKey('dialer-proxy')) {
+          // Keep _upstream (that's the upstream proxy feature, not chain)
+          if (proxy['dialer-proxy'] == '_upstream') continue;
+          proxy.remove('dialer-proxy');
+          changed = true;
+        }
+      }
+
+      if (!changed) return config;
+      mutable['proxies'] = proxies;
+      return YamlWriter().write(mutable);
+    } catch (e) {
+      debugPrint('[ConfigTemplate] removeProxyChain error: $e');
+      return config;
+    }
+  }
+
   static dynamic _toMutable(dynamic value) {
     if (value is YamlMap) {
       return Map<String, dynamic>.fromEntries(

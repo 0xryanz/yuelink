@@ -8,6 +8,7 @@ import '../../../l10n/app_strings.dart';
 import '../../../shared/app_notifier.dart';
 import '../../../theme.dart';
 import '../group_type_label.dart';
+import '../../chain_proxy/chain_proxy_provider.dart';
 import '../protocol_color.dart';
 import '../providers/node_providers.dart';
 import '../providers/nodes_providers.dart';
@@ -363,6 +364,10 @@ class _NodeCardItemState extends ConsumerState<NodeCardItem> {
 
     return GestureDetector(
       onTap: _handleSelect,
+      onLongPress: () {
+        ref.read(chainProxyProvider.notifier).addNode(widget.name);
+        AppNotifier.info(S.of(context).chainAddHint);
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(

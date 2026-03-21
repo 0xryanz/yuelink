@@ -389,6 +389,15 @@ class CoreActions {
 }
 
 // ------------------------------------------------------------------
+// Recovery guard — prevents heartbeat/listeners from interfering
+// ------------------------------------------------------------------
+
+/// True while Android background→foreground recovery is in progress.
+/// Heartbeat and status listeners must check this before resetting state,
+/// otherwise they race with the recovery logic in _onAppResumed().
+final recoveryInProgressProvider = StateProvider<bool>((ref) => false);
+
+// ------------------------------------------------------------------
 // Core heartbeat — detects unexpected crashes
 // ------------------------------------------------------------------
 
@@ -404,6 +413,14 @@ final coreHeartbeatProvider = Provider<void>((ref) {
 
   var failures = 0;
   final timer = Timer.periodic(const Duration(seconds: 10), (_) async {
+    // Skip heartbeat while recovery is in progress — the recovery logic
+    // handles state transitions. Without this guard, heartbeat can
+    // accumulate failures during recovery and reset state prematurely.
+    if (ref.read(recoveryInProgressProvider)) {
+      debugPrint('[Heartbeat] skipped — recovery in progress');
+      return;
+    }
+
     // On iOS, Go core runs in the PacketTunnel extension process — FFI
     // isRunning only reflects the main process and is always false.
     // Use API availability as the sole health indicator on iOS.

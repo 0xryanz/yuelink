@@ -166,11 +166,22 @@ class ChainProxyNotifier extends Notifier<ChainProxyState> {
       final ok = await manager.api.reloadConfig(configPath, force: true);
       if (!ok) throw Exception('Config reload failed');
 
-      // 5. Wait briefly for mihomo to apply
-      await Future.delayed(const Duration(milliseconds: 300));
+      // 5. Wait for mihomo to finish reloading, then select relay with retry.
+      // force=true reload can take >300ms on large configs / slow devices.
+      await Future.delayed(const Duration(milliseconds: 400));
 
-      // 6. Select the relay group in activeGroup so traffic routes through the chain
-      await manager.api.changeProxy(resolvedGroup, '_YueLink_Chain_Relay');
+      // 6. Select the relay group — retry once if mihomo isn't ready yet.
+      bool selected = false;
+      for (var attempt = 0; attempt < 3 && !selected; attempt++) {
+        if (attempt > 0) await Future.delayed(const Duration(milliseconds: 300));
+        try {
+          await manager.api.changeProxy(resolvedGroup, '_YueLink_Chain_Relay');
+          selected = true;
+        } catch (e) {
+          debugPrint('[ChainProxy] changeProxy attempt ${attempt + 1} failed: $e');
+        }
+      }
+      if (!selected) throw Exception('changeProxy failed after retries');
 
       // 7. Refresh proxy groups
       ref.read(proxyGroupsProvider.notifier).refresh();

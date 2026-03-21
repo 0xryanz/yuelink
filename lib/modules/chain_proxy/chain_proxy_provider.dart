@@ -130,11 +130,20 @@ class ChainProxyNotifier extends Notifier<ChainProxyState> {
       return;
     }
 
-    // Snapshot the currently selected node before we overwrite it
-    final groupName = state.activeGroup;
-    final previousNode = groupName != null
-        ? ref.read(groupSelectedNodeProvider(groupName))
-        : null;
+    // Resolve activeGroup: use saved value or fall back to first selector group.
+    final resolvedGroup = state.activeGroup ??
+        ref
+            .read(proxyGroupsProvider)
+            .where((g) => g.type.toLowerCase() == 'selector')
+            .firstOrNull
+            ?.name;
+    if (resolvedGroup == null || resolvedGroup.isEmpty) {
+      AppNotifier.error(S.current.chainNoGroup);
+      return;
+    }
+
+    // Snapshot the currently selected node before we overwrite it.
+    final previousNode = ref.read(groupSelectedNodeProvider(resolvedGroup));
 
     state = state.copyWith(loading: true);
     try {
@@ -147,12 +156,8 @@ class ChainProxyNotifier extends Notifier<ChainProxyState> {
       }
       var config = await configFile.readAsString();
 
-      // 2. Inject chain (relay group scoped to activeGroup)
-      final injectGroup = groupName ?? '';
-      if (injectGroup.isEmpty) {
-        throw Exception('No active group selected');
-      }
-      config = ConfigTemplate.injectProxyChain(config, state.nodes, injectGroup);
+      // 2. Inject chain (relay group scoped to resolvedGroup)
+      config = ConfigTemplate.injectProxyChain(config, state.nodes, resolvedGroup);
 
       // 3. Write back
       await configFile.writeAsString(config);
@@ -165,15 +170,16 @@ class ChainProxyNotifier extends Notifier<ChainProxyState> {
       await Future.delayed(const Duration(milliseconds: 300));
 
       // 6. Select the relay group in activeGroup so traffic routes through the chain
-      if (groupName != null) {
-        await manager.api.changeProxy(groupName, '_YueLink_Chain_Relay');
-      }
+      await manager.api.changeProxy(resolvedGroup, '_YueLink_Chain_Relay');
 
       // 7. Refresh proxy groups
       ref.read(proxyGroupsProvider.notifier).refresh();
 
       state = state.copyWith(
-          connected: true, loading: false, previousNode: previousNode);
+          connected: true,
+          loading: false,
+          activeGroup: resolvedGroup,
+          previousNode: previousNode);
       AppNotifier.success(S.current.chainConnected);
     } catch (e) {
       debugPrint('[ChainProxy] connect error: $e');

@@ -794,6 +794,7 @@ class S {
   String get chainDisconnected => _e ? 'Proxy chain disconnected' : '链式代理已断开';
   String get chainConnectFailed => _e ? 'Chain connect failed' : '链路连接失败';
   String get chainNeedConnect => _e ? 'Connect VPN first' : '请先连接 VPN';
+  String get chainNoGroup => _e ? 'No proxy group available' : '未找到可用策略组';
   String get chainNeedTwoNodes => _e ? 'Need 2+ nodes' : '至少需要 2 个节点';
   String get chainNodeDuplicate => _e ? 'Node already in chain' : '节点已在链路中';
   String get chainClear => _e ? 'Clear' : '清空';

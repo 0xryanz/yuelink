@@ -147,7 +147,7 @@ class ChainProxyNotifier extends Notifier<ChainProxyState> {
 
     state = state.copyWith(loading: true);
     try {
-      // 1. Read current running config
+      // 1. Read current running config from disk
       final appDir = await getApplicationSupportDirectory();
       final configPath = '${appDir.path}/${AppConstants.configFileName}';
       final configFile = File(configPath);
@@ -159,11 +159,11 @@ class ChainProxyNotifier extends Notifier<ChainProxyState> {
       // 2. Inject chain (relay group scoped to resolvedGroup)
       config = ConfigTemplate.injectProxyChain(config, state.nodes, resolvedGroup);
 
-      // 3. Write back
+      // 3. Push YAML content directly to mihomo (avoids disk write + path reload
+      //    which can fail due to YAML round-trip corruption or path issues).
+      //    Also write back to disk so the file stays in sync for next start.
+      await manager.api.pushConfig(config);
       await configFile.writeAsString(config);
-
-      // 4. Reload mihomo (throws MihomoApiException with body on failure)
-      await manager.api.reloadConfig(configPath, force: true);
 
       // 5. Wait for mihomo to finish reloading, then select relay with retry.
       // force=true reload can take >300ms on large configs / slow devices.
@@ -214,8 +214,8 @@ class ChainProxyNotifier extends Notifier<ChainProxyState> {
       if (configFile.existsSync()) {
         var config = await configFile.readAsString();
         config = ConfigTemplate.removeProxyChain(config);
+        await manager.api.pushConfig(config);
         await configFile.writeAsString(config);
-        await manager.api.reloadConfig(configPath, force: true);
         await Future.delayed(const Duration(milliseconds: 300));
       }
 

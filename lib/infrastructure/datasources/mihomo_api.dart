@@ -165,9 +165,7 @@ class MihomoApi {
     }
   }
 
-  /// Reload config from file. Set [force] to true to force reload.
-  /// Throws [MihomoApiException] with the response body on failure so callers
-  /// can surface the actual mihomo parse / validation error.
+  /// Reload config from file path. Throws [MihomoApiException] on failure.
   Future<bool> reloadConfig(String path, {bool force = false}) async {
     final resp = await _put(
       '/configs?force=$force',
@@ -175,6 +173,19 @@ class MihomoApi {
     );
     if (resp.statusCode == 204 || resp.statusCode == 200) return true;
     throw MihomoApiException(resp.statusCode, resp.body);
+  }
+
+  /// Push a config YAML string directly to mihomo without touching the disk.
+  /// Preferred over [reloadConfig] for runtime patches (e.g. chain proxy)
+  /// because it avoids YAML round-trip corruption from file read/write.
+  Future<void> pushConfig(String yamlContent, {bool force = true}) async {
+    final resp = await _put(
+      '/configs?force=$force',
+      body: {'payload': yamlContent},
+    );
+    if (resp.statusCode != 204 && resp.statusCode != 200) {
+      throw MihomoApiException(resp.statusCode, resp.body);
+    }
   }
 
   // ------------------------------------------------------------------

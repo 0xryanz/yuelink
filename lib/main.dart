@@ -184,12 +184,24 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
   /// Guard to prevent onWindowClose from interfering during programmatic quit.
   bool _isQuitting = false;
 
+  /// Guard to prevent VPN revocation callback from resetting state during
+  /// Android engine-recreate recovery. Without this, onVpnRevoked can fire
+  /// during _onAppResumed() and race with the recovery logic.
+  bool _isRecovering = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     if (Platform.isAndroid) {
       VpnService.listenForRevocation(() {
+        // Skip if recovery is in progress — the recovery logic will handle
+        // state correctly. Without this guard, onVpnRevoked races with
+        // _onAppResumed() on engine recreate and resets state prematurely.
+        if (_isRecovering) {
+          debugPrint('[App] VPN revoked during recovery — ignoring');
+          return;
+        }
         debugPrint('[App] VPN revoked — resetting state');
         ref.read(coreStatusProvider.notifier).state = CoreStatus.stopped;
         ref.read(trafficProvider.notifier).state = const Traffic();
@@ -351,6 +363,7 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     //    background but the VPN service + Go core survive. On resume, the
     //    engine is recreated with default state (stopped), but the core is alive.
     if (status != CoreStatus.running) {
+      _isRecovering = true;
       try {
         final coreAlive = manager.isCoreActuallyRunning;
         final apiOk = coreAlive ? await manager.api.isAvailable() : false;
@@ -361,6 +374,8 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
           ref.read(coreStatusProvider.notifier).state = CoreStatus.running;
           // Clear any stale startup error from previous session
           ref.read(coreStartupErrorProvider.notifier).state = null;
+          // Also reset the user-stopped flag so the UI shows connected state
+          ref.read(userStoppedProvider.notifier).state = false;
           // Kick off streams and data refresh
           ref.invalidate(trafficStreamProvider);
           ref.invalidate(memoryStreamProvider);
@@ -370,6 +385,8 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
         }
       } catch (e) {
         debugPrint('[AppLifecycle] recovery check failed: $e');
+      } finally {
+        _isRecovering = false;
       }
       return;
     }
@@ -766,8 +783,10 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
 
 // ── Auth gate ──────────────────────────────────────────────────────────────────
 
-/// Shows login page when not authenticated, main shell when logged in.
-/// On first login, shows onboarding before main shell.
+/// Gate flow: Onboarding (first launch) → Login → MainShell.
+///
+/// Onboarding is shown BEFORE the login page so first-time users see the
+/// product intro regardless of auth state. This works on all platforms.
 ///
 /// Auth state and onboarding flag are pre-loaded in main() to eliminate
 /// blank screen flashes on Android engine recreate (background→foreground).
@@ -776,9 +795,19 @@ class _AuthGate extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authProvider);
     final hasSeenOnboarding = ref.watch(hasSeenOnboardingProvider);
 
+    // 1. Onboarding first — before login, on ALL platforms
+    if (!hasSeenOnboarding) {
+      return OnboardingPage(
+        onComplete: () {
+          ref.read(hasSeenOnboardingProvider.notifier).state = true;
+        },
+      );
+    }
+
+    // 2. Auth check
+    final authState = ref.watch(authProvider);
     switch (authState.status) {
       case AuthStatus.unknown:
         // With pre-loaded auth, this should never show. Keep as safety fallback.
@@ -787,13 +816,6 @@ class _AuthGate extends ConsumerWidget {
         return const YueAuthPage();
       case AuthStatus.loggedIn:
       case AuthStatus.guest:
-        if (!hasSeenOnboarding) {
-          return OnboardingPage(
-            onComplete: () {
-              ref.read(hasSeenOnboardingProvider.notifier).state = true;
-            },
-          );
-        }
         return const MainShell();
     }
   }

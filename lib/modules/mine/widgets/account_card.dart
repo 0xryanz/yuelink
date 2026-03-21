@@ -187,7 +187,7 @@ class _ProfileContent extends ConsumerWidget {
           ),
           const SizedBox(height: 10),
 
-          // ── Remaining + expiry row ────────────────────────────
+          // ── Remaining + devices + expiry row ─────────────────
           Row(
             children: [
               // Remaining
@@ -209,6 +209,27 @@ class _ProfileContent extends ConsumerWidget {
                   ],
                 ),
               ),
+              // Devices online
+              if (profile.deviceLimit != null) ...[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(s.mineDevices,
+                          style: YLText.caption
+                              .copyWith(color: YLColors.zinc500)),
+                      const SizedBox(height: 2),
+                      Text(
+                        _deviceText(profile),
+                        style: YLText.label.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: _deviceColor(profile, isDark),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               // Expiry
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -271,6 +292,20 @@ class _ProfileContent extends ConsumerWidget {
     final d = p.daysRemaining;
     if (d != null && d <= 7) return Colors.orange;
     return YLColors.zinc500;
+  }
+
+  String _deviceText(UserProfile p) {
+    final online = p.onlineCount ?? 0;
+    final limit = p.deviceLimit;
+    if (limit == null || limit <= 0) return '$online';
+    return '$online / $limit';
+  }
+
+  Color _deviceColor(UserProfile p, bool isDark) {
+    final online = p.onlineCount ?? 0;
+    final limit = p.deviceLimit;
+    if (limit != null && limit > 0 && online >= limit) return Colors.orange;
+    return isDark ? Colors.white : YLColors.zinc900;
   }
 
   void _showChangePasswordDialog(BuildContext context, WidgetRef ref) {

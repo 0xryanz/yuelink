@@ -649,6 +649,7 @@ class S {
   String get mineSpeedUp => _e ? 'Upload' : '上传';
   String get mineSpeedDown => _e ? 'Download' : '下载';
   String get mineRemaining => _e ? 'Remaining' : '剩余';
+  String get mineDevices => _e ? 'Devices' : '设备在线';
   String get mineActions => _e ? 'Quick Actions' : '快捷操作';
   String get mineChangePassword => _e ? 'Change Password' : '修改密码';
   String get mineTelegramGroup => _e ? 'Join Telegram Group' : '加入 Telegram 群';

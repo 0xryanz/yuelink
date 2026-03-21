@@ -546,6 +546,10 @@ class UserProfile {
   final int? expiredAt; // unix timestamp
   final String? email;
   final String? uuid;
+  /// Number of devices currently online — XBoard field: online_count
+  final int? onlineCount;
+  /// Maximum allowed devices — from nested plan.device_limit
+  final int? deviceLimit;
 
   UserProfile({
     this.planId,
@@ -556,6 +560,8 @@ class UserProfile {
     this.expiredAt,
     this.email,
     this.uuid,
+    this.onlineCount,
+    this.deviceLimit,
   });
 
   /// Remaining traffic in bytes.
@@ -591,6 +597,11 @@ class UserProfile {
   }
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
+    // device_limit may be at top level or nested under plan object
+    int? deviceLimit = _toInt(json['device_limit']);
+    if (deviceLimit == null && json['plan'] is Map) {
+      deviceLimit = _toInt((json['plan'] as Map)['device_limit']);
+    }
     return UserProfile(
       planId: _toInt(json['plan_id']),
       planName: _extractPlanName(json),
@@ -600,6 +611,8 @@ class UserProfile {
       expiredAt: _toInt(json['expired_at']),
       email: json['email'] as String?,
       uuid: json['uuid'] as String?,
+      onlineCount: _toInt(json['online_count']),
+      deviceLimit: deviceLimit,
     );
   }
 
@@ -629,6 +642,8 @@ class UserProfile {
         if (expiredAt != null) 'expired_at': expiredAt,
         if (email != null) 'email': email,
         if (uuid != null) 'uuid': uuid,
+        if (onlineCount != null) 'online_count': onlineCount,
+        if (deviceLimit != null) 'device_limit': deviceLimit,
       };
 }
 

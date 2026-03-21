@@ -438,7 +438,7 @@ class _ChainPickerSheetState extends ConsumerState<_ChainPickerSheet> {
                           subtitle: group.type,
                           inChain: chainNodes.contains(group.name),
                           isDark: isDark,
-                          onTap: () => _add(group.name),
+                          onTap: () => _toggle(group.name),
                         ),
                       const SizedBox(height: 4),
                     ],
@@ -468,7 +468,7 @@ class _ChainPickerSheetState extends ConsumerState<_ChainPickerSheet> {
                             subtitle: null,
                             inChain: chainNodes.contains(nodeName),
                             isDark: isDark,
-                            onTap: () => _add(nodeName),
+                            onTap: () => _toggle(nodeName),
                           ),
                       ],
                     ],
@@ -479,9 +479,15 @@ class _ChainPickerSheetState extends ConsumerState<_ChainPickerSheet> {
     );
   }
 
-  void _add(String name) {
-    ref.read(chainProxyProvider.notifier).addNode(name);
-    AppNotifier.info(S.current.chainAddHint);
+  void _toggle(String name) {
+    final notifier = ref.read(chainProxyProvider.notifier);
+    final nodes = ref.read(chainProxyProvider).nodes;
+    if (nodes.contains(name)) {
+      notifier.removeNode(nodes.indexOf(name));
+    } else {
+      notifier.addNode(name);
+      AppNotifier.info(S.current.chainAddHint);
+    }
   }
 }
 
@@ -539,7 +545,7 @@ class _PickerItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: inChain ? null : onTap,
+      onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 6),
         padding:
@@ -554,8 +560,8 @@ class _PickerItem extends StatelessWidget {
           border: Border.all(
             color: inChain
                 ? (isDark
-                    ? Colors.white.withValues(alpha: 0.04)
-                    : Colors.black.withValues(alpha: 0.04))
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : Colors.black.withValues(alpha: 0.06))
                 : (isDark
                     ? Colors.white.withValues(alpha: 0.08)
                     : Colors.black.withValues(alpha: 0.06)),
@@ -580,9 +586,7 @@ class _PickerItem extends StatelessWidget {
                     style: YLText.body.copyWith(
                       color: inChain
                           ? YLColors.zinc400
-                          : (isDark
-                              ? Colors.white
-                              : YLColors.zinc900),
+                          : (isDark ? Colors.white : YLColors.zinc900),
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -600,8 +604,8 @@ class _PickerItem extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             if (inChain)
-              Icon(Icons.check_circle_rounded,
-                  size: 16, color: YLColors.connected.withValues(alpha: 0.6))
+              Icon(Icons.remove_circle_rounded,
+                  size: 16, color: YLColors.error.withValues(alpha: 0.7))
             else
               Icon(Icons.add_rounded,
                   size: 16,

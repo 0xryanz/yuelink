@@ -410,6 +410,11 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Battery optimization: pause WebSocket streams and reduce heartbeat
+    // frequency when the app goes to background.
+    ref.read(appInBackgroundProvider.notifier).state =
+        state != AppLifecycleState.resumed;
+
     if (state == AppLifecycleState.resumed) {
       // On Android, the first resume after engine recreate is already handled
       // by addPostFrameCallback. Without this guard, _onAppResumed() runs

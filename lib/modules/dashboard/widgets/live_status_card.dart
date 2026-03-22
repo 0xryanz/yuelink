@@ -3,7 +3,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../domain/models/traffic_history.dart';
 import '../../../l10n/app_strings.dart';
 import '../../../providers/core_provider.dart';
 import '../../../shared/traffic_formatter.dart';
@@ -31,44 +30,27 @@ class LiveStatusCard extends ConsumerStatefulWidget {
 }
 
 class _LiveStatusCardState extends ConsumerState<LiveStatusCard> {
-  TrafficHistory? _frozenHistory;
-
-  @override
-  void initState() {
-    super.initState();
-    Future.microtask(() {
-      ref.listenManual(trafficChartLockedProvider, (prev, next) {
-        if (next && _frozenHistory == null) {
-          _frozenHistory = ref.read(trafficHistoryProvider).copy();
-        } else if (!next && _frozenHistory != null) {
-          _frozenHistory = null;
-        }
-      });
-    });
-  }
+  /// Frozen chart snapshot — stores only the downsampled points (60 doubles)
+  /// instead of copying the entire ring buffer (3600 doubles).
+  List<double>? _frozenDown;
 
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // ── ExitIP data ─────────────────────────────────────────────────────────
-    final ipAsync = ref.watch(exitIpInfoProvider);
-    final aiAsync = ref.watch(aiUnlockTestProvider);
-    final info = ipAsync.valueOrNull;
-    final isIpLoading = ipAsync.isLoading;
-    final aiInfo = aiAsync.valueOrNull;
-
     // ── Traffic chart data ───────────────────────────────────────────────────
+    // ExitIP / AI watches moved into _IpHeader (ConsumerWidget) so that
+    // traffic updates (1 Hz) don't rebuild the IP header unnecessarily.
     ref.watch(trafficHistoryVersionProvider);
     final liveHistory = ref.read(trafficHistoryProvider);
     final range = ref.watch(trafficChartRangeProvider);
     final locked = ref.watch(trafficChartLockedProvider);
     final traffic = ref.watch(trafficProvider);
 
-    final history =
-        locked && _frozenHistory != null ? _frozenHistory! : liveHistory;
-    final downHistory = history.downSampled(seconds: range);
+    final downHistory = locked && _frozenDown != null
+        ? _frozenDown!
+        : liveHistory.downSampled(seconds: range);
 
     return GestureDetector(
       onTap: () {
@@ -91,15 +73,8 @@ class _LiveStatusCardState extends ConsumerState<LiveStatusCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── IP header ─────────────────────────────────────────────────
-            _IpHeader(
-              s: s,
-              isDark: isDark,
-              info: info,
-              isLoading: isIpLoading,
-              hasError: ipAsync.hasError,
-              aiInfo: aiInfo,
-            ),
+            // ── IP header (isolated ConsumerWidget — not rebuilt by traffic) ──
+            _IpHeaderConsumer(isDark: isDark),
 
             const SizedBox(height: 10),
             Divider(
@@ -156,10 +131,15 @@ class _LiveStatusCardState extends ConsumerState<LiveStatusCard> {
                   onTap: () {
                     final nowLocked = ref.read(trafficChartLockedProvider);
                     if (!nowLocked) {
-                      _frozenHistory =
-                          ref.read(trafficHistoryProvider).copy();
+                      // Snapshot only the downsampled points (~60 doubles)
+                      // instead of copying the full ring buffer (3600 doubles).
+                      _frozenDown = List<double>.from(
+                        ref.read(trafficHistoryProvider).downSampled(
+                              seconds: ref.read(trafficChartRangeProvider),
+                            ),
+                      );
                     } else {
-                      _frozenHistory = null;
+                      _frozenDown = null;
                     }
                     ref
                         .read(trafficChartLockedProvider.notifier)
@@ -187,7 +167,30 @@ class _LiveStatusCardState extends ConsumerState<LiveStatusCard> {
   }
 }
 
-// ── IP Header ────────────────────────────────────────────────────────────────
+// ── IP Header (Consumer wrapper) ─────────────────────────────────────────────
+
+/// Isolates ExitIP + AI watches so they don't trigger LiveStatusCard rebuilds.
+class _IpHeaderConsumer extends ConsumerWidget {
+  final bool isDark;
+  const _IpHeaderConsumer({required this.isDark});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = S.of(context);
+    final ipAsync = ref.watch(exitIpInfoProvider);
+    final aiAsync = ref.watch(aiUnlockTestProvider);
+    return _IpHeader(
+      s: s,
+      isDark: isDark,
+      info: ipAsync.valueOrNull,
+      isLoading: ipAsync.isLoading,
+      hasError: ipAsync.hasError,
+      aiInfo: aiAsync.valueOrNull,
+    );
+  }
+}
+
+// ── IP Header (pure StatelessWidget) ─────────────────────────────────────────
 
 class _IpHeader extends StatelessWidget {
   final S s;

@@ -2,7 +2,6 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../domain/models/traffic_history.dart';
 import '../../../l10n/app_strings.dart';
 import '../../../providers/core_provider.dart';
 import '../../../shared/traffic_formatter.dart';
@@ -20,22 +19,9 @@ class ChartCard extends ConsumerStatefulWidget {
 }
 
 class _ChartCardState extends ConsumerState<ChartCard> {
-  TrafficHistory? _frozenHistory;
-
-  @override
-  void initState() {
-    super.initState();
-    // Listen for lock toggle — capture/release snapshot outside build()
-    Future.microtask(() {
-      ref.listenManual(trafficChartLockedProvider, (prev, next) {
-        if (next && _frozenHistory == null) {
-          _frozenHistory = ref.read(trafficHistoryProvider).copy();
-        } else if (!next && _frozenHistory != null) {
-          _frozenHistory = null;
-        }
-      });
-    });
-  }
+  /// Frozen chart snapshot — stores only the downsampled points (~60 doubles)
+  /// instead of copying the entire ring buffer (3600 doubles).
+  List<double>? _frozenDown;
 
   @override
   Widget build(BuildContext context) {
@@ -49,8 +35,9 @@ class _ChartCardState extends ConsumerState<ChartCard> {
     final locked = ref.watch(trafficChartLockedProvider);
     final traffic = ref.watch(trafficProvider);
 
-    final history = locked && _frozenHistory != null ? _frozenHistory! : liveHistory;
-    final downHistory = history.downSampled(seconds: range);
+    final downHistory = locked && _frozenDown != null
+        ? _frozenDown!
+        : liveHistory.downSampled(seconds: range);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -89,10 +76,14 @@ class _ChartCardState extends ConsumerState<ChartCard> {
                 onTap: () {
                   final nowLocked = ref.read(trafficChartLockedProvider);
                   if (!nowLocked) {
-                    // Capture snapshot before locking
-                    _frozenHistory = ref.read(trafficHistoryProvider).copy();
+                    // Snapshot only the downsampled points (~60 doubles)
+                    _frozenDown = List<double>.from(
+                      ref.read(trafficHistoryProvider).downSampled(
+                            seconds: ref.read(trafficChartRangeProvider),
+                          ),
+                    );
                   } else {
-                    _frozenHistory = null;
+                    _frozenDown = null;
                   }
                   ref.read(trafficChartLockedProvider.notifier).state = !nowLocked;
                 },

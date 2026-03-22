@@ -18,6 +18,15 @@ import '../infrastructure/datasources/mihomo_api.dart';
 export '../modules/dashboard/providers/traffic_providers.dart';
 
 // ------------------------------------------------------------------
+// App background state (battery optimization)
+// ------------------------------------------------------------------
+
+/// True when the app is in the background (paused/hidden/inactive).
+/// Stream providers watch this to pause WebSocket connections and reduce
+/// heartbeat frequency, significantly reducing battery drain on Android.
+final appInBackgroundProvider = StateProvider<bool>((ref) => false);
+
+// ------------------------------------------------------------------
 // Core state
 // ------------------------------------------------------------------
 
@@ -433,9 +442,14 @@ final coreHeartbeatProvider = Provider<void>((ref) {
   final manager = CoreManager.instance;
   if (manager.isMockMode) return; // mock never crashes
 
+  // Battery optimization: reduce heartbeat frequency when app is in background.
+  // 10s foreground → 60s background. Re-evaluates when appInBackgroundProvider changes.
+  final inBackground = ref.watch(appInBackgroundProvider);
+  final interval = Duration(seconds: inBackground ? 60 : 10);
+
   var failures = 0;
   var proxyCheckTick = 0;
-  final timer = Timer.periodic(const Duration(seconds: 10), (_) async {
+  final timer = Timer.periodic(interval, (_) async {
     // Skip heartbeat while recovery is in progress — the recovery logic
     // handles state transitions. Without this guard, heartbeat can
     // accumulate failures during recovery and reset state prematurely.

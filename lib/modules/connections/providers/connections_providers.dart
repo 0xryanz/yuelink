@@ -22,7 +22,11 @@ final connectionsSnapshotProvider =
 
 final connectionsStreamProvider = Provider<void>((ref) {
   final status = ref.watch(coreStatusProvider);
-  if (status != CoreStatus.running) {
+
+  // Battery optimization: pause connections WebSocket when app is in background.
+  final inBackground = ref.watch(appInBackgroundProvider);
+
+  if (status != CoreStatus.running || inBackground) {
     // Clear connections and search query on disconnect
     ref.read(connectionsSnapshotProvider.notifier).state =
         const ConnectionsSnapshot(

@@ -94,6 +94,12 @@ final trafficStreamProvider = Provider<void>((ref) {
   final status = ref.watch(coreStatusProvider);
   if (status != CoreStatus.running) return;
 
+  // Battery optimization: pause traffic WebSocket when app is in background.
+  // The stream auto-reconnects when appInBackgroundProvider flips back to false
+  // because Riverpod re-evaluates this provider on any watched state change.
+  final inBackground = ref.watch(appInBackgroundProvider);
+  if (inBackground) return;
+
   final manager = CoreManager.instance;
   // Shared history instance — mutated in-place, version bump triggers rebuilds.
   final history = ref.read(trafficHistoryProvider);
@@ -131,6 +137,10 @@ final trafficStreamProvider = Provider<void>((ref) {
 final memoryStreamProvider = Provider<void>((ref) {
   final status = ref.watch(coreStatusProvider);
   if (status != CoreStatus.running) return;
+
+  // Battery optimization: pause memory WebSocket when app is in background.
+  final inBackground = ref.watch(appInBackgroundProvider);
+  if (inBackground) return;
 
   final manager = CoreManager.instance;
   if (manager.isMockMode) return;

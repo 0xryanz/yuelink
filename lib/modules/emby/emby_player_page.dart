@@ -172,8 +172,6 @@ class _EmbyPlayerPageState extends State<EmbyPlayerPage> {
       body: MaterialVideoControlsTheme(
         normal: MaterialVideoControlsThemeData(
           seekOnDoubleTap: true,
-          seekOnDoubleTapForwardDuration: const Duration(seconds: 10),
-          seekOnDoubleTapBackwardDuration: const Duration(seconds: 10),
           volumeGesture: true,
           brightnessGesture: true,
           seekGesture: true,

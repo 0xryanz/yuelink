@@ -155,7 +155,6 @@ class AuthNotifier extends Notifier<AuthState> {
         profile = sub.profile;
         await _authService.cacheProfile(profile);
         await _authService.saveSubscribeUrl(sub.subscribeUrl);
-        // Auto-sync subscription config in background (errors handled inside)
         _syncSubscription(sub.subscribeUrl).catchError((e) {
           debugPrint('[Auth] Background sync failed: $e');
         });
@@ -168,6 +167,12 @@ class AuthNotifier extends Notifier<AuthState> {
         token: token,
         userProfile: profile,
       );
+
+      // If profile fetch failed during login, retry in background so the
+      // dashboard doesn't stay stuck on "暂无订阅".
+      if (profile == null) {
+        _refreshUserInfo(token);
+      }
 
       return true;
     } on XBoardApiException catch (e) {

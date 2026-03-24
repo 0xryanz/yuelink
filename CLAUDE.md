@@ -22,6 +22,20 @@ flutter build apk|ios|macos|windows                # Release builds
 ```
 
 Go >= 1.22 required for core compilation. Flutter >= 3.22, Dart >= 3.4. CI uses Flutter 3.27.4, Go 1.23.
+Xcode >= 15 for iOS/macOS builds. Android NDK r26+ for Android builds.
+
+**macOS universal binary** (two separate arch builds, then `install` merges via `lipo`):
+```bash
+dart setup.dart build -p macos -a arm64
+dart setup.dart build -p macos -a x86_64
+dart setup.dart install -p macos
+```
+
+**Quick start without Go core** (mock mode — full UI development):
+```bash
+git clone --recursive https://github.com/onesyue/yuelink.git && cd yuelink
+flutter pub get && flutter run
+```
 
 ## Architecture
 
@@ -55,6 +69,7 @@ Do not move code between layers without a reason. When adding new features, use 
 - **`lib/services/`** — `VpnService` (MethodChannel), `MihomoApi` (REST on port 9090), `MihomoStream` (WebSocket for traffic/logs), `CoreManager` (lifecycle singleton — handles VPN internally per platform), `ProfileService` (static methods for profile CRUD + config loading), `OverwriteService` (config merging), `ConfigTemplate` (config processing with ensure-pattern injection), `SettingsService` (JSON file in Application Support with atomic tmp+rename write; ensures parent directory exists before write), `GeoDataService` (pre-downloads GeoIP/GeoSite files before core start), `AppNotifier` (global toast/snackbar), `UpdateChecker` (checks GitHub releases, downloads update files with progress, opens platform installer — Android via FileProvider+Intent, macOS/Windows via system open), `WebdavService` (backup/sync).
 - **`lib/theme.dart`** — Design system: `YLColors` (zinc palette + semantic colors), `YLText` (typography), `YLSpacing`/`YLRadius`, `YLShadow` (context-aware for dark mode), reusable widgets (`YLSurface`, `YLStatusDot`, `YLChip`, `YLDelayBadge`, `YLPillSegmentedControl`, etc.).
 - **`lib/l10n/app_strings.dart`** — Hand-written `S` class for i18n. Both Chinese and English via `_e ? 'en' : 'zh'` ternaries. No code generation. Use `S.of(context)` in widgets, `S.current` in providers/services without BuildContext.
+- **`lib/constants.dart`** — `AppConstants` (static consts: appName, packageName, ports, etc.) + `appVersionProvider` (reads version from `pubspec.yaml` at runtime via `package_info_plus`). No hardcoded version string — `pubspec.yaml` is the single source of truth. CI passes `--build-name` with `-pre` suffix for pre-release builds, so `appVersionProvider` automatically returns `1.0.5-pre` vs `1.0.5`.
 
 ### Modules layer (`lib/modules/`)
 
@@ -70,6 +85,7 @@ Do not move code between layers without a reason. When adding new features, use 
 | `profiles/` | Profile list page + providers |
 | `connections/`, `logs/` | Sub-pages / providers |
 | `settings/` | Settings shell page (我的 page), `sub/general_settings_page.dart` (preferences sub-page with theme, language, routing, split tunnel on Android), `web_page.dart` (in-app WebView) |
+| `checkin/` | Daily check-in: `CheckinRepository` (standalone API at `yue.yuebao.website`, separate from XBoard), `CheckinNotifier` (tracks local vs other-device check-in via `SettingsService`), `CheckinCard` widget, `CheckinResult` model. App check-in uses `v2_user.app_sign` field — independent from Telegram Bot check-in (`user_account.sign`). Each system allows one check-in per day; rewards (random traffic or balance) stack. **Server**: Python FastAPI on `23.80.91.14:8011`, authenticates by calling XBoard `/api/v1/user/info` **directly** (`http://66.55.76.208:8001`, NOT through CloudFront — CloudFront→origin is unreliable and XBoard nginx blocks non-CF traffic + python-urllib UA). XBoard API does NOT return `id` in user info — server resolves user by `email` from DB. Midnight reset (APScheduler `Asia/Shanghai`) clears `app_sign` for all users. **Client**: `_isAlreadyCheckedError` must only match genuine "already checked" messages — never match auth/server errors. `CheckinRepository._assertSuccess` must reject all non-2xx HTTP status codes to prevent treating 502 as successful check-in. |
 | `onboarding/` | First-launch tutorial PageView (mobile only) |
 | `updater/` | Version checking & update UI (skeleton, migrating from `lib/services/update_checker.dart`) |
 | `yue_account/` | Account details, member status, device list (skeleton, future repository layer) |

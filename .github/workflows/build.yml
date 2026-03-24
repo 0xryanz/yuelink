@@ -129,6 +129,7 @@ jobs:
             libsecret-1-dev libstdc++-12-dev \
             libkeybinder-3.0-dev \
             libayatana-appindicator3-dev \
+            libasound2-dev libmpv-dev \
             pkg-config cmake clang
 
       # ── Build ─────────────────────────────────────────────────────────────
@@ -540,6 +541,7 @@ jobs:
             libsecret-1-dev libstdc++-12-dev \
             libkeybinder-3.0-dev \
             libayatana-appindicator3-dev \
+            libasound2-dev libmpv-dev \
             pkg-config cmake clang
 
       - run: dart setup.dart install -p linux

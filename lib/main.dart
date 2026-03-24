@@ -35,6 +35,8 @@ import 'core/platform/vpn_service.dart';
 import 'core/storage/auth_token_service.dart';
 import 'services/profile_service.dart';
 import 'core/storage/settings_service.dart';
+import 'modules/emby/emby_providers.dart';
+import 'modules/emby/emby_web_page.dart';
 import 'theme.dart';
 
 /// Global navigator key for deep-link navigation outside widget tree.
@@ -95,7 +97,8 @@ void main() async {
   // ── Crash logging ────────────────────────────────────────────────────────
   _setupCrashLogging();
 
-  // Restore persisted settings
+  // Restore persisted settings — single disk read, then all sync from cache.
+  await SettingsService.load();
   final savedTheme = await SettingsService.getThemeMode();
   final savedProfileId = await SettingsService.getActiveProfileId();
   final savedRoutingMode = await SettingsService.getRoutingMode();
@@ -241,7 +244,7 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    if (Platform.isAndroid) {
+    if (Platform.isAndroid || Platform.isIOS) {
       _setupVpnRevocationListener();
     }
     if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
@@ -463,8 +466,20 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     if (status != CoreStatus.running) {
       ref.read(recoveryInProgressProvider.notifier).state = true;
       try {
-        final coreAlive = manager.isCoreActuallyRunning;
-        final apiOk = coreAlive ? await manager.api.isAvailable() : false;
+        // On iOS the Go core runs in the PacketTunnel extension process;
+        // isCoreActuallyRunning (FFI IsRunning) always returns false in the
+        // main app. Check the REST API directly instead.
+        final bool coreAlive;
+        final bool apiOk;
+        if (Platform.isIOS) {
+          apiOk = await manager.api
+              .isAvailable()
+              .timeout(const Duration(seconds: 2), onTimeout: () => false);
+          coreAlive = apiOk;
+        } else {
+          coreAlive = manager.isCoreActuallyRunning;
+          apiOk = coreAlive ? await manager.api.isAvailable() : false;
+        }
         if (coreAlive && apiOk) {
           debugPrint('[AppLifecycle] core alive but Dart state was $status — recovering');
           // Restore Dart state + ports to match reality
@@ -933,6 +948,8 @@ class MainShell extends ConsumerStatefulWidget {
   static const tabProxies   = 1;
   static const tabStore     = 2;
   static const tabSettings  = 3;
+  /// Virtual — tapping this opens the in-app 悦视频 WebView; does not switch IndexedStack.
+  static const tabEmby      = 4;
 
   static void switchToTab(BuildContext context, int index) {
     context.findAncestorStateOfType<_MainShellState>()?.switchTab(index);
@@ -947,6 +964,10 @@ class _MainShellState extends ConsumerState<MainShell> {
   late final Map<int, bool> _builtTabs;
 
   void switchTab(int index) {
+    if (index == MainShell.tabEmby) {
+      _openEmby();
+      return;
+    }
     setState(() {
       _currentIndex = index;
       _builtTabs[index] = true;
@@ -954,6 +975,22 @@ class _MainShellState extends ConsumerState<MainShell> {
     SettingsService.setLastTabIndex(index);
     SettingsService.setBuiltTabs(
       _builtTabs.keys.where((k) => _builtTabs[k] == true).toList(),
+    );
+  }
+
+  Future<void> _openEmby() async {
+    final s = S.of(context);
+    ref.invalidate(embyProvider);
+    AppNotifier.info(s.mineEmbyOpening);
+    final emby = await ref.read(embyProvider.future);
+    if (!mounted) return;
+    if (emby == null || !emby.hasAccess) {
+      AppNotifier.warning(s.mineEmbyNoAccess);
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => EmbyWebPage(url: emby.launchUrl!)),
     );
   }
 
@@ -1043,6 +1080,7 @@ class _MainShellState extends ConsumerState<MainShell> {
         ),
       ),
       bottomNavigationBar: NavigationBar(
+        // tabEmby (4) is virtual — keep selectedIndex on the real current tab.
         selectedIndex: _currentIndex,
         onDestinationSelected: (i) => switchTab(i),
         destinations: mobileItems
@@ -1135,7 +1173,7 @@ class _Sidebar extends StatelessWidget {
 
           const Spacer(),
 
-          // ── Settings at bottom ────────────────────────────────
+          // ── 我的 at bottom ────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
             child: _SidebarItem(

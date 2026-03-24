@@ -16,11 +16,20 @@ class SubscriptionCard extends ConsumerWidget {
     final s = S.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final profile = ref.watch(userProfileProvider);
+    final isLoggedIn =
+        ref.watch(authProvider.select((a) => a.status == AuthStatus.loggedIn));
 
     return GestureDetector(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const StorePage()),
-      ),
+      onTap: () {
+        if (profile == null && isLoggedIn) {
+          // Profile still loading — trigger manual refresh.
+          ref.read(authProvider.notifier).syncSubscription();
+          return;
+        }
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const StorePage()),
+        );
+      },
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -35,24 +44,36 @@ class SubscriptionCard extends ConsumerWidget {
           boxShadow: YLShadow.card(context),
         ),
         child: profile == null
-            ? _emptyState(s, isDark)
+            ? _emptyState(s, isDark, loading: isLoggedIn)
             : _profileContent(s, isDark, profile),
       ),
     );
   }
 
-  Widget _emptyState(S s, bool isDark) {
+  Widget _emptyState(S s, bool isDark, {bool loading = false}) {
     return Row(
       children: [
-        const Icon(Icons.card_membership_outlined,
-            size: 16, color: YLColors.zinc400),
+        Icon(
+          loading ? Icons.sync_rounded : Icons.card_membership_outlined,
+          size: 16,
+          color: YLColors.zinc400,
+        ),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(s.dashNoPlan,
-              style: YLText.body.copyWith(color: YLColors.zinc400)),
+          child: Text(
+            loading ? s.mineSyncing : s.dashNoPlan,
+            style: YLText.body.copyWith(color: YLColors.zinc400),
+          ),
         ),
-        const Icon(Icons.chevron_right_rounded,
-            size: 16, color: YLColors.zinc400),
+        if (loading)
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        else
+          const Icon(Icons.chevron_right_rounded,
+              size: 16, color: YLColors.zinc400),
       ],
     );
   }

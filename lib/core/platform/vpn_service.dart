@@ -155,7 +155,7 @@ class VpnService {
   /// Called when the system or another app revokes our VPN permission.
   /// Call this once during app initialization.
   static void listenForRevocation(VoidCallback onRevoked) {
-    if (!Platform.isAndroid) return;
+    if (!Platform.isAndroid && !Platform.isIOS) return;
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'vpnRevoked') {
         debugPrint('[VpnService] VPN revoked by system');

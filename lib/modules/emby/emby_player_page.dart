@@ -174,9 +174,6 @@ class _EmbyPlayerPageState extends State<EmbyPlayerPage> {
           seekOnDoubleTap: true,
           volumeGesture: true,
           brightnessGesture: true,
-          seekGesture: true,
-          speedUpOnLongPress: true,
-          speedUpFactor: 2.0,
           topButtonBar: [
             IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded,

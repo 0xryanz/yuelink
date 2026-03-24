@@ -40,6 +40,11 @@ dependencies:
   media_kit_libs_video: ^1.0.5
   media_kit_libs_ios_video: ^1.0.5
 
+dependency_overrides:
+  # volume_controller >=3.4 requires Flutter 3.29+ (FlutterSceneLifeCycleDelegate).
+  # Pin to 3.3.x for Flutter 3.27.4 CI compatibility.
+  volume_controller: '>=3.3.0 <3.4.0'
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

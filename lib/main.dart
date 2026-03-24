@@ -241,7 +241,7 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    if (Platform.isAndroid) {
+    if (Platform.isAndroid || Platform.isIOS) {
       _setupVpnRevocationListener();
     }
     if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
@@ -463,8 +463,20 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     if (status != CoreStatus.running) {
       ref.read(recoveryInProgressProvider.notifier).state = true;
       try {
-        final coreAlive = manager.isCoreActuallyRunning;
-        final apiOk = coreAlive ? await manager.api.isAvailable() : false;
+        // On iOS the Go core runs in the PacketTunnel extension process;
+        // isCoreActuallyRunning (FFI IsRunning) always returns false in the
+        // main app. Check the REST API directly instead.
+        final bool coreAlive;
+        final bool apiOk;
+        if (Platform.isIOS) {
+          apiOk = await manager.api
+              .isAvailable()
+              .timeout(const Duration(seconds: 2), onTimeout: () => false);
+          coreAlive = apiOk;
+        } else {
+          coreAlive = manager.isCoreActuallyRunning;
+          apiOk = coreAlive ? await manager.api.isAvailable() : false;
+        }
         if (coreAlive && apiOk) {
           debugPrint('[AppLifecycle] core alive but Dart state was $status — recovering');
           // Restore Dart state + ports to match reality

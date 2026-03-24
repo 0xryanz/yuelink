@@ -259,6 +259,11 @@ Future<void> buildCore({
       env['CGO_CFLAGS'] = '-isysroot $sdkPath -arch arm64 -miphoneos-version-min=15.0';
       env['CGO_LDFLAGS'] = '-isysroot $sdkPath -arch arm64 -miphoneos-version-min=15.0';
       buildMode = 'c-archive';
+      // with_gvisor: required for TUN fd mode (file-descriptor) on iOS.
+      // Same requirement as Android — without it, mihomo fails to initialize
+      // the gVisor userspace TCP/IP stack when config has "stack: gvisor",
+      // causing the PacketTunnel extension to crash after reporting connected.
+      extraArgs = ['-tags', 'with_gvisor'];
       break;
 
     // -----------------------------------------------------------------

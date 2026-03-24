@@ -7,6 +7,11 @@ import NetworkExtension
     private let appGroup = "group.com.yueto.yuelink"
     private var vpnManager: NETunnelProviderManager?
     private var vpnStatusObserver: NSObjectProtocol?
+    /// Persistent observer installed after a successful VPN connection.
+    /// Fires vpnRevoked to Flutter when the tunnel drops unexpectedly.
+    private var backgroundVpnObserver: NSObjectProtocol?
+    /// Channel reference kept alive so we can send unsolicited messages (vpnRevoked).
+    private var vpnChannel: FlutterMethodChannel?
 
     override func application(
         _ application: UIApplication,
@@ -21,6 +26,7 @@ import NetworkExtension
             name: "com.yueto.yuelink/vpn",
             binaryMessenger: controller.binaryMessenger
         )
+        vpnChannel = channel
 
         channel.setMethodCallHandler { [weak self] call, result in
             switch call.method {
@@ -138,6 +144,7 @@ import NetworkExtension
                                 NotificationCenter.default.removeObserver(obs)
                                 self?.vpnStatusObserver = nil
                             }
+                            self?.startBackgroundVpnObserver(session: session)
                             result(true)
                         case .disconnected, .invalid:
                             done = true
@@ -173,7 +180,37 @@ import NetworkExtension
         }
     }
 
+    /// Install a persistent observer that fires `vpnRevoked` to Flutter when
+    /// the tunnel drops unexpectedly (killed by system, permission revoked, etc.).
+    /// Safe to call multiple times — removes the previous observer first.
+    private func startBackgroundVpnObserver(session: NETunnelProviderSession) {
+        if let old = backgroundVpnObserver {
+            NotificationCenter.default.removeObserver(old)
+            backgroundVpnObserver = nil
+        }
+        backgroundVpnObserver = NotificationCenter.default.addObserver(
+            forName: .NEVPNStatusDidChange,
+            object: session,
+            queue: .main
+        ) { [weak self] _ in
+            let status = session.status
+            guard status == .disconnected || status == .invalid else { return }
+            NSLog("[VPN] Unexpected disconnect (status=%d) — notifying Flutter", status.rawValue)
+            if let obs = self?.backgroundVpnObserver {
+                NotificationCenter.default.removeObserver(obs)
+                self?.backgroundVpnObserver = nil
+            }
+            self?.vpnChannel?.invokeMethod("vpnRevoked", arguments: nil)
+        }
+    }
+
     private func stopVpn(result: @escaping FlutterResult) {
+        // Remove background observer BEFORE stopping — prevents a false vpnRevoked
+        // notification for the intentional disconnect we are about to trigger.
+        if let obs = backgroundVpnObserver {
+            NotificationCenter.default.removeObserver(obs)
+            backgroundVpnObserver = nil
+        }
         // 真实状态闭环：处理 App 被杀后台后 vpnManager 丢失的情况
         if let manager = vpnManager {
             manager.connection.stopVPNTunnel()

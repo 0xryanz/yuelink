@@ -311,14 +311,38 @@ class CoreManager {
       await _step(steps, 'waitApi', StartupError.apiTimeout, () async {
         if (isMockMode) return 'skip (mock)';
         for (var i = 1; i <= 50; i++) {
+          // Fast-fail: if Go core died (panic / crash after StartCore returned),
+          // stop polling immediately instead of waiting the full 5s.
+          if (!_core.isRunning) {
+            throw Exception(
+                'Core is no longer running at attempt $i — check core.log for crash/parse details');
+          }
           if (await api.isAvailable()) {
             return 'ready after $i attempts';
           }
           await Future.delayed(const Duration(milliseconds: 100));
         }
+        // All 50 attempts exhausted. Gather diagnostics before throwing.
+        final goRunning = _core.isRunning;
+        String portState;
+        try {
+          final sock = await Socket.connect(
+            '127.0.0.1', _apiPort,
+            timeout: const Duration(milliseconds: 300),
+          );
+          sock.destroy();
+          portState = 'port $_apiPort IS listening (HTTP not responding — secret mismatch or non-200?)';
+        } on SocketException catch (e) {
+          portState = 'port $_apiPort NOT listening (${e.osError?.message ?? e.message}) '
+              '— external-controller may not have started (config parse failed/fallback?)';
+        } catch (e) {
+          portState = 'port $_apiPort probe error: $e';
+        }
         _running = false;
         _core.stop();
-        throw Exception('API not available after 50 attempts (5s)');
+        throw Exception(
+            'API not available after 50 attempts (5s): '
+            'isRunning=$goRunning, $portState');
       });
 
       // ── Step 8: verify ─────────────────────────────────────────────
@@ -418,6 +442,11 @@ class CoreManager {
         _api = null;
         _stream = null;
         return 'len=${processed.length}, apiPort=$_apiPort';
+      });
+
+      await _step(steps, 'ensureGeo', StartupError.geoFilesFailed, () async {
+        final installed = await GeoDataService.ensureFiles();
+        return 'installed=$installed';
       });
 
       await _step(steps, 'startIosVpn', StartupError.coreStartFailed, () async {

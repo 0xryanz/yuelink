@@ -8,9 +8,12 @@ import "C"
 import (
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 	"unsafe"
 
 	"github.com/metacubex/mihomo/component/resolver"
@@ -136,25 +139,23 @@ func StartCore(configStr *C.char) (result *C.char) {
 	// Log key config sections for diagnostics
 	logConfigDiag(configYaml)
 
-	// Parse and apply config via hub.Parse (starts everything).
-	// If parsing fails (bad YAML, missing geo files, invalid rules, etc.),
-	// fall back to mihomo's default config so the core always starts.
+	// Parse and apply config via hub.Parse (starts everything: proxies, rules,
+	// DNS, external-controller REST API, TUN listener, etc.).
+	// Returns an error if the config YAML is invalid, geo files are missing,
+	// or any critical listener fails to start.
 	log.Infoln("[CORE] calling hub.Parse()...")
 	if err := hub.Parse([]byte(configYaml)); err != nil {
-		log.Warnln("[CORE] hub.Parse failed: %v — falling back to default config", err)
-		defaultCfg, defaultErr := config.ParseRawConfig(config.DefaultRawConfig())
-		if defaultErr != nil {
-			log.Errorln("[CORE] default config fallback also failed: %v", defaultErr)
-			return C.CString(fmt.Sprintf("parse config: %v (default fallback also failed: %v)", err, defaultErr))
-		}
-		hub.ApplyConfig(defaultCfg)
-		log.Warnln("[CORE] running with default config (no proxies/rules)")
-	} else {
-		log.Infoln("[CORE] hub.Parse OK")
+		log.Errorln("[CORE] hub.Parse failed: %v", err)
+		return C.CString(fmt.Sprintf("parse config: %v", err))
 	}
+	log.Infoln("[CORE] hub.Parse OK")
 
-	// Post-startup diagnostics
-	logPostStartDiag()
+	// Post-startup diagnostics (pass the actual external-controller address)
+	ecAddr := "127.0.0.1:9090"
+	if m := regexp.MustCompile(`(?m)^external-controller:\s*(.+)$`).FindStringSubmatch(configYaml); len(m) > 1 {
+		ecAddr = strings.TrimSpace(m[1])
+	}
+	logPostStartDiag(ecAddr)
 
 	state.isRunning = true
 	log.Infoln("[CORE] YueLink core started successfully")
@@ -289,6 +290,14 @@ func FreeCString(s *C.char) {
 
 // logConfigDiag logs key sections of the config YAML for debugging.
 func logConfigDiag(yaml string) {
+	// Log external-controller address — critical for REST API availability
+	reEC := regexp.MustCompile(`(?m)^external-controller:\s*(.+)$`)
+	if m := reEC.FindStringSubmatch(yaml); len(m) > 1 {
+		log.Infoln("[Diag] external-controller: %s", strings.TrimSpace(m[1]))
+	} else {
+		log.Errorln("[Diag] No external-controller in config — REST API will NOT start!")
+	}
+
 	// Log TUN section
 	if idx := strings.Index(yaml, "\ntun:"); idx >= 0 {
 		end := findSectionEnd(yaml, idx+1)
@@ -339,7 +348,8 @@ func findSectionEnd(yaml string, start int) int {
 }
 
 // logPostStartDiag logs the state of key subsystems after startup.
-func logPostStartDiag() {
+// ecAddr is the external-controller address from the config (e.g. "127.0.0.1:9090").
+func logPostStartDiag(ecAddr string) {
 	// Check DNS resolver
 	if resolver.DefaultResolver != nil {
 		log.Infoln("[Diag] DNS DefaultResolver: initialized")
@@ -356,6 +366,24 @@ func logPostStartDiag() {
 	tunConf := listener.LastTunConf
 	log.Infoln("[Diag] TUN enabled=%v fd=%d stack=%s dns-hijack=%v",
 		tunConf.Enable, tunConf.FileDescriptor, tunConf.Stack, tunConf.DNSHijack)
+
+	// Verify external-controller port is actually listening.
+	// hub.Parse starts it in a goroutine; probe after a short settle time
+	// to catch silent bind failures (port in use, permission denied, etc.).
+	// Runs in a goroutine because StartCore holds the state lock — we must
+	// not block here, and the probe is diagnostic-only (does not affect startup).
+	go func() {
+		// Give route.ReCreateServer 500ms to bind the listening socket.
+		time.Sleep(500 * time.Millisecond)
+		conn, err := net.DialTimeout("tcp", ecAddr, 2*time.Second)
+		if err != nil {
+			log.Errorln("[Diag] external-controller %s NOT reachable after 500ms: %v", ecAddr, err)
+			log.Errorln("[Diag] REST API unavailable — Dart waitApi will time out!")
+		} else {
+			conn.Close()
+			log.Infoln("[Diag] external-controller %s is listening OK", ecAddr)
+		}
+	}()
 }
 
 // Required main for c-shared/c-archive build mode

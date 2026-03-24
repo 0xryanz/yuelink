@@ -48,7 +48,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             }
 
             guard let self = self else {
-                completionHandler(nil)
+                completionHandler(TunnelError.startFailed)
                 return
             }
 
@@ -58,22 +58,25 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
     /// Find the TUN file descriptor created by NEPacketTunnelProvider.
     /// Scans open fds for a utun device (public API, no private KVC).
+    /// Takes the LAST (highest-numbered) utun found — our tunnel is the most
+    /// recently created one, so it has the highest fd among any open utuns.
     /// Results are cached — invalidate with `cachedTunFd = -1` on error.
     private func findTunFd() -> Int32 {
         if cachedTunFd > 0 { return cachedTunFd }
         var buf = [CChar](repeating: 0, count: Int(IFNAMSIZ))
+        var found: Int32 = -1
         for fd: Int32 in 3...4096 {
             var len = socklen_t(buf.count)
             // SYSPROTO_CONTROL = 2, UTUN_OPT_IFNAME = 2
             if getsockopt(fd, 2, 2, &buf, &len) == 0 {
                 let name = String(cString: buf)
                 if name.hasPrefix("utun") {
-                    cachedTunFd = fd
-                    return fd
+                    found = fd  // keep updating — we want the highest fd
                 }
             }
         }
-        return -1
+        if found > 0 { cachedTunFd = found }
+        return found
     }
 
     /// Inject TUN configuration into the mihomo config YAML.
@@ -406,15 +409,16 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         }
 
         // Inject TUN fd so mihomo reads packets from the system VPN tunnel.
-        // Without this, mihomo only listens on mixed-port but no traffic
-        // reaches it because NEPacketTunnelProvider routes at the IP level.
+        // Without this fd, no traffic is processed — fail early rather than
+        // silently running a broken tunnel that appears connected but drops all packets.
         let tunFd = findTunFd()
-        if tunFd > 0 {
-            NSLog("[PacketTunnel] Found TUN fd: %d", tunFd)
-            configYaml = injectTunConfig(configYaml, fd: tunFd)
-        } else {
-            NSLog("[PacketTunnel] WARNING: Could not find TUN fd")
+        guard tunFd > 0 else {
+            NSLog("[PacketTunnel] ERROR: Could not find TUN fd — refusing to start broken tunnel")
+            completionHandler(TunnelError.noTunFd)
+            return
         }
+        NSLog("[PacketTunnel] Found TUN fd: %d", tunFd)
+        configYaml = injectTunConfig(configYaml, fd: tunFd)
 
         // Initialize Go core with home directory
         let initResultPtr = homeDir.withCString { ptr in
@@ -476,6 +480,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 enum TunnelError: LocalizedError {
     case noAppGroup
     case noConfig
+    case noTunFd
     case initFailed
     case startFailed
 
@@ -483,6 +488,7 @@ enum TunnelError: LocalizedError {
         switch self {
         case .noAppGroup:  return "Cannot access App Group container"
         case .noConfig:    return "No config found in App Group — start from main app first"
+        case .noTunFd:     return "Could not find TUN file descriptor — VPN tunnel not ready"
         case .initFailed:  return "mihomo InitCore failed"
         case .startFailed: return "mihomo StartCore failed"
         }

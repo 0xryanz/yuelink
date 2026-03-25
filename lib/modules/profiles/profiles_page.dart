@@ -544,17 +544,29 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   /// File names (without extension) are used as profile names automatically.
   Future<void> _importLocalFile(BuildContext context, WidgetRef ref) async {
     final s = S.of(context);
+    // Use FileType.any because Android doesn't register YAML MIME type —
+    // FileType.custom with ['yaml','yml'] causes the picker to show nothing
+    // or not open at all on many devices. Filter by extension in code instead.
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['yaml', 'yml'],
+      type: FileType.any,
       allowMultiple: true,
       withData: true,
     );
     if (result == null || result.files.isEmpty) return;
 
+    // Filter to YAML files only (user may have picked non-YAML files)
+    final yamlFiles = result.files.where((f) {
+      final ext = f.name.toLowerCase();
+      return ext.endsWith('.yaml') || ext.endsWith('.yml') || ext.endsWith('.txt');
+    }).toList();
+    if (yamlFiles.isEmpty) {
+      if (context.mounted) AppNotifier.error(s.importLocalFileFailed);
+      return;
+    }
+
     // Single file → show name dialog (existing UX)
-    if (result.files.length == 1) {
-      final file = result.files.first;
+    if (yamlFiles.length == 1) {
+      final file = yamlFiles.first;
       final bytes = file.bytes;
       if (bytes == null) return;
       String content;
@@ -617,7 +629,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     // Multiple files → batch import, use filenames as names
     final repo = ref.read(profileRepositoryProvider);
     int ok = 0, failed = 0;
-    for (final file in result.files) {
+    for (final file in yamlFiles) {
       final bytes = file.bytes;
       if (bytes == null) { failed++; continue; }
       try {

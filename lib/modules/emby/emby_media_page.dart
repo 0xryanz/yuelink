@@ -30,6 +30,16 @@ class _Library {
         return Icons.folder_outlined;
     }
   }
+
+  /// IncludeItemTypes for this library's content query.
+  String get includeItemTypes {
+    switch (type) {
+      case 'music':
+        return 'MusicAlbum';
+      default:
+        return 'Movie,Series';
+    }
+  }
 }
 
 class _Item {
@@ -109,12 +119,23 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
   bool _loadingLibs = true;
   bool _loadingItems = false;
   String? _error;
+  String _query = '';
 
   /// Per-library item cache — switching tabs is instant on revisit.
   final Map<String, List<_Item>> _itemsCache = {};
 
   List<_Item>? get _items =>
       _selectedId != null ? _itemsCache[_selectedId] : null;
+
+  List<_Item> get _filteredItems {
+    final items = _items;
+    if (items == null) return const [];
+    if (_query.isEmpty) return items;
+    final q = _query.toLowerCase();
+    return items
+        .where((i) => i.name.toLowerCase().contains(q))
+        .toList();
+  }
 
   @override
   void initState() {
@@ -183,15 +204,17 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
       return;
     }
     setState(() => _loadingItems = true);
+    final lib = _libraries?.firstWhere((l) => l.id == libraryId,
+        orElse: () => _Library(id: libraryId, name: '', type: ''));
     try {
       final data = await _api.get('/emby/Users/${widget.userId}/Items', {
         'parentId': libraryId,
-        'Limit': '200',
+        'Limit': '2000',
         'SortBy': 'SortName',
         'SortOrder': 'Ascending',
         'Fields': 'ImageTags,BackdropImageTags,Overview,CommunityRating,Genres,RunTimeTicks',
         'Recursive': 'true',
-        'IncludeItemTypes': 'Movie,Series',
+        'IncludeItemTypes': lib?.includeItemTypes ?? 'Movie,Series',
       });
       if (!mounted) return;
       final items = (data['Items'] as List<dynamic>)
@@ -251,6 +274,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
             icon: const Icon(Icons.refresh_rounded, color: Colors.white70),
             onPressed: () {
               _itemsCache.clear();
+              setState(() => _query = '');
               _loadLibraries();
             },
           ),
@@ -275,7 +299,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildLibraryTabs(),
-        const SizedBox(height: 4),
+        _buildSearchBar(),
         Expanded(child: _buildItemsArea()),
       ],
     );
@@ -295,7 +319,10 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
           return GestureDetector(
             onTap: () {
               if (_selectedId == lib.id) return;
-              setState(() => _selectedId = lib.id);
+              setState(() {
+                _selectedId = lib.id;
+                _query = '';
+              });
               _loadItems(lib.id);
             },
             child: AnimatedContainer(
@@ -331,30 +358,71 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
     );
   }
 
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+      child: TextField(
+        onChanged: (v) => setState(() => _query = v),
+        style: const TextStyle(color: Colors.white, fontSize: 14),
+        decoration: InputDecoration(
+          hintText: '搜索...',
+          hintStyle: TextStyle(color: EmbyTheme.textSecondary(context), fontSize: 14),
+          prefixIcon: Icon(Icons.search_rounded, color: EmbyTheme.textSecondary(context), size: 18),
+          suffixIcon: _query.isNotEmpty
+              ? GestureDetector(
+                  onTap: () => setState(() => _query = ''),
+                  child: Icon(Icons.close_rounded, color: EmbyTheme.textSecondary(context), size: 18),
+                )
+              : null,
+          filled: true,
+          fillColor: EmbyTheme.pillUnselected(context),
+          contentPadding: const EdgeInsets.symmetric(vertical: 8),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: BorderSide.none,
+          ),
+          isDense: true,
+        ),
+      ),
+    );
+  }
+
   Widget _buildItemsArea() {
     if (_loadingItems) {
       return const Center(
           child: CircularProgressIndicator(color: Colors.white54));
     }
-    final items = _items;
-    if (items == null || items.isEmpty) {
-      return const Center(
-        child: Text('暂无内容', style: TextStyle(color: Colors.white38)),
+    final items = _filteredItems;
+    if (items.isEmpty) {
+      return Center(
+        child: Text(
+          _query.isNotEmpty ? '无匹配结果' : '暂无内容',
+          style: const TextStyle(color: Colors.white38),
+        ),
       );
     }
     final screenWidth = MediaQuery.of(context).size.width;
     final cols = screenWidth > 1200 ? 7 : screenWidth > 900 ? 5 : screenWidth > 600 ? 4 : 3;
     final hPad = screenWidth > 900 ? (screenWidth - 900) / 2 + 16 : 12.0;
-    return GridView.builder(
-      padding: EdgeInsets.fromLTRB(hPad, 4, hPad, 24),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: cols,
-        childAspectRatio: 2 / 3,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
+    return RefreshIndicator(
+      color: Colors.white70,
+      backgroundColor: EmbyTheme.appBarBg(context),
+      onRefresh: () async {
+        _itemsCache.remove(_selectedId);
+        setState(() => _query = '');
+        if (_selectedId != null) await _loadItems(_selectedId!);
+      },
+      child: GridView.builder(
+        padding: EdgeInsets.fromLTRB(hPad, 4, hPad, 24),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: cols,
+          childAspectRatio: 2 / 3,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+        ),
+        itemCount: items.length,
+        itemBuilder: (_, i) => _buildItemCard(items[i]),
       ),
-      itemCount: items.length,
-      itemBuilder: (_, i) => _buildItemCard(items[i]),
     );
   }
 

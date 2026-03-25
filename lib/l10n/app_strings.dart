@@ -261,7 +261,6 @@ class S {
   String exportProfileSuccess(String name) =>
       _e ? 'Exported: $name.yaml' : '已导出: $name.yaml';
   String get exportAllProfiles => _e ? 'Export all configs' : '导出全部订阅配置';
-  String get importAllProfiles => _e ? 'Import backup (.json)' : '导入备份文件 (.json)';
   String get importMultipleFiles => _e ? 'Import config files' : '导入配置文件';
   String get exportFailed => _e ? 'Export failed' : '导出失败';
   String get exportSelectDir => _e ? 'Select export folder' : '选择导出目录';

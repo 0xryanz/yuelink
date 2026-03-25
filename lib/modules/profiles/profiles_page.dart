@@ -112,8 +112,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                         _exportAllProfiles(context, ref);
                       case 'import_files':
                         _importLocalFile(context, ref);
-                      case 'import_backup':
-                        _importAllProfiles(context, ref);
                     }
                   },
                   itemBuilder: (_) => [
@@ -124,11 +122,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                     PopupMenuItem(
                       value: 'import_files',
                       child: _menuItem(Icons.file_upload_outlined, s.importMultipleFiles),
-                    ),
-                    const PopupMenuDivider(),
-                    PopupMenuItem(
-                      value: 'import_backup',
-                      child: _menuItem(Icons.download_for_offline_outlined, s.importAllProfiles),
                     ),
                   ],
                 ),
@@ -743,58 +736,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   /// Preserves emoji and Unicode, strips only filesystem-unsafe characters.
   static String _safeFileName(String name) {
     return name.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1f]'), '_').trim();
-  }
-
-  /// Import profiles from a previously exported JSON bundle.
-  Future<void> _importAllProfiles(BuildContext context, WidgetRef ref) async {
-    final s = S.of(context);
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['json'],
-      withData: true,
-    );
-    if (result == null || result.files.isEmpty) return;
-    final bytes = result.files.first.bytes;
-    if (bytes == null) return;
-
-    Map<String, dynamic> bundle;
-    try {
-      final jsonStr = utf8.decode(bytes);
-      bundle = jsonDecode(jsonStr) as Map<String, dynamic>;
-      if (bundle['version'] != 1 || bundle['profiles'] is! List) {
-        throw const FormatException('invalid bundle');
-      }
-    } catch (_) {
-      if (context.mounted) AppNotifier.error(s.importBundleFailed);
-      return;
-    }
-
-    final profileList = bundle['profiles'] as List;
-    final repo = ref.read(profileRepositoryProvider);
-    int ok = 0, failed = 0;
-    for (final entry in profileList) {
-      try {
-        final name = (entry['name'] as String?)?.trim() ?? s.importLocalNameHint;
-        final config = (entry['config'] as String?) ?? '';
-        final url = (entry['url'] as String?) ?? '';
-        final intervalHours = (entry['updateIntervalHours'] as int?) ?? 24;
-        if (config.isEmpty) {
-          failed++;
-          continue;
-        }
-        final profile = await repo.addLocalProfile(
-          name: name.isEmpty ? s.importLocalNameHint : name,
-          configContent: config,
-          url: url,
-          updateInterval: Duration(hours: intervalHours),
-        );
-        ref.read(profilesProvider.notifier).addLocal(profile);
-        ok++;
-      } catch (_) {
-        failed++;
-      }
-    }
-    if (context.mounted) AppNotifier.success(s.importAllResult(ok, failed));
   }
 
   // ── Config viewer ─────────────────────────────────────────────────

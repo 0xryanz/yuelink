@@ -31,16 +31,20 @@ class HeroBanner extends ConsumerStatefulWidget {
 }
 
 class _HeroBannerState extends ConsumerState<HeroBanner> {
+  /// Large multiplier so user can swipe left/right freely (infinite loop feel).
+  static const _kMultiplier = 1000;
   late final PageController _pageController;
-  int _currentPage = 0;
+  int _realPage = 0;
   Timer? _timer;
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController();
-    // Auto-advance every 4 seconds
-    _timer = Timer.periodic(const Duration(seconds: 4), (_) => _advance());
+    // Start in the middle so user can swipe both directions.
+    final items = ref.read(heroBannerItemsProvider);
+    final initialPage = items.isEmpty ? 0 : _kMultiplier ~/ 2 * items.length;
+    _pageController = PageController(initialPage: initialPage);
+    _startAutoAdvance();
   }
 
   @override
@@ -50,13 +54,18 @@ class _HeroBannerState extends ConsumerState<HeroBanner> {
     super.dispose();
   }
 
+  void _startAutoAdvance() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) => _advance());
+  }
+
   void _advance() {
     if (!mounted) return;
     final items = ref.read(heroBannerItemsProvider);
     if (items.length <= 1) return;
-    final next = (_currentPage + 1) % items.length;
+    final nextPage = (_pageController.page?.round() ?? 0) + 1;
     _pageController.animateToPage(
-      next,
+      nextPage,
       duration: const Duration(milliseconds: 400),
       curve: Curves.easeInOut,
     );
@@ -79,16 +88,25 @@ class _HeroBannerState extends ConsumerState<HeroBanner> {
           borderRadius: BorderRadius.circular(YLRadius.xl),
           child: SizedBox(
             height: 110,
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: items.length,
-              onPageChanged: (i) => setState(() => _currentPage = i),
-              itemBuilder: (context, index) {
-                return _BannerSlide(
-                  item: items[index],
-                  onTap: () => _handleAction(items[index]),
-                );
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (n) {
+                if (n is ScrollStartNotification && n.dragDetails != null) {
+                  _startAutoAdvance(); // reset timer on manual swipe
+                }
+                return false;
               },
+              child: PageView.builder(
+                controller: _pageController,
+                itemCount: items.length <= 1 ? items.length : items.length * _kMultiplier,
+                onPageChanged: (i) => setState(() => _realPage = i % items.length),
+                itemBuilder: (context, index) {
+                  final i = index % items.length;
+                  return _BannerSlide(
+                    item: items[i],
+                    onTap: () => _handleAction(items[i]),
+                  );
+                },
+              ),
             ),
           ),
         ),
@@ -99,7 +117,7 @@ class _HeroBannerState extends ConsumerState<HeroBanner> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(items.length, (i) {
-              final active = i == _currentPage;
+              final active = i == _realPage;
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 250),
                 width: active ? 16 : 6,

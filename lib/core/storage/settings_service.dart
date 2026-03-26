@@ -229,8 +229,8 @@ class SettingsService {
     final key = _dateKey(DateTime.now());
     final settings = await load();
     return {
-      'up': (settings['traffic_up_$key'] as int?) ?? 0,
-      'down': (settings['traffic_down_$key'] as int?) ?? 0,
+      'up': (settings['traffic_up_$key'] as num?)?.toInt() ?? 0,
+      'down': (settings['traffic_down_$key'] as num?)?.toInt() ?? 0,
     };
   }
 
@@ -347,7 +347,7 @@ class SettingsService {
   static Future<List<int>> getBuiltTabs() async {
     final list = await get<List>('builtTabs');
     if (list == null) return [0];
-    return list.cast<int>();
+    return list.map((e) => (e as num).toInt()).toList();
   }
 
   static Future<void> setBuiltTabs(List<int> tabs) async {

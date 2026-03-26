@@ -136,7 +136,7 @@ class _SmartSelectSheetState extends ConsumerState<_SmartSelectSheet> {
     // Show age label when a cached result is visible and not actively refreshing.
     final showCacheAge = cache != null && !state.isTesting;
     // Show a "refreshing" badge when background-refreshing a stale cache.
-    final showRefreshing = state.isTesting && cache != null && state.testedCount == 0;
+    final showRefreshing = state.isTesting && cache != null;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 12, 4),
@@ -239,7 +239,8 @@ class _SmartSelectSheetState extends ConsumerState<_SmartSelectSheet> {
                 // Reset guard so toggling back on allows a fresh auto-apply.
                 if (v) _applied = false;
               }),
-              activeColor: isDark ? YLColors.zinc300 : YLColors.zinc700,
+              activeTrackColor: isDark ? YLColors.zinc600 : YLColors.zinc300,
+              thumbColor: WidgetStatePropertyAll(isDark ? YLColors.zinc300 : YLColors.zinc700),
             ),
           ),
         ],

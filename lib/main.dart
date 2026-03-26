@@ -97,6 +97,10 @@ final initialBuiltTabsProvider = Provider<List<int>>((ref) => [0]);
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // ── Image cache limit (prevent 1GB+ memory from decoded bitmaps) ──
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 100 * 1024 * 1024;
+  PaintingBinding.instance.imageCache.maximumSize = 200;
+
   // ── Error logging (local crash.log + optional remote Sentry/Crashlytics) ──
   ErrorLogger.init();
 
@@ -1055,7 +1059,6 @@ class _MainShellState extends ConsumerState<MainShell> {
         ),
       ),
       bottomNavigationBar: NavigationBar(
-        // tabEmby (4) is virtual — keep selectedIndex on the real current tab.
         selectedIndex: _currentIndex,
         onDestinationSelected: (i) => switchTab(i),
         destinations: mobileItems
@@ -1246,8 +1249,21 @@ class _EmbyTabPage extends ConsumerWidget {
       loading: () => const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       ),
-      error: (_, __) => Scaffold(
-        body: Center(child: Text(s.mineEmbyNoAccess)),
+      error: (e, __) => Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(e.toString(), textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: () => ref.invalidate(embyProvider),
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: Text(s.retry),
+              ),
+            ],
+          ),
+        ),
       ),
       data: (info) {
         if (info == null || !info.hasAccess) {

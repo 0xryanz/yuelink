@@ -73,59 +73,60 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
           // ── Repair actions ──
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-            child: Text('修复工具',
+            child: Text(s.repairTools,
                 style: YLText.caption.copyWith(
                     letterSpacing: 1.2,
                     fontWeight: FontWeight.w600,
                     color: YLColors.zinc400)),
           ),
           _Card(isDark: isDark, children: [
-            _ActionRow(
-              icon: Icons.vpn_key_outlined,
-              label: '重建 VPN 配置',
-              subtitle: '删除旧 VPN 隧道，下次连接时重新创建并弹出系统授权',
-              isDark: isDark,
-              busy: _busy,
-              onTap: () => _run('重建 VPN', () async {
-                final ok = await VpnService.resetVpnProfile();
-                return ok;
-              }),
-            ),
-            Divider(height: 1, color: divColor),
-            _ActionRow(
-              icon: Icons.delete_sweep_outlined,
-              label: '清除隧道配置',
-              subtitle: '删除 App Group 中的 config.yaml 和 GEO 数据，强制重新生成',
-              isDark: isDark,
-              busy: _busy,
-              onTap: () => _run('清除配置', () async {
-                final ok = await VpnService.clearAppGroupConfig();
-                return ok;
-              }),
-            ),
-            Divider(height: 1, color: divColor),
+            if (Platform.isIOS) ...[
+              _ActionRow(
+                icon: Icons.vpn_key_outlined,
+                label: s.repairRebuildVpn,
+                subtitle: s.repairRebuildVpnHint,
+                isDark: isDark,
+                busy: _busy,
+                onTap: () => _run(s.repairRebuildVpn, () async {
+                  final ok = await VpnService.resetVpnProfile();
+                  return ok;
+                }),
+              ),
+              Divider(height: 1, color: divColor),
+              _ActionRow(
+                icon: Icons.delete_sweep_outlined,
+                label: s.repairClearTunnel,
+                subtitle: s.repairClearTunnelHint,
+                isDark: isDark,
+                busy: _busy,
+                onTap: () => _run('清除配置', () async {
+                  final ok = await VpnService.clearAppGroupConfig();
+                  return ok;
+                }),
+              ),
+              Divider(height: 1, color: divColor),
+            ],
             _ActionRow(
               icon: Icons.sync_outlined,
-              label: '重新同步订阅',
-              subtitle: '重新从服务端拉取订阅配置并解析',
+              label: s.repairResync,
+              subtitle: s.repairResyncHint,
               isDark: isDark,
               busy: _busy,
               onTap: () => _run('同步订阅', () async {
                 final token = ref.read(authProvider).token;
                 if (token == null) {
-                  AppNotifier.error('请先登录');
+                  AppNotifier.error(s.repairNeedLogin);
                   return false;
                 }
-                final api = ref.read(xboardApiProvider);
-                await api.getSubscribeData(token);
+                await ref.read(authProvider.notifier).syncSubscription();
                 return true;
               }),
             ),
             Divider(height: 1, color: divColor),
             _ActionRow(
               icon: Icons.cleaning_services_outlined,
-              label: '清除本地缓存',
-              subtitle: '删除本地配置文件、日志、启动报告',
+              label: s.repairClearCache,
+              subtitle: s.repairClearCacheHint,
               isDark: isDark,
               busy: _busy,
               onTap: () => _run('清除缓存', () async {
@@ -133,7 +134,9 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
                 final targets = [
                   'config.yaml',
                   'startup_report.json',
-                  'settings.json',
+                  'core.log',
+                  'crash.log',
+                  'event.log',
                 ];
                 for (final name in targets) {
                   final f = File('${appDir.path}/$name');
@@ -176,9 +179,14 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
               onPressed: _busy
                   ? null
                   : () => _run('一键修复', () async {
-                        // Full sequence: stop → reset VPN → clear config → done
-                        await VpnService.resetVpnProfile();
-                        await VpnService.clearAppGroupConfig();
+                        if (Platform.isIOS) {
+                          await VpnService.resetVpnProfile();
+                          await VpnService.clearAppGroupConfig();
+                        }
+                        final token = ref.read(authProvider).token;
+                        if (token != null) {
+                          await ref.read(authProvider.notifier).syncSubscription();
+                        }
                         return true;
                       }),
               icon: _busy
@@ -188,7 +196,7 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.white))
                   : const Icon(Icons.auto_fix_high_rounded, size: 18),
-              label: Text(_busy ? '修复中...' : '一键修复全部'),
+              label: Text(_busy ? s.repairRunning : s.repairOneClick),
               style: FilledButton.styleFrom(
                 backgroundColor: isDark ? YLColors.zinc700 : YLColors.zinc800,
                 foregroundColor: Colors.white,
@@ -200,7 +208,9 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
           ),
           const SizedBox(height: 12),
           Text(
-            '一键修复将停止 VPN → 删除旧隧道 → 清除配置缓存\n修复后重新点击连接即可',
+            Localizations.localeOf(context).languageCode == 'en'
+                ? 'One-click repair: stop connection → reset tunnel → clear cache\nReconnect after repair completes'
+                : '一键修复将停止连接 → 删除旧隧道 → 清除配置缓存\n修复后重新点击连接即可',
             style: YLText.caption.copyWith(color: YLColors.zinc400),
             textAlign: TextAlign.center,
           ),

@@ -305,7 +305,7 @@ class _TrafficSectionState extends ConsumerState<_TrafficSection> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '数据监控',
+                      S.of(context).dataMonitor,
                       style: YLText.label.copyWith(
                         color: headerColor,
                         fontWeight: FontWeight.w600,
@@ -314,7 +314,7 @@ class _TrafficSectionState extends ConsumerState<_TrafficSection> {
                   ),
                   if (!isRunning)
                     Text(
-                      'VPN 未运行',
+                      S.of(context).vpnNotRunning,
                       style: YLText.caption
                           .copyWith(color: YLColors.zinc400),
                     ),

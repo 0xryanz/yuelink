@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../l10n/app_strings.dart';
 import '../../../main.dart';
 import '../../../theme.dart';
 import '../../nodes/scene_mode/scene_mode_sheet.dart';
@@ -18,6 +19,7 @@ class QuickActions extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final s = S.of(context);
     // Falls back to QuickActionsConfig() (all visible) on error / loading.
     final cfg = ref.watch(quickActionsConfigProvider);
 
@@ -27,21 +29,21 @@ class QuickActions extends ConsumerWidget {
     if (cfg.showSmartSelect) {
       actions.add((
         icon: Icons.auto_awesome_rounded,
-        label: '智能选线',
+        label: s.qaSmartSelect,
         onTap: () => showSmartSelectSheet(context),
       ));
     }
     if (cfg.showSceneMode) {
       actions.add((
         icon: Icons.theater_comedy_outlined,
-        label: '场景模式',
+        label: s.qaSceneMode,
         onTap: () => SceneModeSheet.show(context),
       ));
     }
     if (cfg.showSpeedTest) {
       actions.add((
         icon: Icons.speed_rounded,
-        label: '测速',
+        label: s.qaSpeedTest,
         onTap: () => MainShell.switchToTab(context, MainShell.tabProxies),
       ));
     }

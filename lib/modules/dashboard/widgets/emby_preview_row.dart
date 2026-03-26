@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/app_strings.dart';
+import '../../../domain/emby/emby_info_entity.dart';
 import '../../../modules/emby/emby_client.dart';
 import '../../../modules/emby/emby_detail_page.dart';
 import '../../../modules/emby/emby_media_page.dart';
@@ -48,7 +49,7 @@ class EmbyPreviewRow extends ConsumerWidget {
         Row(
           children: [
             Text(
-              '悦视频',
+              s.navEmby,
               style: YLText.label.copyWith(
                 fontWeight: FontWeight.w700,
                 color: isDark ? YLColors.zinc200 : YLColors.zinc800,
@@ -60,7 +61,7 @@ class EmbyPreviewRow extends ConsumerWidget {
               child: Row(
                 children: [
                   Text(
-                    '进入',
+                    s.embyEnter,
                     style: YLText.caption.copyWith(color: YLColors.zinc400),
                   ),
                   const Icon(
@@ -170,7 +171,7 @@ class _NoPermissionBanner extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                '开通悦视频套餐即可观看电影、电视剧和动漫',
+                S.of(context).embyNoAccessHint,
                 style: YLText.caption.copyWith(
                   color: isDark ? YLColors.zinc400 : YLColors.zinc500,
                 ),
@@ -220,7 +221,7 @@ class _WebOnlyBanner extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                '点击进入悦视频',
+                S.of(context).embyWebHint,
                 style: YLText.caption.copyWith(color: YLColors.zinc500),
               ),
             ),
@@ -235,7 +236,7 @@ class _WebOnlyBanner extends StatelessWidget {
 
 /// State 3–6: Has native access. Watches [embyPreviewProvider] for real items.
 class _PosterRow extends ConsumerWidget {
-  final dynamic emby; // EmbyInfo
+  final EmbyInfo emby;
   /// Which source to display. Defaults to [EmbyPreviewSource.recent].
   final EmbyPreviewSource source;
   final bool isDark;
@@ -259,7 +260,7 @@ class _PosterRow extends ConsumerWidget {
       error: (_, __) => _buildPlaceholderTiles(context, isDark, onTapLibrary),
       data: (items) {
         // State 5: Empty
-        if (items.isEmpty) return _buildEmpty(isDark, onTapLibrary);
+        if (items.isEmpty) return _buildEmpty(context, isDark, onTapLibrary);
         // State 6: Real poster data
         return _buildPosters(context, items, isDark);
       },
@@ -313,14 +314,14 @@ class _PosterRow extends ConsumerWidget {
   }
 
   /// Empty state — no items returned by the server.
-  Widget _buildEmpty(bool isDark, VoidCallback onTap) {
+  Widget _buildEmpty(BuildContext context, bool isDark, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: SizedBox(
         height: 80,
         child: Center(
           child: Text(
-            '暂无内容',
+            S.of(context).embyNoContent,
             style: YLText.caption.copyWith(color: YLColors.zinc500),
           ),
         ),
@@ -357,10 +358,10 @@ class _PosterRow extends ConsumerWidget {
       context,
       MaterialPageRoute(
         builder: (_) => _EmbyDetailRoute(
-          serverUrl: emby.serverBaseUrl as String,
-          userId: emby.parsedUserId as String,
-          accessToken: emby.parsedAccessToken as String,
-          serverId: emby.parsedServerId as String? ?? '',
+          serverUrl: emby.serverBaseUrl!,
+          userId: emby.parsedUserId!,
+          accessToken: emby.parsedAccessToken!,
+          serverId: emby.parsedServerId ?? '',
           item: item,
         ),
       ),
@@ -372,7 +373,7 @@ class _PosterRow extends ConsumerWidget {
 
 class _PosterTile extends StatelessWidget {
   final EmbyPreviewItem item;
-  final dynamic emby; // EmbyInfo
+  final EmbyInfo emby;
   final bool isDark;
   final VoidCallback onTap;
 
@@ -387,8 +388,8 @@ class _PosterTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final dpr = MediaQuery.of(context).devicePixelRatio.clamp(1.0, 3.0);
     final physWidth = (90 * dpr).toInt();
-    final serverUrl = emby.serverBaseUrl as String;
-    final token = emby.parsedAccessToken as String;
+    final serverUrl = emby.serverBaseUrl!;
+    final token = emby.parsedAccessToken!;
 
     return GestureDetector(
       onTap: onTap,

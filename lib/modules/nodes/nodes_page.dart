@@ -889,7 +889,7 @@ class _RecentNodesBar extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '最近使用',
+            S.of(context).recentlyUsed,
             style: YLText.caption.copyWith(
               fontSize: 11,
               color: YLColors.zinc400,

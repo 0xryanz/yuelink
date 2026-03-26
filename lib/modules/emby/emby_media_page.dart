@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_strings.dart';
 import 'emby_client.dart';
 import 'emby_detail_page.dart';
 import 'emby_theme.dart';
@@ -128,12 +129,15 @@ class EmbyMediaPage extends StatefulWidget {
 
 class _EmbyMediaPageState extends State<EmbyMediaPage> {
   late final EmbyClient _api;
+  final _searchController = TextEditingController();
   List<_Library>? _libraries;
   bool _loadingLibs = true;
   String? _error;
   String _query = '';
 
   /// Preview cache: most recent 20 items per library (for horizontal rows).
+  /// LRU eviction: max 5 libraries cached to bound memory (each library → 20 posters).
+  static const _maxCachedLibraries = 5;
   final Map<String, List<_Item>> _previewCache = {};
   final Set<String> _loadingPreviews = {};
 
@@ -150,6 +154,8 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
 
   @override
   void dispose() {
+    _searchController.dispose();
+    _previewCache.clear();
     _api.close();
     super.dispose();
   }
@@ -179,7 +185,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
       if (!mounted) return;
       setState(() {
         _loadingLibs = false;
-        _error = '获取媒体库失败\n$e';
+        _error = '${S.current.embyGetFailed}\n$e';
       });
     }
   }
@@ -232,6 +238,10 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
       if (!mounted) return;
       setState(() {
         _previewCache[lib.id] = items;
+        // LRU eviction: keep at most _maxCachedLibraries entries.
+        while (_previewCache.length > _maxCachedLibraries) {
+          _previewCache.remove(_previewCache.keys.first);
+        }
         _loadingPreviews.remove(lib.id);
       });
     } catch (_) {
@@ -321,7 +331,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
         backgroundColor: EmbyTheme.appBarBg(context),
         foregroundColor: EmbyTheme.textPrimary(context),
         elevation: 0,
-        title: Text('悦视频',
+        title: Text(S.of(context).navEmby,
             style: TextStyle(
                 color: EmbyTheme.textPrimary(context),
                 fontWeight: FontWeight.w600)),
@@ -331,6 +341,8 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
             onPressed: () {
               _previewCache.clear();
               _loadingPreviews.clear();
+              _previewError.clear();
+              _searchController.clear();
               setState(() => _query = '');
               _loadLibraries();
             },
@@ -346,7 +358,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
     if (_error != null) return _buildError(_error!);
     if (_libraries == null || _libraries!.isEmpty) {
       return Center(
-        child: Text('暂无媒体库',
+        child: Text(S.of(context).embyNoLibrary,
             style: TextStyle(color: EmbyTheme.textSecondary(context))),
       );
     }
@@ -391,6 +403,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
       onRefresh: () async {
         _previewCache.clear();
         _loadingPreviews.clear();
+        _previewError.clear();
         await _loadLibraries();
       },
       child: CustomScrollView(
@@ -426,9 +439,9 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
               EmbyImage(
                 api: _api,
                 itemId: item.id,
-                url: _api.backdropUrl(item.id, width: 1920),
+                url: _api.backdropUrl(item.id, width: 800),
                 fit: BoxFit.cover,
-                width: 1200,
+                width: 800,
               )
             else if (item.hasPoster)
               EmbyImage(
@@ -729,6 +742,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
       child: TextField(
+        controller: _searchController,
         onChanged: (v) => setState(() => _query = v),
         style:
             TextStyle(color: EmbyTheme.textPrimary(context), fontSize: 14),
@@ -740,7 +754,10 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
               color: EmbyTheme.textSecondary(context), size: 18),
           suffixIcon: _query.isNotEmpty
               ? GestureDetector(
-                  onTap: () => setState(() => _query = ''),
+                  onTap: () {
+                    _searchController.clear();
+                    setState(() => _query = '');
+                  },
                   child: Icon(Icons.close_rounded,
                       color: EmbyTheme.textSecondary(context), size: 18),
                 )
@@ -817,7 +834,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
           Icon(Icons.error_outline_rounded,
               color: EmbyTheme.textTertiary(context), size: 28),
           const SizedBox(height: 6),
-          Text('加载失败',
+          Text(S.of(context).embyLoadFailed,
               style: TextStyle(
                   color: EmbyTheme.textTertiary(context), fontSize: 12)),
           const SizedBox(height: 8),
@@ -827,7 +844,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
               _previewError.remove(lib.id);
               _loadPreview(lib);
             },
-            child: Text('点击重试',
+            child: Text(S.of(context).embyTapRetry,
                 style: TextStyle(
                     color: EmbyTheme.textSecondary(context),
                     fontSize: 12,

@@ -171,68 +171,28 @@ class _OverviewPill extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Human-readable mapping from [StartupError] codes to user-facing strings.
-_ErrorInfo _resolveErrorInfo(String errorCode) {
+_ErrorInfo _resolveErrorInfo(String errorCode, S s) {
   switch (errorCode) {
     case StartupError.soLoadFailed:
-      return const _ErrorInfo(
-        title: '原生库加载失败',
-        hint: '安装包可能损坏，请重新安装应用',
-        action: _ErrorAction.repair,
-      );
+      return _ErrorInfo(title: s.errNativeLib, hint: s.errNativeLibHint, action: _ErrorAction.repair);
     case StartupError.initCoreFailed:
-      return const _ErrorInfo(
-        title: '核心初始化失败',
-        hint: '可尝试重启应用，或清除本地缓存后重试',
-        action: _ErrorAction.repair,
-      );
+      return _ErrorInfo(title: s.errCoreInit, hint: s.errCoreInitHint, action: _ErrorAction.repair);
     case StartupError.vpnPermissionDenied:
-      return const _ErrorInfo(
-        title: 'VPN 权限被拒绝',
-        hint: '请在「系统设置 → VPN」中授权悦通',
-        action: _ErrorAction.repair,
-      );
+      return _ErrorInfo(title: s.errVpnDenied, hint: s.errVpnDeniedHint, action: _ErrorAction.repair);
     case StartupError.vpnFdInvalid:
-      return const _ErrorInfo(
-        title: 'VPN 隧道创建失败',
-        hint: '可尝试重建 VPN 配置，重新授权系统权限',
-        action: _ErrorAction.repair,
-      );
+      return _ErrorInfo(title: s.errTunnel, hint: s.errTunnelHint, action: _ErrorAction.repair);
     case StartupError.configBuildFailed:
-      return const _ErrorInfo(
-        title: '配置解析失败',
-        hint: '订阅配置可能有误，可尝试重新同步订阅',
-        action: _ErrorAction.repair,
-      );
+      return _ErrorInfo(title: s.errConfig, hint: s.errConfigHint, action: _ErrorAction.repair);
     case StartupError.coreStartFailed:
-      return const _ErrorInfo(
-        title: '核心启动失败',
-        hint: '配置内容可能存在冲突，建议查看诊断报告',
-        action: _ErrorAction.report,
-      );
+      return _ErrorInfo(title: s.errCoreStart, hint: s.errCoreStartHint, action: _ErrorAction.report);
     case StartupError.apiTimeout:
-      return const _ErrorInfo(
-        title: 'API 超时，核心进程可能已崩溃',
-        hint: '可查看诊断报告了解详情，或尝试重建 VPN 配置',
-        action: _ErrorAction.report,
-      );
+      return _ErrorInfo(title: s.errApiTimeout, hint: s.errApiTimeoutHint, action: _ErrorAction.report);
     case StartupError.coreDiedAfterStart:
-      return const _ErrorInfo(
-        title: '核心启动后崩溃',
-        hint: '请查看诊断报告中的 Go Core 日志',
-        action: _ErrorAction.report,
-      );
+      return _ErrorInfo(title: s.errCoreCrash, hint: s.errCoreCrashHint, action: _ErrorAction.report);
     case StartupError.geoFilesFailed:
-      return const _ErrorInfo(
-        title: '地理规则文件异常',
-        hint: '可尝试清除本地缓存后重新连接',
-        action: _ErrorAction.repair,
-      );
+      return _ErrorInfo(title: s.errGeo, hint: s.errGeoHint, action: _ErrorAction.repair);
     default:
-      return const _ErrorInfo(
-        title: '连接失败',
-        hint: '请前往修复页查看详情',
-        action: _ErrorAction.repair,
-      );
+      return _ErrorInfo(title: s.errGeneric, hint: s.errGenericHint, action: _ErrorAction.repair);
   }
 }
 
@@ -276,11 +236,12 @@ class _StartupErrorBannerState extends State<StartupErrorBanner> {
     // Determine the failed step's error code for friendly messaging
     final failedStep = steps.where((s) => !s.success).firstOrNull;
     final errorCode = failedStep?.errorCode ?? _extractErrorCode(widget.error);
+    final s = S.of(context);
     final info = errorCode != null
-        ? _resolveErrorInfo(errorCode)
-        : const _ErrorInfo(
-            title: '连接失败',
-            hint: '请前往修复页查看详情',
+        ? _resolveErrorInfo(errorCode, s)
+        : _ErrorInfo(
+            title: s.errGeneric,
+            hint: s.errGenericHint,
             action: _ErrorAction.repair,
           );
 
@@ -353,19 +314,19 @@ class _StartupErrorBannerState extends State<StartupErrorBanner> {
                 children: [
                   // Primary CTA: 前往修复
                   _BannerButton(
-                    label: '前往修复',
+                    label: s.goRepair,
                     icon: Icons.build_outlined,
                     onTap: _goToRepair,
                   ),
                   const SizedBox(width: 8),
                   // Secondary: copy report
                   _BannerButton(
-                    label: '复制报告',
+                    label: s.copyReport,
                     icon: Icons.copy_outlined,
                     onTap: () {
                       final text = report?.toDebugString() ?? widget.error;
                       Clipboard.setData(ClipboardData(text: text));
-                      AppNotifier.info('已复制启动报告');
+                      AppNotifier.info(s.reportCopied);
                     },
                   ),
                 ],

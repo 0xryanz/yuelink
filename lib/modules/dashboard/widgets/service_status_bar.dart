@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../l10n/app_strings.dart';
 import '../../../modules/yue_auth/providers/yue_auth_providers.dart';
 import '../../../providers/core_provider.dart';
 import '../../../shared/formatters/subscription_parser.dart' show formatBytes;
@@ -12,18 +13,18 @@ import '../../nodes/providers/nodes_providers.dart';
 enum _Grade { excellent, fair, poor, unknown, offline }
 
 extension _GradeX on _Grade {
-  String get label {
+  String label(S s) {
     switch (this) {
       case _Grade.excellent:
-        return '优';
+        return s.gradeExcellent;
       case _Grade.fair:
-        return '中';
+        return s.gradeFair;
       case _Grade.poor:
-        return '差';
+        return s.gradePoor;
       case _Grade.unknown:
-        return '未测';
+        return s.gradeUnknown;
       case _Grade.offline:
-        return '离线';
+        return s.gradeOffline;
     }
   }
 
@@ -82,6 +83,7 @@ class ServiceStatusBar extends ConsumerWidget {
     if (!isLoggedIn) return const SizedBox.shrink();
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final s = S.of(context);
     final profile = ref.watch(userProfileProvider);
     final status = ref.watch(coreStatusProvider);
     final activeInfo = ref.watch(activeProxyInfoProvider);
@@ -111,8 +113,8 @@ class ServiceStatusBar extends ConsumerWidget {
             Expanded(
               child: _StatCell(
                 icon: Icons.calendar_today_outlined,
-                value: _expiryValue(profile),
-                label: '到期时间',
+                value: _expiryValue(profile, s),
+                label: s.statusExpiry,
                 valueColor: _expiryColor(profile),
                 isDark: isDark,
               ),
@@ -123,8 +125,8 @@ class ServiceStatusBar extends ConsumerWidget {
             Expanded(
               child: _StatCell(
                 icon: Icons.data_usage_rounded,
-                value: _remainingValue(profile),
-                label: '剩余流量',
+                value: _remainingValue(profile, s),
+                label: s.statusTraffic,
                 valueColor: _trafficColor(profile),
                 isDark: isDark,
               ),
@@ -160,9 +162,9 @@ class ServiceStatusBar extends ConsumerWidget {
 
   // ── Data formatters ───────────────────────────────────────────────────────
 
-  static String _expiryValue(UserProfile? p) {
+  static String _expiryValue(UserProfile? p, S s) {
     if (p == null) return '—';
-    if (p.isExpired) return '已到期';
+    if (p.isExpired) return s.statusExpired;
     final d = p.expiryDate;
     if (d == null) return '—';
     // Include year when the plan expires in a different calendar year,
@@ -179,11 +181,11 @@ class ServiceStatusBar extends ConsumerWidget {
     return null;
   }
 
-  static String _remainingValue(UserProfile? p) {
+  static String _remainingValue(UserProfile? p, S s) {
     if (p == null) return '—';
-    if (p.transferEnable == null) return '不限';
+    if (p.transferEnable == null) return s.statusUnlimited;
     final rem = p.remaining ?? 0;
-    if (rem <= 0) return '已用尽';
+    if (rem <= 0) return s.statusExhausted;
     return formatBytes(rem);
   }
 
@@ -284,7 +286,7 @@ class _HealthCell extends StatelessWidget {
               const SizedBox(width: 5),
               Flexible(
                 child: Text(
-                  grade.label,
+                  grade.label(S.of(context)),
                   style: YLText.body.copyWith(
                     fontWeight: FontWeight.w600,
                     color: textColor,
@@ -297,7 +299,7 @@ class _HealthCell extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            '线路健康',
+            S.of(context).statusHealth,
             style: YLText.caption.copyWith(
               fontSize: 10,
               color: YLColors.zinc500,

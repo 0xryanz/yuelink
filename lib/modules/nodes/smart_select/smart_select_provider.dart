@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/kernel/core_manager.dart';
 import '../../../core/storage/settings_service.dart';
+import '../../../l10n/app_strings.dart';
 import '../../../shared/app_notifier.dart';
 import '../providers/nodes_providers.dart';
 import '../scene_mode/scene_mode.dart';
@@ -166,7 +167,7 @@ class SmartSelectNotifier extends StateNotifier<SmartSelectState> {
 
     try {
       if (!CoreManager.instance.isRunning && !CoreManager.instance.isMockMode) {
-        state = const SmartSelectState(error: '请先连接 VPN');
+        state = SmartSelectState(error: S.current.chainNeedConnect);
         return;
       }
 

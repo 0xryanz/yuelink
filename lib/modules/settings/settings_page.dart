@@ -16,6 +16,7 @@ import '../../modules/profiles/profiles_page.dart';
 import 'sub/general_settings_page.dart';
 import '../../modules/store/store_page.dart';
 import '../../modules/store/order_history_page.dart';
+import 'connection_repair_page.dart';
 import '../../modules/yue_auth/providers/yue_auth_providers.dart';
 import '../../shared/formatters/subscription_parser.dart' show formatBytes;
 import '../../providers/core_provider.dart';
@@ -395,6 +396,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                             builder: (_) => const GeneralSettingsPage()),
+                      ),
+                    ),
+                    Divider(height: 1, thickness: 0.5, color: dividerColor),
+                    YLInfoRow(
+                      label: '连接修复',
+                      trailing: const Icon(Icons.chevron_right,
+                          size: 18, color: YLColors.zinc400),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const ConnectionRepairPage()),
                       ),
                     ),
                   ],

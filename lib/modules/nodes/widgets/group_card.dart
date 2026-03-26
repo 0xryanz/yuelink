@@ -12,6 +12,8 @@ import '../../chain_proxy/chain_proxy_provider.dart';
 import '../protocol_color.dart';
 import '../providers/node_providers.dart';
 import '../providers/nodes_providers.dart';
+import '../favorites/node_favorites_providers.dart';
+import 'node_health_label.dart';
 
 List<String> _sortedNodes(
     List<String> nodes, NodeSortMode mode, Map<String, int> delays) {
@@ -309,6 +311,9 @@ class _NodeCardItemState extends ConsumerState<NodeCardItem> {
       setState(() => _isSwitching = false);
       if (ok) {
         AppNotifier.success(s.switchedTo(widget.name));
+        ref
+            .read(recentNodesProvider.notifier)
+            .record(widget.name, widget.groupName);
       } else {
         AppNotifier.error(s.switchFailed);
       }
@@ -364,7 +369,14 @@ class _NodeCardItemState extends ConsumerState<NodeCardItem> {
         ref.watch(groupSelectedNodeProvider(widget.groupName)) == widget.name;
     final isTesting = ref.watch(nodeIsTestingProvider(widget.name));
     final nodeType = ref.watch(nodeTypeProvider(widget.name));
+    final isFavorite = ref.watch(nodeIsFavoriteProvider(widget.name));
+    final isRecent = ref.watch(nodeIsRecentProvider(widget.name));
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final healthTag = computeNodeHealthTag(
+      delay: delay,
+      isFavorite: isFavorite,
+      isRecent: isRecent,
+    );
 
     return GestureDetector(
       onTap: _handleSelect,
@@ -397,6 +409,23 @@ class _NodeCardItemState extends ConsumerState<NodeCardItem> {
             Row(
               children: [
                 Expanded(child: _buildName(context, isSelected, isDark)),
+                // Star / favorite button
+                GestureDetector(
+                  onTap: () => ref
+                      .read(favoritesProvider.notifier)
+                      .toggle(widget.name),
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: Icon(
+                      isFavorite
+                          ? Icons.star_rounded
+                          : Icons.star_outline_rounded,
+                      size: 13,
+                      color: isFavorite ? Colors.amber : YLColors.zinc400,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 2),
                 if (_isSwitching)
                   const CupertinoActivityIndicator(radius: 6)
                 else if (isSelected)
@@ -410,6 +439,10 @@ class _NodeCardItemState extends ConsumerState<NodeCardItem> {
                 if (nodeType != null) ...[
                   _Badge(label: nodeType, isDark: isDark,
                       protocolColor: protocolColor(nodeType)),
+                  const SizedBox(width: 4),
+                ],
+                if (healthTag != null) ...[
+                  NodeHealthLabel(tag: healthTag, isDark: isDark),
                   const SizedBox(width: 4),
                 ],
                 GestureDetector(

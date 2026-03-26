@@ -9,6 +9,8 @@ import '../protocol_color.dart';
 import '../providers/node_providers.dart';
 import '../providers/nodes_providers.dart';
 import '../../chain_proxy/chain_proxy_provider.dart';
+import '../favorites/node_favorites_providers.dart';
+import 'node_health_label.dart';
 
 /// A single proxy node row.
 ///
@@ -46,6 +48,9 @@ class _NodeTileState extends ConsumerState<NodeTile> {
       setState(() => _isSwitching = false);
       if (ok) {
         AppNotifier.success(s.switchedTo(widget.name));
+        ref
+            .read(recentNodesProvider.notifier)
+            .record(widget.name, widget.groupName);
       } else {
         AppNotifier.error(s.switchFailed);
       }
@@ -101,7 +106,14 @@ class _NodeTileState extends ConsumerState<NodeTile> {
         ref.watch(groupSelectedNodeProvider(widget.groupName)) == widget.name;
     final isTesting = ref.watch(nodeIsTestingProvider(widget.name));
     final nodeType = ref.watch(nodeTypeProvider(widget.name));
+    final isFavorite = ref.watch(nodeIsFavoriteProvider(widget.name));
+    final isRecent = ref.watch(nodeIsRecentProvider(widget.name));
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final healthTag = computeNodeHealthTag(
+      delay: delay,
+      isFavorite: isFavorite,
+      isRecent: isRecent,
+    );
 
     return Material(
       color: Colors.transparent,
@@ -139,7 +151,28 @@ class _NodeTileState extends ConsumerState<NodeTile> {
               Expanded(
                 child: _buildName(context, isSelected, isDark),
               ),
+              // ── Health label ───────────────────────────────────────────
+              if (healthTag != null) ...[
+                const SizedBox(width: 4),
+                NodeHealthLabel(tag: healthTag, isDark: isDark),
+              ],
               const SizedBox(width: YLSpacing.sm),
+              // ── Star / favorite button ─────────────────────────────────
+              GestureDetector(
+                onTap: () => ref
+                    .read(favoritesProvider.notifier)
+                    .toggle(widget.name),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: Icon(
+                    isFavorite
+                        ? Icons.star_rounded
+                        : Icons.star_outline_rounded,
+                    size: 16,
+                    color: isFavorite ? Colors.amber : YLColors.zinc400,
+                  ),
+                ),
+              ),
               InkWell(
                 onTap: isTesting
                     ? null

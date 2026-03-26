@@ -102,6 +102,16 @@ class SettingsService {
     await set('activeProfileId', id);
   }
 
+  // ── Scene mode (daily / ai / streaming / gaming) ────────────────────────
+
+  static Future<String> getSceneMode() async {
+    return (await get<String>('sceneMode')) ?? 'daily';
+  }
+
+  static Future<void> setSceneMode(String mode) async {
+    await set('sceneMode', mode);
+  }
+
   // ── Routing mode (rule / global / direct) ───────────────────────────────
 
   static Future<String> getRoutingMode() async {
@@ -293,6 +303,19 @@ class SettingsService {
 
   static Future<void> setExpandedGroups(List<String> groups) async {
     await set('expandedGroups', groups);
+  }
+
+  // ── Smart Select cache ───────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>?> getSmartSelectCache() async {
+    final settings = await load();
+    final raw = settings['smartSelectCache'];
+    if (raw is Map<String, dynamic>) return raw;
+    return null;
+  }
+
+  static Future<void> setSmartSelectCache(Map<String, dynamic> cache) async {
+    await set('smartSelectCache', cache);
   }
 
   // ── Delay test results ───────────────────────────────────────────────────────

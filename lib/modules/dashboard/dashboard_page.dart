@@ -13,18 +13,22 @@ import '../../shared/app_notifier.dart';
 import '../../core/kernel/core_manager.dart';
 import '../../infrastructure/repositories/profile_repository.dart';
 import '../../providers/connection_provider.dart';
-import '../../providers/connectivity_provider.dart';
 import '../../theme.dart';
 import '../announcements/providers/announcements_providers.dart';
 import 'widgets/announcement_banner.dart';
 import 'widgets/live_status_card.dart';
 import 'widgets/metrics_row.dart';
-import 'widgets/hero_card.dart';
 import 'widgets/carrier_card.dart';
 import 'widgets/subscription_card.dart';
 import '../checkin/presentation/checkin_card.dart';
 import '../checkin/providers/checkin_provider.dart';
-import 'widgets/emby_banner_card.dart';
+import 'widgets/connection_bar.dart';
+import 'widgets/hero_card.dart';
+import 'widgets/hero_banner.dart';
+import 'widgets/quick_actions.dart';
+import 'widgets/emby_preview_row.dart';
+import 'widgets/service_status_bar.dart';
+import 'home_content_provider.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
@@ -60,8 +64,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Mock mode banner removed — not shown in production/screenshots
-
                 // ── Scrollable content ────────────────────────────────
                 Expanded(
                   child: RefreshIndicator(
@@ -73,71 +75,70 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       ref.read(checkinProvider.notifier).refresh();
                     },
                     child: ListView(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: constraints.maxWidth > 720 + 48
-                          ? (constraints.maxWidth - 720) / 2
-                          : 24.0,
-                      vertical: 24,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: constraints.maxWidth > 720 + 48
+                            ? (constraints.maxWidth - 720) / 2
+                            : 24.0,
+                        vertical: 24,
+                      ),
+                      children: [
+                        // ── 1. 顶部连接状态栏 ─────────────────────────
+                        const ConnectionBar(),
+
+                        const SizedBox(height: 16),
+
+                        // ── 2. VPN 连接卡 ─────────────────────────────
+                        RepaintBoundary(
+                          child: HeroCard(
+                            status: status,
+                            onToggle: () => _toggle(context, ref),
+                          ),
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        // ── 3. 快捷操作 ───────────────────────────────
+                        const RepaintBoundary(child: QuickActions()),
+
+                        const SizedBox(height: 12),
+
+                        // ── 4. 运营 Hero Banner（数据驱动，支持配置）────
+                        const RepaintBoundary(child: HeroBanner()),
+
+                        const SizedBox(height: 12),
+
+                        // ── 5. 套餐卡 ─────────────────────────────────
+                        const RepaintBoundary(child: SubscriptionCard()),
+
+                        const SizedBox(height: 8),
+
+                        // ── 5.5 服务状态概览（配置驱动开关）──────────
+                        if (ref.watch(serviceStatusBarVisibleProvider)) ...[
+                          const RepaintBoundary(child: ServiceStatusBar()),
+                          const SizedBox(height: 12),
+                        ],
+
+                        // ── 6. 悦视频推荐条 ───────────────────────────
+                        const RepaintBoundary(child: EmbyPreviewRow()),
+
+                        const SizedBox(height: 12),
+
+                        // ── 7. 签到卡 ─────────────────────────────────
+                        const RepaintBoundary(child: CheckinCard()),
+
+                        const SizedBox(height: 12),
+
+                        // ── 8. 公告摘要 ───────────────────────────────
+                        const RepaintBoundary(child: AnnouncementBanner()),
+
+                        const SizedBox(height: 12),
+
+                        // ── 9. 数据监控（可折叠，默认收起）───────────────
+                        const RepaintBoundary(child: _TrafficSection()),
+
+                        const SizedBox(height: 16),
+                      ],
                     ),
-                    children: [
-                      // ── User greeting header ─────────────────────────
-                      _DashboardHeader(),
-
-                      // ── Offline banner ─────────────────────────────
-                      const _OfflineBanner(),
-
-                      const SizedBox(height: 16),
-
-                      // ── Hero card: connect/status ────────────────────
-                      RepaintBoundary(
-                        child: HeroCard(
-                          status: status,
-                          onToggle: () => _toggle(context, ref),
-                        ),
-                      ),
-
-                      // ── Running: carrier, live status, metrics ───────
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                        alignment: Alignment.topCenter,
-                        child: AnimatedOpacity(
-                          opacity: isRunning ? 1.0 : 0.0,
-                          duration: const Duration(milliseconds: 250),
-                          child: isRunning
-                              ? const Column(
-                                  children: [
-                                    SizedBox(height: 12),
-                                    RepaintBoundary(child: CarrierCard()),
-                                    SizedBox(height: 12),
-                                    RepaintBoundary(child: LiveStatusCard()),
-                                    SizedBox(height: 12),
-                                    RepaintBoundary(child: MetricsRow()),
-                                  ],
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                      ),
-
-                      // ── Announcement ─────────────────────────────────
-                      const SizedBox(height: 12),
-                      const RepaintBoundary(child: AnnouncementBanner()),
-
-                      // ── 悦视频（有权限时显示）─────────────────────────
-                      const SizedBox(height: 12),
-                      const RepaintBoundary(child: EmbyBannerCard()),
-
-                      // ── Subscription info ───────────────────────────
-                      const SizedBox(height: 12),
-                      const RepaintBoundary(child: SubscriptionCard()),
-
-                      // ── Daily check-in ────────────────────────────
-                      const SizedBox(height: 12),
-                      const RepaintBoundary(child: CheckinCard()),
-
-                      const SizedBox(height: 8),
-                    ],
-                  ),
                   ),
                 ),
               ],
@@ -253,113 +254,106 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   }
 }
 
-// ── Dashboard header: greeting + user email ─────────────────────────────────
+// ── 数据监控折叠区域 ─────────────────────────────────────────────────────────
+// 将 CarrierCard / LiveStatusCard / MetricsRow 收纳至可折叠块，默认收起。
+// 仅 VPN 运行时显示真实数据；VPN 未运行时块仍存在但内部数据为空。
 
-class _DashboardHeader extends ConsumerWidget {
+class _TrafficSection extends ConsumerStatefulWidget {
+  const _TrafficSection();
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final s = S.of(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final email = ref.watch(userProfileProvider.select((p) => p?.email));
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // Brand mark
-        Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: isDark ? YLColors.zinc700 : YLColors.zinc100,
-            borderRadius: BorderRadius.circular(YLRadius.md),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : Colors.black.withValues(alpha: 0.06),
-              width: 0.5,
-            ),
-          ),
-          child: Icon(
-            Icons.link_rounded,
-            size: 16,
-            color: isDark ? Colors.white70 : YLColors.zinc700,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                email != null ? s.dashGreetingReturning : s.dashGreeting,
-                style: YLText.titleMedium.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : YLColors.zinc900,
-                ),
-              ),
-              if (email != null)
-                Text(
-                  email,
-                  style: YLText.caption.copyWith(color: YLColors.zinc400),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
+  ConsumerState<_TrafficSection> createState() => _TrafficSectionState();
 }
 
-// ── Offline banner ──────────────────────────────────────────────────────────
-
-class _OfflineBanner extends ConsumerWidget {
-  const _OfflineBanner();
+class _TrafficSectionState extends ConsumerState<_TrafficSection> {
+  bool _expanded = false;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final connectivity = ref.watch(connectivityProvider);
-    if (connectivity != ConnectivityStatus.offline) {
-      return const SizedBox.shrink();
-    }
-
-    final s = S.of(context);
+  Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isRunning =
+        ref.watch(coreStatusProvider) == CoreStatus.running;
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: isDark
-              ? Colors.orange.withValues(alpha: 0.15)
-              : Colors.orange.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(YLRadius.md),
-          border: Border.all(
-            color: Colors.orange.withValues(alpha: 0.3),
-            width: 0.5,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.wifi_off_rounded,
-              size: 16,
-              color: isDark ? Colors.orange[300] : Colors.orange[800],
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                s.noNetworkConnection,
-                style: YLText.caption.copyWith(
-                  color: isDark ? Colors.orange[300] : Colors.orange[800],
-                ),
+    final headerColor = isDark ? YLColors.zinc200 : YLColors.zinc700;
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.08);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? YLColors.zinc800 : Colors.white,
+        borderRadius: BorderRadius.circular(YLRadius.lg),
+        border: Border.all(color: borderColor, width: 0.5),
+        boxShadow: YLShadow.card(context),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          // Header row — always visible, tap to expand/collapse
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.bar_chart_rounded,
+                    size: 16,
+                    color: isDark ? YLColors.zinc400 : YLColors.zinc500,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '数据监控',
+                      style: YLText.label.copyWith(
+                        color: headerColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (!isRunning)
+                    Text(
+                      'VPN 未运行',
+                      style: YLText.caption
+                          .copyWith(color: YLColors.zinc400),
+                    ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    _expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: YLColors.zinc400,
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+
+          // Expandable content
+          AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: _expanded
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Column(
+                      children: [
+                        Divider(height: 1, color: borderColor),
+                        const SizedBox(height: 12),
+                        const RepaintBoundary(child: CarrierCard()),
+                        const SizedBox(height: 12),
+                        const RepaintBoundary(child: LiveStatusCard()),
+                        const SizedBox(height: 12),
+                        const RepaintBoundary(child: MetricsRow()),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
       ),
     );
   }

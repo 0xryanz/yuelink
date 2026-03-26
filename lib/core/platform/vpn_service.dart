@@ -150,6 +150,30 @@ class VpnService {
     }
   }
 
+  /// Remove all VPN profiles and reset state (iOS).
+  /// Next startVpn will create a fresh profile and re-trigger the system prompt.
+  static Future<bool> resetVpnProfile() async {
+    if (!Platform.isIOS) return true; // Only needed on iOS
+    try {
+      final result = await _channel.invokeMethod<bool>('resetVpnProfile');
+      return result ?? false;
+    } on PlatformException catch (_) {
+      return false;
+    }
+  }
+
+  /// Delete all config/geo files from the App Group container (iOS).
+  /// Forces a full config rebuild on next connection.
+  static Future<bool> clearAppGroupConfig() async {
+    if (!Platform.isIOS) return true;
+    try {
+      final result = await _channel.invokeMethod<bool>('clearAppGroupConfig');
+      return result ?? false;
+    } on PlatformException catch (_) {
+      return false;
+    }
+  }
+
   /// Register a callback for VPN revocation events (Android only).
   ///
   /// Called when the system or another app revokes our VPN permission.

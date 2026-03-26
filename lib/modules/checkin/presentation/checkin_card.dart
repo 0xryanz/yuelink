@@ -27,7 +27,7 @@ class CheckinCard extends ConsumerWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isDark ? YLColors.zinc800 : Colors.white,
-        borderRadius: BorderRadius.circular(YLRadius.xl),
+        borderRadius: BorderRadius.circular(YLRadius.lg),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.08)

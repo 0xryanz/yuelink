@@ -19,6 +19,8 @@ import 'widgets/group_card.dart';
 import 'widgets/group_list_section.dart';
 import '../chain_proxy/chain_proxy_provider.dart';
 import '../chain_proxy/chain_proxy_sheet.dart';
+import 'smart_select/smart_select_sheet.dart';
+import 'favorites/node_favorites_providers.dart';
 
 export 'providers/nodes_providers.dart';
 export 'providers/node_providers.dart';
@@ -199,13 +201,28 @@ class _NodesPageState extends ConsumerState<NodesPage> {
     final sortMode = ref.watch(nodeSortModeProvider);
     final viewMode = ref.watch(nodeViewModeProvider);
     final searchQuery = ref.watch(nodeSearchQueryProvider);
+    final showFavOnly = ref.watch(showFavoritesOnlyProvider);
+    final favorites = ref.watch(favoritesProvider);
 
     // Global mode: prepend GLOBAL group so user can pick which group handles
     // all traffic; other groups still shown so selections can be made.
     final globalGroup = ref.watch(globalGroupProvider);
-    final displayGroups = routingMode == 'global' && globalGroup != null
+    List<ProxyGroup> displayGroups = routingMode == 'global' && globalGroup != null
         ? [globalGroup, ...groups]
         : groups;
+
+    // Favorites filter: narrow each group's node list to favorited nodes only.
+    if (showFavOnly && favorites.isNotEmpty) {
+      displayGroups = displayGroups
+          .map((g) => ProxyGroup(
+                name: g.name,
+                type: g.type,
+                all: g.all.where(favorites.contains).toList(),
+                now: g.now,
+              ))
+          .where((g) => g.all.isNotEmpty)
+          .toList();
+    }
 
     final bool showBanner = routingMode != 'rule';
     final int listCount = displayGroups.length + (showBanner ? 1 : 0);
@@ -224,8 +241,42 @@ class _NodesPageState extends ConsumerState<NodesPage> {
                 surfaceTintColor: Colors.transparent,
                 pinned: true,
                 actions: [
+                  // Smart select button
+                  IconButton(
+                    icon: const Icon(Icons.auto_awesome_rounded),
+                    iconSize: 20,
+                    tooltip: '智能选线',
+                    onPressed: () => showSmartSelectSheet(context),
+                  ),
                   // Chain proxy button
                   _ChainProxyButton(),
+                  const SizedBox(width: 2),
+                  // ── Favorites filter chip ─────────────────────────────
+                  GestureDetector(
+                    onTap: () {
+                      ref.read(showFavoritesOnlyProvider.notifier).state =
+                          !showFavOnly;
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: showFavOnly
+                            ? Colors.amber.withValues(alpha: 0.15)
+                            : (Theme.of(context).brightness == Brightness.dark
+                                ? YLColors.zinc700
+                                : YLColors.zinc100),
+                        borderRadius: BorderRadius.circular(YLRadius.sm),
+                      ),
+                      child: Icon(
+                        showFavOnly
+                            ? Icons.star_rounded
+                            : Icons.star_outline_rounded,
+                        size: 14,
+                        color: showFavOnly ? Colors.amber : YLColors.zinc500,
+                      ),
+                    ),
+                  ),
                   const SizedBox(width: 2),
                   // Sort chip — shows current mode, taps to cycle
                   GestureDetector(
@@ -306,6 +357,9 @@ class _NodesPageState extends ConsumerState<NodesPage> {
                   child: _FullWidthRoutingMode(),
                 ),
               ),
+
+              // ── Recent nodes row ───────────────────────────────────────
+              const SliverToBoxAdapter(child: _RecentNodesBar()),
 
               // ── Group list ─────────────────────────────────────────────
               SliverPadding(
@@ -806,6 +860,135 @@ class _ReadOnlyGroupCard extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+// ── Recent Nodes Bar ─────────────────────────────────────────────────────────
+
+/// Horizontal scrolling row of recently-used node chips.
+/// Only visible when the core is running and there are recent nodes.
+class _RecentNodesBar extends ConsumerWidget {
+  const _RecentNodesBar();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final status = ref.watch(coreStatusProvider);
+    if (status != CoreStatus.running) return const SizedBox.shrink();
+
+    final recent = ref.watch(recentNodesProvider);
+    if (recent.isEmpty) return const SizedBox.shrink();
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          YLSpacing.xl, YLSpacing.sm, YLSpacing.xl, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '最近使用',
+            style: YLText.caption.copyWith(
+              fontSize: 11,
+              color: YLColors.zinc400,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 6),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: recent.map((node) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: _RecentNodeChip(node: node, isDark: isDark),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecentNodeChip extends ConsumerStatefulWidget {
+  const _RecentNodeChip({required this.node, required this.isDark});
+  final RecentNode node;
+  final bool isDark;
+
+  @override
+  ConsumerState<_RecentNodeChip> createState() => _RecentNodeChipState();
+}
+
+class _RecentNodeChipState extends ConsumerState<_RecentNodeChip> {
+  bool _busy = false;
+
+  Future<void> _tap() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final ok = await ref
+        .read(proxyGroupsProvider.notifier)
+        .changeProxy(widget.node.group, widget.node.name);
+    if (mounted) {
+      setState(() => _busy = false);
+      if (ok) {
+        ref
+            .read(recentNodesProvider.notifier)
+            .record(widget.node.name, widget.node.group);
+        AppNotifier.success(S.of(context).switchedTo(widget.node.name));
+      } else {
+        AppNotifier.error(S.of(context).switchFailed);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = widget.isDark;
+    return GestureDetector(
+      onTap: _tap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.07)
+              : Colors.black.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(YLRadius.pill),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.10)
+                : Colors.black.withValues(alpha: 0.08),
+            width: 0.5,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_busy)
+              const SizedBox(
+                width: 10,
+                height: 10,
+                child: CircularProgressIndicator(strokeWidth: 1.5),
+              )
+            else
+              Icon(Icons.history_rounded,
+                  size: 11, color: YLColors.zinc400),
+            const SizedBox(width: 4),
+            Text(
+              widget.node.name,
+              style: YLText.caption.copyWith(
+                fontSize: 11,
+                color: isDark ? YLColors.zinc300 : YLColors.zinc600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
       ),
     );
   }

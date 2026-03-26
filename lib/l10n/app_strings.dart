@@ -36,6 +36,7 @@ class S {
   String get navProfile => _e ? 'Subscriptions' : '订阅';
   String get navMine => _e ? 'Me' : '我的';
   String get navStore => _e ? 'Store' : '商店';
+  String get navEmby => _e ? 'Media' : '悦视频';
   String get navConnections => _e ? 'Connections' : '连接';
   String get navLog => _e ? 'Logs' : '日志';
   String get navSettings => _e ? 'Settings' : '设置';

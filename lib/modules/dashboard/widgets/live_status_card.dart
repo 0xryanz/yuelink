@@ -89,16 +89,20 @@ class _LiveStatusCardState extends ConsumerState<LiveStatusCard> {
             // ── Speed row + range controls ────────────────────────────────
             Row(
               children: [
-                _SpeedChip(
-                  arrow: '↓',
-                  bps: traffic.down,
-                  color: YLColors.accent,
+                Flexible(
+                  child: _SpeedChip(
+                    arrow: '↓',
+                    bps: traffic.down,
+                    color: YLColors.accent,
+                  ),
                 ),
-                const SizedBox(width: 12),
-                _SpeedChip(
-                  arrow: '↑',
-                  bps: traffic.up,
-                  color: YLColors.connected,
+                const SizedBox(width: 8),
+                Flexible(
+                  child: _SpeedChip(
+                    arrow: '↑',
+                    bps: traffic.up,
+                    color: YLColors.connected,
+                  ),
                 ),
                 const Spacer(),
                 _RangeButton(
@@ -124,7 +128,7 @@ class _LiveStatusCardState extends ConsumerState<LiveStatusCard> {
                     onTap: () => ref
                         .read(trafficChartRangeProvider.notifier)
                         .state = 1800),
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 _LockButton(
                   locked: locked,
                   tooltip: locked ? s.chartUnlock : s.chartLock,
@@ -232,7 +236,7 @@ class _IpHeader extends StatelessWidget {
       return Row(
         children: [
           Icon(
-            hasError ? Icons.shield_outlined : Icons.shield_outlined,
+            hasError ? Icons.error_outline_rounded : Icons.shield_outlined,
             size: 13,
             color: hasError ? YLColors.error : YLColors.zinc400,
           ),

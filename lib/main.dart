@@ -18,7 +18,6 @@ import 'pages/dashboard_page.dart';
 import 'pages/nodes_page.dart';
 import 'pages/settings_page.dart';
 import 'domain/models/proxy.dart';
-import 'modules/store/store_page.dart';
 import 'modules/onboarding/onboarding_page.dart';
 import 'modules/carrier/carrier_provider.dart';
 import 'modules/yue_auth/presentation/yue_auth_page.dart';
@@ -97,6 +96,10 @@ final initialBuiltTabsProvider = Provider<List<int>>((ref) => [0]);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ── Image cache limit (prevent 1GB+ memory from decoded bitmaps) ──
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 100 * 1024 * 1024;
+  PaintingBinding.instance.imageCache.maximumSize = 200;
 
   // ── Error logging (local crash.log + optional remote Sentry/Crashlytics) ──
   ErrorLogger.init();
@@ -944,10 +947,8 @@ class MainShell extends ConsumerStatefulWidget {
   /// Tab indices for programmatic navigation.
   static const tabDashboard = 0;
   static const tabProxies   = 1;
-  static const tabStore     = 2;
+  static const tabEmby      = 2;
   static const tabSettings  = 3;
-  /// Virtual — tapping this opens the in-app 悦视频 WebView; does not switch IndexedStack.
-  static const tabEmby      = 4;
 
   static void switchToTab(BuildContext context, int index) {
     context.findAncestorStateOfType<_MainShellState>()?.switchTab(index);
@@ -962,10 +963,6 @@ class _MainShellState extends ConsumerState<MainShell> {
   late final Map<int, bool> _builtTabs;
 
   void switchTab(int index) {
-    if (index == MainShell.tabEmby) {
-      _openEmby();
-      return;
-    }
     setState(() {
       _currentIndex = index;
       _builtTabs[index] = true;
@@ -976,42 +973,10 @@ class _MainShellState extends ConsumerState<MainShell> {
     );
   }
 
-  Future<void> _openEmby() async {
-    final s = S.of(context);
-    ref.invalidate(embyProvider);
-    AppNotifier.info(s.mineEmbyOpening);
-    final emby = await ref.read(embyProvider.future);
-    if (!mounted) return;
-    if (emby == null || !emby.hasAccess) {
-      AppNotifier.warning(s.mineEmbyNoAccess);
-      return;
-    }
-    // Prefer native media browser when full parsed info is available,
-    // fall back to in-app WebView otherwise.
-    if (emby.hasNativeAccess) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => EmbyMediaPage(
-            serverUrl: emby.serverBaseUrl!,
-            userId: emby.parsedUserId!,
-            accessToken: emby.parsedAccessToken!,
-            serverId: emby.parsedServerId ?? '',
-          ),
-        ),
-      );
-    } else {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => EmbyWebPage(url: emby.launchUrl!)),
-      );
-    }
-  }
-
   static const _pages = [
     DashboardPage(),
     NodesPage(),
-    StorePage(),
+    _EmbyTabPage(),
     SettingsPage(),
   ];
 
@@ -1077,8 +1042,8 @@ class _MainShellState extends ConsumerState<MainShell> {
        const Icon(Icons.home_filled, size: 20), s.navHome),
       (const Icon(Icons.public_outlined, size: 20),
        const Icon(Icons.public, size: 20), s.navProxies),
-      (const Icon(Icons.storefront_outlined, size: 20),
-       const Icon(Icons.storefront_rounded, size: 20), s.navStore),
+      (const Icon(Icons.play_circle_outline, size: 20),
+       const Icon(Icons.play_circle_filled, size: 20), s.navEmby),
       (const Icon(Icons.person_outline_rounded, size: 20),
        const Icon(Icons.person_rounded, size: 20), s.navMine),
     ];
@@ -1094,7 +1059,6 @@ class _MainShellState extends ConsumerState<MainShell> {
         ),
       ),
       bottomNavigationBar: NavigationBar(
-        // tabEmby (4) is virtual — keep selectedIndex on the real current tab.
         selectedIndex: _currentIndex,
         onDestinationSelected: (i) => switchTab(i),
         destinations: mobileItems
@@ -1128,7 +1092,7 @@ class _Sidebar extends StatelessWidget {
     final navItems = [
       (Icons.home_outlined, Icons.home_filled, s.navHome),
       (Icons.public_outlined, Icons.public, s.navProxies),
-      (Icons.storefront_outlined, Icons.storefront_rounded, s.navStore),
+      (Icons.play_circle_outline, Icons.play_circle_filled, s.navEmby),
     ];
 
     return Container(
@@ -1265,6 +1229,58 @@ class _SidebarItem extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── Emby tab wrapper ──────────────────────────────────────────────────────────
+
+/// Full-screen tab wrapper for 悦视频.
+/// Watches [embyProvider] and delegates to [EmbyMediaPage] (native) or
+/// [EmbyWebPage] (WebView fallback) once info is loaded.
+class _EmbyTabPage extends ConsumerWidget {
+  const _EmbyTabPage();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = S.of(context);
+    final emby = ref.watch(embyProvider);
+    return emby.when(
+      loading: () => const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (e, __) => Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(e.toString(), textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: () => ref.invalidate(embyProvider),
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: Text(s.retry),
+              ),
+            ],
+          ),
+        ),
+      ),
+      data: (info) {
+        if (info == null || !info.hasAccess) {
+          return Scaffold(
+            body: Center(child: Text(s.mineEmbyNoAccess)),
+          );
+        }
+        if (info.hasNativeAccess) {
+          return EmbyMediaPage(
+            serverUrl: info.serverBaseUrl!,
+            userId: info.parsedUserId!,
+            accessToken: info.parsedAccessToken!,
+            serverId: info.parsedServerId ?? '',
+          );
+        }
+        return EmbyWebPage(url: info.launchUrl!);
+      },
     );
   }
 }

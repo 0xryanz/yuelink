@@ -117,6 +117,9 @@ class ConfigTemplate {
     config = _ensureFindProcessMode(config);
     debugPrint('[Config] 10 findProcessMode done');
 
+    config = _ensureConnectivityRules(config);
+    debugPrint('[Config] 10b connectivityRules done');
+
     if (!_hasKey(config, 'mode')) {
       config += '\nmode: rule\n';
     }
@@ -426,6 +429,14 @@ class ConfigTemplate {
           '    - "connectivitycheck.samsung.com"\n'
           // Xiaomi
           '    - "connect.rom.miui.com"\n'
+          '    - "connectivitycheck.platform.xiaomi.com"\n'
+          // OPPO / Realme / ColorOS
+          '    - "conn1.coloros.com"\n'
+          '    - "conn2.coloros.com"\n'
+          // Honor
+          '    - "connectivitycheck.platform.hihonorcloud.com"\n'
+          // Meizu
+          '    - "connectivitycheck.meizu.com"\n'
           // Vivo / other
           '    - "wifi.vivo.com.cn"\n'
           '    - "noisyfox.cn"\n'
@@ -602,6 +613,14 @@ class ConfigTemplate {
         'connectivitycheck.samsung.com',
         // Xiaomi
         'connect.rom.miui.com',
+        'connectivitycheck.platform.xiaomi.com',
+        // OPPO / Realme / ColorOS
+        'conn1.coloros.com',
+        'conn2.coloros.com',
+        // Honor
+        'connectivitycheck.platform.hihonorcloud.com',
+        // Meizu
+        'connectivitycheck.meizu.com',
         // Vivo / other
         'wifi.vivo.com.cn',
         'noisyfox.cn',
@@ -839,6 +858,46 @@ class ConfigTemplate {
   /// returns raw proxy nodes without any proxy-groups or rules.
   static Future<String> loadFallbackTemplate() async {
     return rootBundle.loadString('assets/default_config.yaml');
+  }
+
+  /// Ensure connectivity-check domains are routed DIRECT in rules.
+  /// Without this, even with correct fake-ip-filter, the HTTP 204 check
+  /// may still go through the proxy and fail (blocked, slow, or wrong response),
+  /// causing WiFi exclamation mark on various Android brands.
+  static String _ensureConnectivityRules(String config) {
+    final rulesMatch = RegExp(r'^rules:\s*\n', multiLine: true).firstMatch(config);
+    if (rulesMatch == null) return config; // no rules section
+
+    const domains = [
+      'connectivitycheck.gstatic.com',
+      'connectivitycheck.android.com',
+      'clients3.google.com',
+      'connectivitycheck.platform.hicloud.com',
+      'connectivitycheck.samsung.com',
+      'connect.rom.miui.com',
+      'connectivitycheck.platform.xiaomi.com',
+      'conn1.coloros.com',
+      'conn2.coloros.com',
+      'connectivitycheck.platform.hihonorcloud.com',
+      'connectivitycheck.meizu.com',
+      'wifi.vivo.com.cn',
+      'captive.apple.com',
+      'www.msftconnecttest.com',
+    ];
+
+    // Only inject rules not already present
+    var injection = '';
+    for (final d in domains) {
+      if (!config.contains('DOMAIN,$d,')) {
+        injection += '  - DOMAIN,$d,DIRECT\n';
+      }
+    }
+    if (injection.isEmpty) return config;
+
+    // Insert right after "rules:\n"
+    return config.substring(0, rulesMatch.end) +
+        injection +
+        config.substring(rulesMatch.end);
   }
 
   /// Determine if a subscription config is complete (has groups + rules).

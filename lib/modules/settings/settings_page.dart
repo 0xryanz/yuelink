@@ -16,9 +16,9 @@ import '../../modules/profiles/profiles_page.dart';
 import 'sub/general_settings_page.dart';
 import '../../modules/store/store_page.dart';
 import '../../modules/store/order_history_page.dart';
+import 'connection_repair_page.dart';
 import '../../modules/yue_auth/providers/yue_auth_providers.dart';
 import '../../shared/formatters/subscription_parser.dart' show formatBytes;
-import '../../providers/core_provider.dart';
 import '../../shared/app_notifier.dart';
 import '../../core/kernel/geodata_service.dart';
 import '../../core/storage/settings_service.dart';
@@ -294,7 +294,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    final status = ref.watch(coreStatusProvider);
     final isGuest = ref.watch(authProvider).isGuest;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -339,9 +338,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ] else ...[
                 const AccountCard(),
                 const SizedBox(height: 12),
-                if (status == CoreStatus.running) ...[
-                  const TrafficUsageCard(),
-                ],
+                const TrafficUsageCard(),
               ],
 
               // ══ 1. Service (订阅相关) ══════════════════════════════
@@ -395,6 +392,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                             builder: (_) => const GeneralSettingsPage()),
+                      ),
+                    ),
+                    Divider(height: 1, thickness: 0.5, color: dividerColor),
+                    YLInfoRow(
+                      label: '连接修复',
+                      trailing: const Icon(Icons.chevron_right,
+                          size: 18, color: YLColors.zinc400),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const ConnectionRepairPage()),
                       ),
                     ),
                   ],

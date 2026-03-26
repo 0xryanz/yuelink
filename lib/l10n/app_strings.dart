@@ -36,6 +36,7 @@ class S {
   String get navProfile => _e ? 'Subscriptions' : '订阅';
   String get navMine => _e ? 'Me' : '我的';
   String get navStore => _e ? 'Store' : '商店';
+  String get navEmby => _e ? 'Media' : '悦视频';
   String get navConnections => _e ? 'Connections' : '连接';
   String get navLog => _e ? 'Logs' : '日志';
   String get navSettings => _e ? 'Settings' : '设置';
@@ -151,16 +152,16 @@ class S {
   String get snackStartFailed =>
       _e ? 'Connection failed, please try again' : '连接失败，请稍后重试';
 
-  // VPN permission pre-auth dialog (first connection on mobile)
+  // Network permission pre-auth dialog (first connection on mobile)
   String get vpnPermTitle =>
-      _e ? 'VPN Permission Required' : '需要 VPN 权限';
+      _e ? 'Network Permission Required' : '需要网络权限';
   String get vpnPermBody => _e
-      ? 'YueLink needs to create a local VPN tunnel to route your traffic securely. '
+      ? 'YueLink needs to set up a secure tunnel to route your traffic. '
         'No personal data is sent to our servers — all processing happens on your device.\n\n'
-        'Tap "Continue" to grant the VPN permission.'
-      : '悦通需要创建本地 VPN 隧道来安全转发你的网络流量。'
+        'Tap "Continue" to grant the permission.'
+      : '悦通需要建立安全隧道来转发你的网络流量。'
         '不会将任何个人数据发送至服务器——所有处理均在本地完成。\n\n'
-        '点击「继续」授予 VPN 权限。';
+        '点击「继续」授予权限。';
   String get vpnPermContinue => _e ? 'Continue' : '继续';
 
   // ── Proxy page ────────────────────────────────────────────────────
@@ -587,11 +588,11 @@ class S {
 
   // ── Core error messages ───────────────────────────────────────
   String get errVpnPermission =>
-      _e ? 'VPN permission denied, cannot enable TUN mode' : '缺少 VPN 权限，无法开启 TUN 模式';
+      _e ? 'Network permission denied, cannot enable TUN mode' : '缺少网络权限，无法开启 TUN 模式';
   String get errCoreStartFailed =>
       _e ? 'Core failed to start, check config or port conflicts' : '内核启动失败，请检查配置格式或端口占用';
   String get errVpnTunnelFailed =>
-      _e ? 'VPN tunnel setup failed' : 'VPN 隧道建立失败';
+      _e ? 'Tunnel setup failed' : '隧道建立失败';
   String get msgConnected => _e ? 'Connected' : '已成功连接';
   String errApiError(int code, String body) =>
       _e ? 'API error: $code - $body' : 'API 错误: $code - $body';
@@ -695,7 +696,7 @@ class S {
   String get mineEmbyOpenFailed =>
       _e ? 'Unable to open 悦视频' : '无法打开悦视频，请稍后重试';
   String get mineEmbyNeedsVpn =>
-      _e ? 'Please connect first to access 悦视频' : '请先连接悦通，再访问悦视频';
+      _e ? 'Please connect first to access Media' : '请先连接悦通，再访问悦视频';
   String get minePrivacyPolicy => _e ? 'Terms of Service' : '服务条款';
   String get goToHomeToProtect => _e ? 'Go to Dashboard' : '去首页开启保护';
   // First-time use
@@ -787,8 +788,8 @@ class S {
       ? 'Switch to "$name"? This will use its nodes and rules.'
       : '切换到「$name」？将使用该订阅的节点和规则。';
   String get switchProfileReconnectHint => _e
-      ? 'VPN is running. You need to reconnect after switching.'
-      : 'VPN 正在运行中，切换后需要重新连接才能生效。';
+      ? 'Connection is active. You need to reconnect after switching.'
+      : '当前已连接，切换后需要重新连接才能生效。';
   String get switchProfileConfirm => _e ? 'Switch' : '确认切换';
 
   // ── Onboarding ──────────────────────────────────────────────
@@ -821,7 +822,7 @@ class S {
   String get chainConnected => _e ? 'Proxy chain connected' : '链式代理已连接';
   String get chainDisconnected => _e ? 'Proxy chain disconnected' : '链式代理已断开';
   String get chainConnectFailed => _e ? 'Chain connect failed' : '链路连接失败';
-  String get chainNeedConnect => _e ? 'Connect VPN first' : '请先连接 VPN';
+  String get chainNeedConnect => _e ? 'Connect first' : '请先连接';
   String get chainNoGroup => _e ? 'No proxy group available' : '未找到可用策略组';
   String get chainNeedTwoNodes => _e ? 'Need 2+ nodes' : '至少需要 2 个节点';
   String get chainNodeDuplicate => _e ? 'Node already in chain' : '节点已在链路中';
@@ -856,4 +857,78 @@ class S {
       _e ? 'Got $amount traffic!' : '获得 $amount 流量！';
   String checkinBalanceReward(String amount) =>
       _e ? 'Got ¥$amount balance!' : '获得 ¥$amount 余额！';
+
+  // ── Quick Actions ─────────────────────────────────────────
+  String get qaSmartSelect => _e ? 'Smart Select' : '智能选线';
+  String get qaSceneMode => _e ? 'Scene Mode' : '场景模式';
+  String get qaSpeedTest => _e ? 'Speed Test' : '测速';
+
+  // ── Service Status Bar ────────────────────────────────────
+  String get statusExpiry => _e ? 'Expiry' : '到期时间';
+  String get statusTraffic => _e ? 'Traffic' : '剩余流量';
+  String get statusHealth => _e ? 'Health' : '线路健康';
+  String get statusExpired => _e ? 'Expired' : '已到期';
+  String get statusUnlimited => _e ? 'Unlimited' : '不限';
+  String get statusExhausted => _e ? 'Exhausted' : '已用尽';
+  String get gradeExcellent => _e ? 'Good' : '优';
+  String get gradeFair => _e ? 'Fair' : '中';
+  String get gradePoor => _e ? 'Poor' : '差';
+  String get gradeUnknown => _e ? 'N/A' : '未测';
+  String get gradeOffline => _e ? 'Offline' : '离线';
+
+  // ── Emby Preview Row ──────────────────────────────────────
+  String get embyEnter => _e ? 'Enter' : '进入';
+  String get embyNoAccessHint =>
+      _e ? 'Subscribe to YueVideo to watch movies, TV shows and anime' : '开通悦视频套餐即可观看电影、电视剧和动漫';
+  String get embyWebHint => _e ? 'Tap to enter YueVideo' : '点击进入悦视频';
+  String get embyNoContent => _e ? 'No content' : '暂无内容';
+  String get embyNoLibrary => _e ? 'No library' : '暂无媒体库';
+  String get embyLoadFailed => _e ? 'Load failed' : '加载失败';
+  String get embyTapRetry => _e ? 'Tap to retry' : '点击重试';
+  String get embyGetFailed => _e ? 'Failed to load libraries' : '获取媒体库失败';
+
+  // ── Overview / Startup Error ──────────────────────────────
+  String get errNativeLib => _e ? 'Native library load failed' : '原生库加载失败';
+  String get errNativeLibHint => _e ? 'Package may be corrupted, please reinstall' : '安装包可能损坏，请重新安装应用';
+  String get errCoreInit => _e ? 'Core init failed' : '核心初始化失败';
+  String get errCoreInitHint => _e ? 'Try restarting or clearing local cache' : '可尝试重启应用，或清除本地缓存后重试';
+  String get errVpnDenied => _e ? 'Network permission denied' : '网络权限被拒绝';
+  String get errVpnDeniedHint => _e ? 'Authorize in system settings' : '请在系统设置中授权悦通';
+  String get errTunnel => _e ? 'Tunnel creation failed' : '隧道创建失败';
+  String get errTunnelHint => _e ? 'Try rebuilding network config' : '可尝试重建网络配置，重新授权系统权限';
+  String get errConfig => _e ? 'Config parse failed' : '配置解析失败';
+  String get errConfigHint => _e ? 'Try re-syncing subscription' : '订阅配置可能有误，可尝试重新同步订阅';
+  String get errCoreStart => _e ? 'Core start failed' : '核心启动失败';
+  String get errCoreStartHint => _e ? 'Check diagnostics report' : '配置内容可能存在冲突，建议查看诊断报告';
+  String get errApiTimeout => _e ? 'API timeout, core may have crashed' : 'API 超时，核心进程可能已崩溃';
+  String get errApiTimeoutHint => _e ? 'Check diagnostics for details' : '可查看诊断报告了解详情，或尝试重建网络配置';
+  String get errCoreCrash => _e ? 'Core crashed after start' : '核心启动后崩溃';
+  String get errCoreCrashHint => _e ? 'Check Go Core log in diagnostics' : '请查看诊断报告中的 Go Core 日志';
+  String get errGeo => _e ? 'Geo data file error' : '地理规则文件异常';
+  String get errGeoHint => _e ? 'Try clearing local cache' : '可尝试清除本地缓存后重新连接';
+  String get errGeneric => _e ? 'Connection failed' : '连接失败';
+  String get errGenericHint => _e ? 'Go to repair page for details' : '请前往修复页查看详情';
+  String get goRepair => _e ? 'Go to Repair' : '前往修复';
+  String get copyReport => _e ? 'Copy Report' : '复制报告';
+  String get reportCopied => _e ? 'Startup report copied' : '已复制启动报告';
+  String goCoreLogs(int count) => _e ? 'Go Core log (last $count lines):' : 'Go Core 日志 (最后$count行):';
+
+  // ── Nodes Page ────────────────────────────────────────────
+  String get recentlyUsed => _e ? 'Recently Used' : '最近使用';
+
+  // ── Repair Page ───────────────────────────────────────────
+  String get repairTools => _e ? 'Repair Tools' : '修复工具';
+  String get repairRebuildVpn => _e ? 'Rebuild Network Config' : '重建网络配置';
+  String get repairRebuildVpnHint => _e ? 'Remove old tunnel, re-create on next connect' : '删除旧隧道，下次连接时重新创建并弹出系统授权';
+  String get repairClearTunnel => _e ? 'Clear Tunnel Config' : '清除隧道配置';
+  String get repairClearTunnelHint => _e ? 'Delete App Group config and GEO data' : '删除 App Group 中的 config.yaml 和 GEO 数据，强制重新生成';
+  String get repairResync => _e ? 'Re-sync Subscription' : '重新同步订阅';
+  String get repairResyncHint => _e ? 'Re-fetch subscription config from server' : '重新从服务端拉取订阅配置并解析';
+  String get repairClearCache => _e ? 'Clear Local Cache' : '清除本地缓存';
+  String get repairClearCacheHint => _e ? 'Delete local config files, logs, startup report' : '删除本地配置文件、日志、启动报告';
+  String get repairOneClick => _e ? 'One-Click Repair All' : '一键修复全部';
+  String get repairRunning => _e ? 'Repairing...' : '修复中...';
+  String get repairNeedLogin => _e ? 'Please login first' : '请先登录';
+  String get dataMonitor => _e ? 'Data Monitor' : '数据监控';
+  String get vpnNotRunning => _e ? 'Not connected' : '未连接';
 }

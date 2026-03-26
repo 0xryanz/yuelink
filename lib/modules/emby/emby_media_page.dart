@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_strings.dart';
 import 'emby_client.dart';
 import 'emby_detail_page.dart';
 import 'emby_theme.dart';
@@ -18,6 +19,15 @@ class _Library {
         type: (j['CollectionType'] as String?) ?? '',
       );
 
+  /// True for the collections / boxsets library.
+  /// Emby 4.9 reports `CollectionType: "boxsets"`.
+  bool get isCollectionLibrary => type == 'boxsets';
+
+  /// True for real media libraries (movies / tvshows) — used to decide
+  /// Hero Banner eligibility.
+  bool get isMediaLibrary =>
+      type == 'movies' || type == 'tvshows';
+
   IconData get icon {
     switch (type) {
       case 'movies':
@@ -26,6 +36,8 @@ class _Library {
         return Icons.tv_outlined;
       case 'music':
         return Icons.music_note_outlined;
+      case 'boxsets':
+        return Icons.collections_bookmark_outlined;
       default:
         return Icons.folder_outlined;
     }
@@ -37,6 +49,8 @@ class _Library {
         return 'MusicAlbum';
       case 'tvshows':
         return 'Series,Video';
+      case 'boxsets':
+        return 'BoxSet';
       default:
         return 'Movie,Video';
     }
@@ -115,12 +129,15 @@ class EmbyMediaPage extends StatefulWidget {
 
 class _EmbyMediaPageState extends State<EmbyMediaPage> {
   late final EmbyClient _api;
+  final _searchController = TextEditingController();
   List<_Library>? _libraries;
   bool _loadingLibs = true;
   String? _error;
   String _query = '';
 
   /// Preview cache: most recent 20 items per library (for horizontal rows).
+  /// LRU eviction: max 5 libraries cached to bound memory (each library → 20 posters).
+  static const _maxCachedLibraries = 5;
   final Map<String, List<_Item>> _previewCache = {};
   final Set<String> _loadingPreviews = {};
 
@@ -137,6 +154,8 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
 
   @override
   void dispose() {
+    _searchController.dispose();
+    _previewCache.clear();
     _api.close();
     super.dispose();
   }
@@ -166,44 +185,104 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
       if (!mounted) return;
       setState(() {
         _loadingLibs = false;
-        _error = '获取媒体库失败\n$e';
+        _error = '${S.current.embyGetFailed}\n$e';
       });
     }
   }
 
+  /// Track libraries where the primary preview query returned empty so we
+  /// don't show a stale "loading" spinner forever.  `null` = not tried yet,
+  /// `true` = load error (show retry button).
+  final Map<String, bool> _previewError = {};
+
   Future<void> _loadPreview(_Library lib) async {
     if (_previewCache.containsKey(lib.id)) return;
-    setState(() => _loadingPreviews.add(lib.id));
+    setState(() {
+      _loadingPreviews.add(lib.id);
+      _previewError.remove(lib.id);
+    });
     try {
-      final data = await _api.get('/emby/Users/${widget.userId}/Items', {
-        'parentId': lib.id,
-        'Limit': '20',
-        'SortBy': 'DateCreated,SortName',
-        'SortOrder': 'Descending',
-        'Fields': 'ImageTags,BackdropImageTags,Overview,CommunityRating,Genres,RunTimeTicks',
-        'Recursive': 'true',
-        'IncludeItemTypes': lib.includeItemTypes,
-      });
+      List<_Item> items;
+      if (lib.isCollectionLibrary) {
+        items = await _fetchItems(lib.id, {
+          'Limit': '20',
+          'SortBy': 'SortName',
+          'SortOrder': 'Ascending',
+          'Fields': 'ImageTags,BackdropImageTags,Overview,CommunityRating,Genres,ChildCount',
+          'IncludeItemTypes': 'BoxSet',
+        });
+      } else {
+        // Primary attempt: typed query (Movie/Series/etc.)
+        items = await _fetchItems(lib.id, {
+          'Limit': '20',
+          'SortBy': 'DateCreated,SortName',
+          'SortOrder': 'Descending',
+          'Fields': 'ImageTags,BackdropImageTags,Overview,CommunityRating,Genres,RunTimeTicks',
+          'Recursive': 'true',
+          'IncludeItemTypes': lib.includeItemTypes,
+        });
+        // Fallback: if typed query returned empty, retry without
+        // IncludeItemTypes filter.  This catches libraries whose content
+        // hasn't been scanned yet (Emby returns Folder items) or libraries
+        // with non-standard item types.
+        if (items.isEmpty) {
+          items = await _fetchItems(lib.id, {
+            'Limit': '20',
+            'SortBy': 'DateCreated,SortName',
+            'SortOrder': 'Descending',
+            'Fields': 'ImageTags,BackdropImageTags,Overview,CommunityRating,Genres,RunTimeTicks',
+            'Recursive': 'true',
+          });
+        }
+      }
       if (!mounted) return;
-      final items = (data['Items'] as List<dynamic>)
-          .map((e) => _Item.fromJson(e as Map<String, dynamic>))
-          .toList();
       setState(() {
         _previewCache[lib.id] = items;
+        // LRU eviction: keep at most _maxCachedLibraries entries.
+        while (_previewCache.length > _maxCachedLibraries) {
+          _previewCache.remove(_previewCache.keys.first);
+        }
         _loadingPreviews.remove(lib.id);
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _previewCache[lib.id] = const [];
+        _previewError[lib.id] = true;
         _loadingPreviews.remove(lib.id);
       });
     }
   }
 
+  Future<List<_Item>> _fetchItems(String parentId, Map<String, String> extra) async {
+    final data = await _api.get('/emby/Users/${widget.userId}/Items', {
+      'parentId': parentId,
+      ...extra,
+    });
+    return (data['Items'] as List<dynamic>)
+        .map((e) => _Item.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   // ── Navigation ────────────────────────────────────────────────────────
 
   void _openItem(_Item item) {
+    if (item.type == 'BoxSet') {
+      // BoxSet: open a grid showing the collection's child movies/series.
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => _BoxSetGridPage(
+            api: _api,
+            boxSetId: item.id,
+            boxSetName: item.name,
+            userId: widget.userId,
+            onItemTap: _openItem,
+          ),
+        ),
+      );
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -252,7 +331,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
         backgroundColor: EmbyTheme.appBarBg(context),
         foregroundColor: EmbyTheme.textPrimary(context),
         elevation: 0,
-        title: Text('悦视频',
+        title: Text(S.of(context).navEmby,
             style: TextStyle(
                 color: EmbyTheme.textPrimary(context),
                 fontWeight: FontWeight.w600)),
@@ -262,6 +341,8 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
             onPressed: () {
               _previewCache.clear();
               _loadingPreviews.clear();
+              _previewError.clear();
+              _searchController.clear();
               setState(() => _query = '');
               _loadLibraries();
             },
@@ -277,7 +358,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
     if (_error != null) return _buildError(_error!);
     if (_libraries == null || _libraries!.isEmpty) {
       return Center(
-        child: Text('暂无媒体库',
+        child: Text(S.of(context).embyNoLibrary,
             style: TextStyle(color: EmbyTheme.textSecondary(context))),
       );
     }
@@ -303,9 +384,11 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
   // ── Netflix-style rows ──────────────────────────────────────────────
 
   Widget _buildNetflixRows() {
-    // Collect first item with backdrop for Hero Banner
+    // Collect first item with backdrop for Hero Banner —
+    // only from real media libraries (movies/tvshows), never from collections.
     _Item? heroItem;
     for (final lib in _libraries!) {
+      if (!lib.isMediaLibrary) continue;
       final items = _previewCache[lib.id];
       if (items != null) {
         final candidate = items.where((i) => i.hasBackdrop).firstOrNull
@@ -320,6 +403,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
       onRefresh: () async {
         _previewCache.clear();
         _loadingPreviews.clear();
+        _previewError.clear();
         await _loadLibraries();
       },
       child: CustomScrollView(
@@ -355,9 +439,9 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
               EmbyImage(
                 api: _api,
                 itemId: item.id,
-                url: _api.backdropUrl(item.id, width: 1920),
+                url: _api.backdropUrl(item.id, width: 800),
                 fit: BoxFit.cover,
-                width: 1200,
+                width: 800,
               )
             else if (item.hasPoster)
               EmbyImage(
@@ -463,15 +547,16 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
     final items = _previewCache[lib.id];
     final loading = _loadingPreviews.contains(lib.id);
     final hasItems = items != null && items.isNotEmpty;
+    final hasError = _previewError[lib.id] == true;
     final rowHeight = _posterHeight;
 
-    // Hide empty libraries
-    if (items != null && items.isEmpty) return const SizedBox.shrink();
+    // Always show the library row — never hide.  Empty or error states
+    // are displayed inline so the user knows the library exists.
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── Section header ──
+        // ── Section header (always visible) ──
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 20, 12, 10),
           child: Row(
@@ -511,12 +596,10 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
           height: rowHeight,
           child: loading
               ? _buildRowSkeleton()
-              : !hasItems
-                  ? Center(
-                      child: Text('暂无内容',
-                          style: TextStyle(
-                              color: EmbyTheme.textTertiary(context),
-                              fontSize: 12)))
+              : hasError
+                  ? _buildRowError(lib)
+                  : !hasItems
+                      ? _buildRowEmpty()
                   : ListView.separated(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -618,7 +701,11 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            item.type == 'Series' ? Icons.tv_outlined : Icons.movie_outlined,
+            item.type == 'BoxSet'
+                ? Icons.collections_bookmark_outlined
+                : item.type == 'Series'
+                    ? Icons.tv_outlined
+                    : Icons.movie_outlined,
             color: EmbyTheme.textTertiary(context),
             size: 28,
           ),
@@ -645,6 +732,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 2, 16, 2),
       child: TextField(
+        controller: _searchController,
         onChanged: (v) => setState(() => _query = v),
         style:
             TextStyle(color: EmbyTheme.textPrimary(context), fontSize: 13),
@@ -657,7 +745,10 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
           prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           suffixIcon: _query.isNotEmpty
               ? GestureDetector(
-                  onTap: () => setState(() => _query = ''),
+                  onTap: () {
+                    _searchController.clear();
+                    setState(() => _query = '');
+                  },
                   child: Icon(Icons.close_rounded,
                       color: EmbyTheme.textSecondary(context), size: 16),
                 )
@@ -705,6 +796,53 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
       ),
       itemCount: results.length,
       itemBuilder: (_, i) => _buildRowPoster(results[i], height: 200),
+    );
+  }
+
+  // ── Empty / error states for library rows ──────────────────────────
+
+  Widget _buildRowEmpty() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.inbox_outlined,
+              color: EmbyTheme.textTertiary(context), size: 28),
+          const SizedBox(height: 6),
+          Text('暂无内容',
+              style: TextStyle(
+                  color: EmbyTheme.textTertiary(context), fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRowError(_Library lib) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.error_outline_rounded,
+              color: EmbyTheme.textTertiary(context), size: 28),
+          const SizedBox(height: 6),
+          Text(S.of(context).embyLoadFailed,
+              style: TextStyle(
+                  color: EmbyTheme.textTertiary(context), fontSize: 12)),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () {
+              _previewCache.remove(lib.id);
+              _previewError.remove(lib.id);
+              _loadPreview(lib);
+            },
+            child: Text(S.of(context).embyTapRetry,
+                style: TextStyle(
+                    color: EmbyTheme.textSecondary(context),
+                    fontSize: 12,
+                    decoration: TextDecoration.underline)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -824,27 +962,51 @@ class _LibraryGridPageState extends State<_LibraryGridPage> {
     _loadAll();
   }
 
+  Future<List<_Item>> _fetch(Map<String, String> extra) async {
+    final data = await widget.api.get(
+      '/emby/Users/${widget.userId}/Items',
+      {'parentId': widget.lib.id, ...extra},
+    );
+    return (data['Items'] as List<dynamic>)
+        .map((e) => _Item.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<void> _loadAll() async {
     setState(() => _loading = true);
     try {
-      final data = await widget.api.get(
-        '/emby/Users/${widget.userId}/Items',
-        {
-          'parentId': widget.lib.id,
+      List<_Item> results;
+      if (widget.lib.isCollectionLibrary) {
+        results = await _fetch({
           'Limit': '2000',
           'SortBy': 'SortName',
           'SortOrder': 'Ascending',
-          'Fields':
-              'ImageTags,BackdropImageTags,Overview,CommunityRating,Genres,RunTimeTicks',
+          'Fields': 'ImageTags,BackdropImageTags,Overview,CommunityRating,Genres,ChildCount',
+          'IncludeItemTypes': 'BoxSet',
+        });
+      } else {
+        results = await _fetch({
+          'Limit': '2000',
+          'SortBy': 'SortName',
+          'SortOrder': 'Ascending',
+          'Fields': 'ImageTags,BackdropImageTags,Overview,CommunityRating,Genres,RunTimeTicks',
           'Recursive': 'true',
           'IncludeItemTypes': widget.lib.includeItemTypes,
-        },
-      );
+        });
+        // Fallback: retry without type filter if typed query was empty
+        if (results.isEmpty) {
+          results = await _fetch({
+            'Limit': '2000',
+            'SortBy': 'SortName',
+            'SortOrder': 'Ascending',
+            'Fields': 'ImageTags,BackdropImageTags,Overview,CommunityRating,Genres,RunTimeTicks',
+            'Recursive': 'true',
+          });
+        }
+      }
       if (!mounted) return;
       setState(() {
-        _items = (data['Items'] as List<dynamic>)
-            .map((e) => _Item.fromJson(e as Map<String, dynamic>))
-            .toList();
+        _items = results;
         _loading = false;
       });
     } catch (_) {
@@ -1006,6 +1168,178 @@ class _LibraryGridPageState extends State<_LibraryGridPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── BoxSet Detail Grid (shows child movies inside a collection) ──────────────
+
+class _BoxSetGridPage extends StatefulWidget {
+  final EmbyClient api;
+  final String boxSetId;
+  final String boxSetName;
+  final String userId;
+  final void Function(_Item) onItemTap;
+
+  const _BoxSetGridPage({
+    required this.api,
+    required this.boxSetId,
+    required this.boxSetName,
+    required this.userId,
+    required this.onItemTap,
+  });
+
+  @override
+  State<_BoxSetGridPage> createState() => _BoxSetGridPageState();
+}
+
+class _BoxSetGridPageState extends State<_BoxSetGridPage> {
+  List<_Item>? _items;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      // Fetch the child items of this BoxSet.
+      final data = await widget.api.get(
+        '/emby/Users/${widget.userId}/Items',
+        {
+          'parentId': widget.boxSetId,
+          'SortBy': 'SortName',
+          'SortOrder': 'Ascending',
+          'Fields':
+              'ImageTags,BackdropImageTags,Overview,CommunityRating,Genres,RunTimeTicks',
+        },
+      );
+      if (!mounted) return;
+      setState(() {
+        _items = (data['Items'] as List<dynamic>)
+            .map((e) => _Item.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _items = const [];
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final cols = screenWidth > 1200
+        ? 7
+        : screenWidth > 900
+            ? 5
+            : screenWidth > 600
+                ? 4
+                : 3;
+    final hPad = screenWidth > 900 ? (screenWidth - 900) / 2 + 16 : 12.0;
+
+    return Scaffold(
+      backgroundColor: EmbyTheme.scaffoldBg(context),
+      appBar: AppBar(
+        backgroundColor: EmbyTheme.appBarBg(context),
+        foregroundColor: EmbyTheme.textPrimary(context),
+        elevation: 0,
+        title: Text(widget.boxSetName,
+            style: TextStyle(
+                color: EmbyTheme.textPrimary(context),
+                fontWeight: FontWeight.w600)),
+      ),
+      body: _loading
+          ? Center(
+              child: CircularProgressIndicator(
+                  color: EmbyTheme.textSecondary(context)))
+          : _items == null || _items!.isEmpty
+              ? Center(
+                  child: Text('暂无内容',
+                      style:
+                          TextStyle(color: EmbyTheme.textTertiary(context))))
+              : GridView.builder(
+                  padding: EdgeInsets.fromLTRB(hPad, 12, hPad, 24),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: cols,
+                    childAspectRatio: 2 / 3,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                  ),
+                  itemCount: _items!.length,
+                  itemBuilder: (_, i) {
+                    final item = _items![i];
+                    return GestureDetector(
+                      onTap: () => widget.onItemTap(item),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (item.hasPoster)
+                              EmbyImage(
+                                api: widget.api,
+                                itemId: item.id,
+                                fit: BoxFit.cover,
+                                width: 200,
+                              )
+                            else
+                              Container(
+                                  color: EmbyTheme.placeholder(context)),
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 6),
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.bottomCenter,
+                                    end: Alignment.topCenter,
+                                    colors: [
+                                      Colors.black87,
+                                      Colors.transparent
+                                    ],
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(item.name,
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w500,
+                                            height: 1.2),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis),
+                                    if (item.year != null) ...[
+                                      const SizedBox(height: 2),
+                                      Text('${item.year}',
+                                          style: const TextStyle(
+                                              color: Colors.white54,
+                                              fontSize: 10)),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
     );
   }
 }

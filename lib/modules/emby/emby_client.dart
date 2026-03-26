@@ -105,7 +105,7 @@ class EmbyClient {
     _cacheManager = CacheManager(Config(
       'emby_images',
       stalePeriod: const Duration(days: 7),
-      maxNrOfCacheObjects: 500,
+      maxNrOfCacheObjects: 200,
       fileService: HttpFileService(httpClient: IOClient(hc)),
     ));
     return _cacheManager!;
@@ -147,6 +147,7 @@ class EmbyImage extends StatelessWidget {
       cacheManager: EmbyClient.imageCacheManager,
       fit: fit,
       fadeInDuration: const Duration(milliseconds: 200),
+      memCacheWidth: physicalWidth,
       memCacheHeight: physicalWidth ~/ 2 * 3, // ~aspect ratio 2:3
       placeholder: (_, __) => Container(
         color: Theme.of(context).brightness == Brightness.dark

@@ -102,6 +102,16 @@ class SettingsService {
     await set('activeProfileId', id);
   }
 
+  // ── Scene mode (daily / ai / streaming / gaming) ────────────────────────
+
+  static Future<String> getSceneMode() async {
+    return (await get<String>('sceneMode')) ?? 'daily';
+  }
+
+  static Future<void> setSceneMode(String mode) async {
+    await set('sceneMode', mode);
+  }
+
   // ── Routing mode (rule / global / direct) ───────────────────────────────
 
   static Future<String> getRoutingMode() async {
@@ -219,8 +229,8 @@ class SettingsService {
     final key = _dateKey(DateTime.now());
     final settings = await load();
     return {
-      'up': (settings['traffic_up_$key'] as int?) ?? 0,
-      'down': (settings['traffic_down_$key'] as int?) ?? 0,
+      'up': (settings['traffic_up_$key'] as num?)?.toInt() ?? 0,
+      'down': (settings['traffic_down_$key'] as num?)?.toInt() ?? 0,
     };
   }
 
@@ -295,6 +305,19 @@ class SettingsService {
     await set('expandedGroups', groups);
   }
 
+  // ── Smart Select cache ───────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>?> getSmartSelectCache() async {
+    final settings = await load();
+    final raw = settings['smartSelectCache'];
+    if (raw is Map<String, dynamic>) return raw;
+    return null;
+  }
+
+  static Future<void> setSmartSelectCache(Map<String, dynamic> cache) async {
+    await set('smartSelectCache', cache);
+  }
+
   // ── Delay test results ───────────────────────────────────────────────────────
 
   static Future<Map<String, int>> getDelayResults() async {
@@ -324,7 +347,7 @@ class SettingsService {
   static Future<List<int>> getBuiltTabs() async {
     final list = await get<List>('builtTabs');
     if (list == null) return [0];
-    return list.cast<int>();
+    return list.map((e) => (e as num).toInt()).toList();
   }
 
   static Future<void> setBuiltTabs(List<int> tabs) async {

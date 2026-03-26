@@ -38,6 +38,10 @@ import NetworkExtension
             case "requestPermission":
                 // iOS shows the system VPN prompt automatically on first startVpn
                 result(true)
+            case "resetVpnProfile":
+                self?.resetVpnProfile(result: result)
+            case "clearAppGroupConfig":
+                self?.clearAppGroupConfig(result: result)
             default:
                 result(FlutterMethodNotImplemented)
             }
@@ -223,6 +227,64 @@ import NetworkExtension
                 result(true)
             }
         }
+    }
+
+    // MARK: - Repair tools
+
+    /// Remove all existing VPN profiles and reset state.
+    /// Next startVpn call will create a fresh profile and trigger the system
+    /// VPN permission prompt again.
+    private func resetVpnProfile(result: @escaping FlutterResult) {
+        // Clean up observers
+        if let obs = backgroundVpnObserver {
+            NotificationCenter.default.removeObserver(obs)
+            backgroundVpnObserver = nil
+        }
+        if let obs = vpnStatusObserver {
+            NotificationCenter.default.removeObserver(obs)
+            vpnStatusObserver = nil
+        }
+
+        NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in
+            guard let managers = managers, !managers.isEmpty else {
+                self?.vpnManager = nil
+                result(true) // No profile to remove — already clean
+                return
+            }
+            let group = DispatchGroup()
+            for manager in managers {
+                group.enter()
+                manager.connection.stopVPNTunnel()
+                manager.removeFromPreferences { _ in group.leave() }
+            }
+            group.notify(queue: .main) {
+                self?.vpnManager = nil
+                NSLog("[VPN] Reset: removed %d VPN profile(s)", managers.count)
+                result(true)
+            }
+        }
+    }
+
+    /// Delete all config/geo files from the App Group container.
+    /// Forces a fresh config write on next startVpn.
+    private func clearAppGroupConfig(result: @escaping FlutterResult) {
+        guard let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroup
+        ) else {
+            result(false)
+            return
+        }
+        let mihomoDir = containerURL.appendingPathComponent("mihomo")
+        let fm = FileManager.default
+        var removed = 0
+        if let files = try? fm.contentsOfDirectory(atPath: mihomoDir.path) {
+            for file in files {
+                try? fm.removeItem(at: mihomoDir.appendingPathComponent(file))
+                removed += 1
+            }
+        }
+        NSLog("[VPN] Cleared %d files from App Group", removed)
+        result(true)
     }
 
     // MARK: - App Group config sharing

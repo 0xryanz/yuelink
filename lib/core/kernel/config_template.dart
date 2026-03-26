@@ -885,11 +885,15 @@ class ConfigTemplate {
       'www.msftconnecttest.com',
     ];
 
-    // Only inject rules not already present
+    // Only inject rules not already present.
+    // Detect indentation from existing rules (e.g. "  - " or "- ").
+    final firstRule = RegExp(r'^([ \t]*)-\s', multiLine: true).firstMatch(
+        config.substring(rulesMatch.end));
+    final ruleIndent = firstRule?.group(1) ?? '  ';
     var injection = '';
     for (final d in domains) {
       if (!config.contains('DOMAIN,$d,')) {
-        injection += '  - DOMAIN,$d,DIRECT\n';
+        injection += '$ruleIndent- "DOMAIN,$d,DIRECT"\n';
       }
     }
     if (injection.isEmpty) return config;

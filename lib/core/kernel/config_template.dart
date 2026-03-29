@@ -657,10 +657,12 @@ class ConfigTemplate {
     return config;
   }
 
-  /// Ensure sniffer is configured for TLS/HTTP/QUIC domain detection.
-  /// Without sniffer, DOMAIN-type rules can't match encrypted connections.
+  /// Force sniffer with override-destination: true for TLS/HTTP/QUIC.
+  /// Always overwrite — subscription templates may have override-destination: false
+  /// which breaks server-side audit rules (server only sees IP, not domain).
   static String _ensureSniffer(String config) {
-    if (_hasKey(config, 'sniffer')) return config;
+    // Remove existing sniffer block to force our correct config
+    config = _removeSection(config, 'sniffer');
     return '$config\nsniffer:\n'
         '  enable: true\n'
         '  force-dns-mapping: true\n'
@@ -672,8 +674,10 @@ class ConfigTemplate {
         '      override-destination: true\n'
         '    TLS:\n'
         '      ports: [443, 8443]\n'
+        '      override-destination: true\n'
         '    QUIC:\n'
         '      ports: [443, 8443]\n'
+        '      override-destination: true\n'
         '  force-domain:\n'
         '    - "+.v2ex.com"\n'
         '  skip-domain:\n'

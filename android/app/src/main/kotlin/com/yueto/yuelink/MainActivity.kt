@@ -1,6 +1,7 @@
 package com.yueto.yuelink
 
 import android.app.Activity
+import android.app.PictureInPictureParams
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -29,6 +30,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val VPN_CHANNEL  = "com.yueto.yuelink/vpn"
         private const val APPS_CHANNEL = "com.yueto.yuelink/apps"
+        private const val PIP_CHANNEL  = "com.yueto.yuelink/pip"
         private const val VPN_REQUEST_CODE = 1001
         private const val NOTIFICATION_REQUEST_CODE = 1002
     }
@@ -99,6 +101,27 @@ class MainActivity : FlutterActivity() {
                 android.util.Log.w("YueLinkVpn", "Failed to notify Dart of VPN revoke: ${e.message}")
             }
         }
+
+        // ── PiP channel ─────────────────────────────────────────────────────────
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PIP_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "enterPip" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            val w = call.argument<Int>("width") ?: 16
+                            val h = call.argument<Int>("height") ?: 9
+                            val params = PictureInPictureParams.Builder()
+                                .setAspectRatio(android.util.Rational(w, h))
+                                .build()
+                            enterPictureInPictureMode(params)
+                            result.success(true)
+                        } else {
+                            result.error("UNSUPPORTED", "PiP requires Android 8.0+", null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
 
         // ── Installed apps channel ────────────────────────────────────────────
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, APPS_CHANNEL)

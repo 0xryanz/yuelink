@@ -83,9 +83,26 @@ class SceneModeConfig {
     this.preferLowLatency = false,
   });
 
-  // ── v2 extension point ──────────────────────────────────────────────────
-  // Future: merge remote JSON override via:
-  //   SceneModeConfig.fromRemote(base: defaults[mode]!, remoteJson: json)
+  /// v2: 从远程 JSON 合并覆盖到本地预设。
+  /// 远程 JSON 中非 null 的字段覆盖本地值，null 字段保留本地默认。
+  factory SceneModeConfig.fromRemote({
+    required SceneModeConfig base,
+    required Map<String, dynamic> json,
+  }) {
+    return SceneModeConfig(
+      mode: base.mode,
+      description: json['description'] as String? ?? base.description,
+      routingMode: json['routingMode'] as String? ?? base.routingMode,
+      preferredGroupPatterns: json['preferredGroupPatterns'] != null
+          ? List<String>.from(json['preferredGroupPatterns'] as List)
+          : base.preferredGroupPatterns,
+      preferredNodeKeywords: json['preferredNodeKeywords'] != null
+          ? List<String>.from(json['preferredNodeKeywords'] as List)
+          : base.preferredNodeKeywords,
+      preferLowLatency:
+          json['preferLowLatency'] as bool? ?? base.preferLowLatency,
+    );
+  }
 }
 
 // ── Hardcoded presets ─────────────────────────────────────────────────────────
@@ -102,7 +119,7 @@ const Map<SceneMode, SceneModeConfig> kSceneModeDefaults = {
   ),
   SceneMode.ai: SceneModeConfig(
     mode: SceneMode.ai,
-    description: '优先 ChatGPT / Claude 可用节点',
+    description: '优先 ChatGPT / Gemini 可用节点',
     routingMode: 'rule',
     preferredGroupPatterns: ['AI', 'GPT', 'OpenAI', '美国', 'US'],
     preferredNodeKeywords: ['美国', 'US', 'GPT', 'AI', '硅谷'],

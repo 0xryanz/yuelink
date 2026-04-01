@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../infrastructure/home/home_repository.dart';
+import '../nodes/scene_mode/scene_mode.dart';
 import 'widgets/hero_banner_model.dart';
 
 // ── Emby preview config ───────────────────────────────────────────────────────
@@ -105,11 +107,15 @@ class HomeContent {
   /// regions where the bar is not meaningful).
   final bool showServiceStatusBar;
 
+  /// 远程场景模式覆盖配置。null = 使用本地预设。
+  final Map<String, dynamic>? sceneModes;
+
   const HomeContent({
     required this.banners,
     this.quickActions = const QuickActionsConfig(),
     this.embyPreview = const EmbyPreviewConfig(),
     this.showServiceStatusBar = true,
+    this.sceneModes,
   });
 
   /// Local static config used in v1 and as a fallback in v2.
@@ -139,6 +145,7 @@ class HomeContent {
           : const EmbyPreviewConfig(),
       showServiceStatusBar:
           json['showServiceStatusBar'] as bool? ?? true,
+      sceneModes: json['sceneModes'] as Map<String, dynamic>?,
     );
   }
 }
@@ -170,8 +177,11 @@ class HomeContent {
 /// [embyPreviewConfigProvider]) fall back to local config while loading/error,
 /// so **no widget changes** are required when migrating to v2.
 final homeContentProvider = FutureProvider<HomeContent>((ref) async {
-  // v1: return local config immediately.
-  return HomeContent.local();
+  try {
+    final json = await HomeRepository().fetchHomeConfig();
+    if (json != null) return HomeContent.fromJson(json);
+  } catch (_) {}
+  return HomeContent.local(); // fallback to local defaults
 });
 
 // ── Derived sync providers ────────────────────────────────────────────────────
@@ -213,4 +223,25 @@ final embyPreviewConfigProvider = Provider<EmbyPreviewConfig>((ref) {
 final serviceStatusBarVisibleProvider = Provider<bool>((ref) {
   return ref.watch(homeContentProvider).valueOrNull?.showServiceStatusBar ??
       true;
+});
+
+/// 场景模式有效配置（本地预设 + 远程覆盖合并）。
+final sceneModeConfigsProvider =
+    Provider<Map<SceneMode, SceneModeConfig>>((ref) {
+  final remote =
+      ref.watch(homeContentProvider).valueOrNull?.sceneModes;
+  if (remote == null) return kSceneModeDefaults;
+
+  // 合并：对每个 mode，如果远程有覆盖就 merge，否则用本地默认
+  final merged = <SceneMode, SceneModeConfig>{};
+  for (final mode in SceneMode.values) {
+    final base = kSceneModeDefaults[mode]!;
+    final remoteJson = remote[mode.name];
+    if (remoteJson is Map<String, dynamic>) {
+      merged[mode] = SceneModeConfig.fromRemote(base: base, json: remoteJson);
+    } else {
+      merged[mode] = base;
+    }
+  }
+  return merged;
 });

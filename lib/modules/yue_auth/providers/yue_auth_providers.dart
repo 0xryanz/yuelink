@@ -66,10 +66,10 @@ class AuthState {
 
 /// Default XBoard panel URL — override via AuthTokenService.saveApiHost().
 /// Must match the CloudFront custom domain so TLS SNI handshake succeeds.
-const _kDefaultApiHost = 'https://d7ccm19ki90mg.cloudfront.net';
+const _kDefaultApiHost = 'https://yue.yuebao.website';
 
 /// Direct origin URL — used as fallback when CloudFront returns 502/503.
-const _kDirectOriginUrl = 'http://66.55.76.208:8001';
+const _kDirectOriginUrl = 'https://yue.yuebao.website';
 
 /// Tracks the current API host — updated on login and restored from storage.
 final _apiHostProvider = StateProvider<String>((ref) => _kDefaultApiHost);

@@ -166,8 +166,43 @@ class YueLinkVpnService : VpnService() {
 
         onTunReady?.invoke(tunFd)
 
+        // Fix WiFi exclamation mark: override Android captive portal to use
+        // reachable servers (Google blocked in China → system thinks no internet)
+        fixCaptivePortal()
+
         // Start monitoring network changes for DNS updates
         startNetworkMonitor()
+    }
+
+    /**
+     * Override Android's captive portal check URL to servers reachable without proxy.
+     * Google's default (connectivitycheck.gstatic.com) is blocked in China →
+     * system shows WiFi "!" even with working internet.
+     *
+     * Uses Cloudflare's generate_204 (globally reachable, fast, no GFW interference).
+     * Requires WRITE_SECURE_SETTINGS for global settings; falls back silently if denied.
+     */
+    private fun fixCaptivePortal() {
+        try {
+            val cr = contentResolver
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                android.provider.Settings.Global.putString(cr, "captive_portal_http_url",
+                    "http://cp.cloudflare.com/generate_204")
+                android.provider.Settings.Global.putString(cr, "captive_portal_https_url",
+                    "https://cp.cloudflare.com/generate_204")
+            } else {
+                @Suppress("DEPRECATION")
+                android.provider.Settings.Global.putString(cr, "captive_portal_server",
+                    "cp.cloudflare.com")
+            }
+            // Force connectivity re-evaluation
+            val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            cm?.reportNetworkConnectivity(null, true)
+            android.util.Log.i("YueLinkVpn", "Captive portal URL overridden to Cloudflare")
+        } catch (e: Exception) {
+            // SecurityException if WRITE_SECURE_SETTINGS not granted — expected on most devices
+            android.util.Log.w("YueLinkVpn", "Cannot override captive portal: ${e.message}")
+        }
     }
 
     private var stopped = false

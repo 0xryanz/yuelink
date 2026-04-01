@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../domain/announcements/announcement_entity.dart';
 import '../../../l10n/app_strings.dart';
+import '../../../shared/rich_content.dart';
 import '../../../theme.dart';
 import '../providers/announcements_providers.dart';
 
@@ -218,13 +219,7 @@ class _AnnouncementTileState extends ConsumerState<_AnnouncementTile> {
                     : Colors.black.withValues(alpha: 0.06),
               ),
               const SizedBox(height: 10),
-              Text(
-                item.content,
-                style: YLText.body.copyWith(
-                  color: isDark ? YLColors.zinc300 : YLColors.zinc600,
-                  height: 1.6,
-                ),
-              ),
+              RichContent(content: item.content),
             ],
           ],
         ),

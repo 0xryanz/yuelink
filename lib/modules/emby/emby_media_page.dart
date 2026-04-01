@@ -323,33 +323,59 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
 
   // ── UI ────────────────────────────────────────────────────────────────
 
-  @override
+  void _refresh() {
+    _previewCache.clear();
+    _loadingPreviews.clear();
+    _previewError.clear();
+    _searchController.clear();
+    setState(() => _query = '');
+    _loadLibraries();
+  }
+
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dividerColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.08);
+    final hasContent = !_loadingLibs && _error == null &&
+        _libraries != null && _libraries!.isNotEmpty;
+
     return Scaffold(
-      backgroundColor: EmbyTheme.scaffoldBg(context),
-      appBar: AppBar(
-        backgroundColor: EmbyTheme.appBarBg(context),
-        foregroundColor: EmbyTheme.textPrimary(context),
-        elevation: 0,
-        title: Text(S.of(context).navEmby,
-            style: TextStyle(
-                color: EmbyTheme.textPrimary(context),
-                fontWeight: FontWeight.w600)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: () {
-              _previewCache.clear();
-              _loadingPreviews.clear();
-              _previewError.clear();
-              _searchController.clear();
-              setState(() => _query = '');
-              _loadLibraries();
-            },
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Title bar（与我的页统一风格）──────────────────────────────
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+                24, MediaQuery.of(context).padding.top + 16, 8, 12),
+            child: Row(
+              children: [
+                Text(
+                  S.of(context).navEmby,
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.5,
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded),
+                  iconSize: 20,
+                  color: isDark ? EmbyTheme.textSecondary(context) : EmbyTheme.textSecondary(context),
+                  onPressed: _refresh,
+                ),
+              ],
+            ),
           ),
+          Container(height: 0.5, color: dividerColor),
+          // ── 搜索栏（仅内容加载后显示）──────────────────────────────
+          if (hasContent) _buildSearchBar(),
+          // ── 内容区 ─────────────────────────────────────────────────
+          Expanded(child: _buildBody()),
         ],
       ),
-      body: _buildBody(),
     );
   }
 
@@ -362,14 +388,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
             style: TextStyle(color: EmbyTheme.textSecondary(context))),
       );
     }
-    return Column(
-      children: [
-        _buildSearchBar(),
-        Expanded(
-          child: _query.isNotEmpty ? _buildSearchResults() : _buildNetflixRows(),
-        ),
-      ],
-    );
+    return _query.isNotEmpty ? _buildSearchResults() : _buildNetflixRows();
   }
 
   // ── Responsive breakpoints ──────────────────────────────────────────
@@ -399,7 +418,6 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
 
     return RefreshIndicator(
       color: EmbyTheme.textSecondary(context),
-      backgroundColor: EmbyTheme.appBarBg(context),
       onRefresh: () async {
         _previewCache.clear();
         _loadingPreviews.clear();
@@ -442,6 +460,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
                 url: _api.backdropUrl(item.id, width: 800),
                 fit: BoxFit.cover,
                 width: 800,
+                isBackdrop: true,
               )
             else if (item.hasPoster)
               EmbyImage(

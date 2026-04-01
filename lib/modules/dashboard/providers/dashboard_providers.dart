@@ -141,7 +141,7 @@ final proxyServerIpProvider = exitIpInfoProvider;
 // ── AI Unlock Detection ─────────────────────────────────────────────────────
 
 /// Common AI proxy group name patterns.
-const _aiGroupPatterns = ['ai', 'chatgpt', 'openai', 'gpt', 'claude', '人工智能'];
+const _aiGroupPatterns = ['ai', 'chatgpt', 'openai', 'gpt', 'gemini', '人工智能'];
 
 class AiUnlockInfo {
   final String groupName;

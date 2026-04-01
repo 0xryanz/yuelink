@@ -133,10 +133,13 @@ class ProxyGroupsNotifier extends Notifier<List<ProxyGroup>> {
     // Build groups map and extract per-node types
     final groupsMap = <String, ProxyGroup>{};
     final nodeTypes = <String, String>{};
+    // Group types that should be treated as proxy groups even if `all` is null
+    const groupTypes = {'Selector', 'URLTest', 'Fallback', 'LoadBalance', 'Relay'};
     for (final entry in proxiesMap.entries) {
       final info = entry.value as Map<String, dynamic>;
       final type = info['type'] as String? ?? '';
-      if (info.containsKey('all')) {
+      final isGroup = info.containsKey('all') || groupTypes.contains(type);
+      if (isGroup) {
         groupsMap[entry.key] = ProxyGroup(
           name: entry.key,
           type: type,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/app_strings.dart';
+import '../../../shared/rich_content.dart';
 import '../../../theme.dart';
 import '../../../domain/store/store_plan.dart';
 import '../store_providers.dart';
@@ -93,13 +94,7 @@ class _PlanDetailSheetState extends ConsumerState<PlanDetailSheet> {
                       style: YLText.label.copyWith(color: YLColors.zinc500),
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      plan.content!.trim(),
-                      style: YLText.body.copyWith(
-                        color: isDark ? YLColors.zinc300 : YLColors.zinc700,
-                        height: 1.5,
-                      ),
-                    ),
+                    RichContent(content: plan.content),
                     const SizedBox(height: YLSpacing.lg),
                   ],
 

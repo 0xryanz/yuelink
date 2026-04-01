@@ -13,7 +13,6 @@ import '../protocol_color.dart';
 import '../providers/node_providers.dart';
 import '../providers/nodes_providers.dart';
 import '../favorites/node_favorites_providers.dart';
-import 'node_health_label.dart';
 
 List<String> _sortedNodes(
     List<String> nodes, NodeSortMode mode, Map<String, int> delays) {
@@ -79,6 +78,7 @@ class GroupCard extends ConsumerStatefulWidget {
 class _GroupCardState extends ConsumerState<GroupCard>
     with SingleTickerProviderStateMixin {
   bool _expanded = false;
+  bool _showAll = false; // For large groups: show all nodes or capped
   late AnimationController _animController;
   late Animation<double> _expandAnim;
   late Animation<double> _chevronAnim;
@@ -106,7 +106,10 @@ class _GroupCardState extends ConsumerState<GroupCard>
   }
 
   void _toggle() {
-    setState(() => _expanded = !_expanded);
+    setState(() {
+      _expanded = !_expanded;
+      if (!_expanded) _showAll = false; // Reset cap when collapsing
+    });
     if (_expanded) {
       _animController.forward();
     } else {
@@ -251,20 +254,44 @@ class _GroupCardState extends ConsumerState<GroupCard>
                             final itemWidth =
                                 (constraints.maxWidth - spacing * (cols - 1)) /
                                     cols;
-                            return Wrap(
-                              spacing: spacing,
-                              runSpacing: spacing,
-                              children: nodeList
-                                  .map((name) => SizedBox(
-                                        width: itemWidth,
-                                        child: RepaintBoundary(
-                                          child: NodeCardItem(
-                                            name: name,
-                                            groupName: group.name,
-                                          ),
+                            // Cap visible nodes to avoid 200+ widgets in memory.
+                            // User taps "show all" to override.
+                            const maxVisible = 60;
+                            final capped = !_showAll && nodeList.length > maxVisible;
+                            final visible = capped
+                                ? nodeList.sublist(0, maxVisible)
+                                : nodeList;
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Wrap(
+                                  spacing: spacing,
+                                  runSpacing: spacing,
+                                  children: visible
+                                      .map((name) => SizedBox(
+                                            width: itemWidth,
+                                            child: RepaintBoundary(
+                                              child: NodeCardItem(
+                                                name: name,
+                                                groupName: group.name,
+                                              ),
+                                            ),
+                                          ))
+                                      .toList(),
+                                ),
+                                if (capped)
+                                  Center(
+                                    child: TextButton(
+                                      onPressed: () => setState(() => _showAll = true),
+                                      child: Text(
+                                        '展开全部 ${nodeList.length} 个节点',
+                                        style: YLText.caption.copyWith(
+                                          color: YLColors.primary,
                                         ),
-                                      ))
-                                  .toList(),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             );
                           },
                         ),
@@ -370,13 +397,7 @@ class _NodeCardItemState extends ConsumerState<NodeCardItem> {
     final isTesting = ref.watch(nodeIsTestingProvider(widget.name));
     final nodeType = ref.watch(nodeTypeProvider(widget.name));
     final isFavorite = ref.watch(nodeIsFavoriteProvider(widget.name));
-    final isRecent = ref.watch(nodeIsRecentProvider(widget.name));
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final healthTag = computeNodeHealthTag(
-      delay: delay,
-      isFavorite: isFavorite,
-      isRecent: isRecent,
-    );
 
     return GestureDetector(
       onTap: _handleSelect,
@@ -441,15 +462,13 @@ class _NodeCardItemState extends ConsumerState<NodeCardItem> {
                       protocolColor: protocolColor(nodeType)),
                   const SizedBox(width: 4),
                 ],
-                if (healthTag != null) ...[
-                  NodeHealthLabel(tag: healthTag, isDark: isDark),
-                  const SizedBox(width: 4),
-                ],
-                GestureDetector(
-                  onTap: isTesting
-                      ? null
-                      : () => ref.read(delayTestProvider).testDelay(widget.name),
-                  child: YLDelayBadge(delay: delay, testing: isTesting),
+                Flexible(
+                  child: GestureDetector(
+                    onTap: isTesting
+                        ? null
+                        : () => ref.read(delayTestProvider).testDelay(widget.name),
+                    child: YLDelayBadge(delay: delay, testing: isTesting),
+                  ),
                 ),
               ],
             ),

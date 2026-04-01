@@ -9,6 +9,7 @@ import '../../../modules/announcements/presentation/announcements_page.dart';
 import '../../../modules/emby/emby_media_page.dart';
 import '../../../modules/emby/emby_providers.dart';
 import '../../../modules/emby/emby_web_page.dart';
+import '../../../modules/mine/views/feedback_page.dart';
 import '../../../modules/store/store_page.dart';
 import '../../../providers/core_provider.dart';
 import '../../../shared/app_notifier.dart';
@@ -159,12 +160,22 @@ class _HeroBannerState extends ConsumerState<HeroBanner> {
           MaterialPageRoute(builder: (_) => const AnnouncementsPage()),
         );
       case BannerActionType.openUrl:
+      case BannerActionType.external:
         final target = item.actionTarget;
         if (target == null || target.isEmpty) return;
         final uri = Uri.tryParse(target);
         if (uri != null && uri.scheme.startsWith('http')) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         }
+      case BannerActionType.deepLink:
+        // App 内部路由跳转（预留，当前无 deep link 路由表）
+        break;
+      case BannerActionType.openFeedback:
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const FeedbackPage()),
+        );
     }
   }
 
@@ -236,6 +247,8 @@ class _BannerSlide extends StatelessWidget {
                 child: Image.network(
                   item.imageUrl!,
                   fit: BoxFit.cover,
+                  cacheWidth: 720,
+                  cacheHeight: 405,
                   errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                 ),
               ),

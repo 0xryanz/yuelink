@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../emby/emby_client.dart';
 import '../../emby/emby_providers.dart';
+import '../home_content_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Source enum
@@ -93,14 +94,16 @@ final embyPreviewProvider =
   ref.onDispose(client.close);
 
   final uid = emby.parsedUserId!;
+  final cfg = ref.watch(embyPreviewConfigProvider);
+  final limit = '${cfg.maxItems}';
 
   try {
     if (source == EmbyPreviewSource.featured) {
-      final items = await _fetchFeatured(client, uid);
+      final items = await _fetchFeatured(client, uid, limit: limit);
       if (items.isNotEmpty) return items;
       // Featured empty → fall through to recent
     }
-    return await _fetchRecent(client, uid);
+    return await _fetchRecent(client, uid, limit: limit);
   } catch (_) {
     return const [];
   }
@@ -112,10 +115,10 @@ final embyPreviewProvider =
 
 /// Fetch most-recently-added items (typed → untyped fallback).
 Future<List<EmbyPreviewItem>> _fetchRecent(
-    EmbyClient client, String uid) async {
+    EmbyClient client, String uid, {String limit = '10'}) async {
   // Step 1: typed
   final data = await client.get('/emby/Users/$uid/Items', {
-    'Limit': '10',
+    'Limit': limit,
     'SortBy': 'DateCreated,SortName',
     'SortOrder': 'Descending',
     'Recursive': 'true',
@@ -127,7 +130,7 @@ Future<List<EmbyPreviewItem>> _fetchRecent(
 
   // Step 2: untyped fallback (STRM / unscanned libraries)
   final data2 = await client.get('/emby/Users/$uid/Items', {
-    'Limit': '10',
+    'Limit': limit,
     'SortBy': 'DateCreated,SortName',
     'SortOrder': 'Descending',
     'Recursive': 'true',
@@ -139,10 +142,10 @@ Future<List<EmbyPreviewItem>> _fetchRecent(
 /// Fetch admin-favourited items, ranked by community rating.
 /// Returns `[]` if the server has no favourites (caller falls back to recent).
 Future<List<EmbyPreviewItem>> _fetchFeatured(
-    EmbyClient client, String uid) async {
+    EmbyClient client, String uid, {String limit = '10'}) async {
   // Step 1: typed favourites
   final data = await client.get('/emby/Users/$uid/Items', {
-    'Limit': '10',
+    'Limit': limit,
     'Filters': 'IsFavorite',
     'SortBy': 'CommunityRating,SortName',
     'SortOrder': 'Descending',
@@ -155,7 +158,7 @@ Future<List<EmbyPreviewItem>> _fetchFeatured(
 
   // Step 2: untyped favourites (STRM servers)
   final data2 = await client.get('/emby/Users/$uid/Items', {
-    'Limit': '10',
+    'Limit': limit,
     'Filters': 'IsFavorite',
     'SortBy': 'CommunityRating,SortName',
     'SortOrder': 'Descending',

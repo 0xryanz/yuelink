@@ -17,14 +17,15 @@ import '../../theme.dart';
 /// - Windows               : [webview_windows] (WebView2 / Chromium Edge)
 class EmbyWebPage extends StatelessWidget {
   final String url;
-  const EmbyWebPage({super.key, required this.url});
+  final String? title;
+  const EmbyWebPage({super.key, required this.url, this.title});
 
   @override
   Widget build(BuildContext context) {
     if (Platform.isWindows) {
-      return _WindowsEmbyView(url: url);
+      return _WindowsEmbyView(url: url, title: title);
     }
-    return _FlutterEmbyView(url: url);
+    return _FlutterEmbyView(url: url, title: title);
   }
 }
 
@@ -32,7 +33,8 @@ class EmbyWebPage extends StatelessWidget {
 
 class _FlutterEmbyView extends StatefulWidget {
   final String url;
-  const _FlutterEmbyView({required this.url});
+  final String? title;
+  const _FlutterEmbyView({required this.url, this.title});
 
   @override
   State<_FlutterEmbyView> createState() => _FlutterEmbyViewState();
@@ -146,6 +148,7 @@ class _FlutterEmbyViewState extends State<_FlutterEmbyView> {
   @override
   Widget build(BuildContext context) => _scaffold(
         context,
+        title: widget.title,
         child: ColoredBox(
           color: Colors.black,
           child: _error != null
@@ -189,7 +192,8 @@ class _FlutterEmbyViewState extends State<_FlutterEmbyView> {
 
 class _WindowsEmbyView extends StatefulWidget {
   final String url;
-  const _WindowsEmbyView({required this.url});
+  final String? title;
+  const _WindowsEmbyView({required this.url, this.title});
 
   @override
   State<_WindowsEmbyView> createState() => _WindowsEmbyViewState();
@@ -240,7 +244,7 @@ class _WindowsEmbyViewState extends State<_WindowsEmbyView> {
     } else {
       body = Webview(_controller, permissionRequested: _onPermissionRequested);
     }
-    return _scaffold(context, child: body);
+    return _scaffold(context, title: widget.title, child: body);
   }
 
   Future<WebviewPermissionDecision> _onPermissionRequested(
@@ -253,18 +257,18 @@ class _WindowsEmbyViewState extends State<_WindowsEmbyView> {
 
 // ── Shared scaffold ───────────────────────────────────────────────────────────
 
-Widget _scaffold(BuildContext context, {required Widget child}) {
+Widget _scaffold(BuildContext context, {required Widget child, String? title}) {
   final s = S.of(context);
   final isDark = Theme.of(context).brightness == Brightness.dark;
   return Scaffold(
     appBar: AppBar(
       leading: const BackButton(),
-      title: Text(s.mineEmby),
+      title: Text(title ?? s.mineEmby),
       backgroundColor: isDark ? YLColors.zinc900 : Colors.white,
       foregroundColor: isDark ? Colors.white : YLColors.zinc900,
       elevation: 0,
     ),
-    backgroundColor: Colors.black,
+    backgroundColor: isDark ? YLColors.zinc950 : Colors.white,
     body: child,
   );
 }

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../providers/core_provider.dart';
+import '../../../shared/app_notifier.dart';
 import '../../../theme.dart';
+import '../smart_select/smart_select_provider.dart';
 import 'scene_mode.dart';
 import 'scene_mode_provider.dart';
 
@@ -84,7 +87,25 @@ class SceneModeSheet extends ConsumerWidget {
                 isActive: mode == active,
                 isDark: isDark,
                 onTap: () async {
+                  // 1. 切换场景
                   await ref.read(sceneModeProvider.notifier).setMode(mode);
+
+                  // 2. 切 mihomo routing mode（rule/global/direct）
+                  final config = ref.read(sceneModeConfigProvider);
+                  final api = ref.read(mihomoApiProvider);
+                  try {
+                    await api.setRoutingMode(config.routingMode);
+                  } catch (_) {}
+
+                  // 3. VPN 在跑 → 自动触发智能选线
+                  final isRunning = ref.read(coreStatusProvider) == CoreStatus.running;
+                  if (isRunning) {
+                    ref.read(smartSelectProvider.notifier).runTest();
+                    if (context.mounted) {
+                      AppNotifier.info('已切换到${mode.label}模式，正在智能选线...');
+                    }
+                  }
+
                   if (context.mounted) Navigator.of(context).pop();
                 },
               ),

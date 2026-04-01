@@ -10,7 +10,6 @@ import '../providers/node_providers.dart';
 import '../providers/nodes_providers.dart';
 import '../../chain_proxy/chain_proxy_provider.dart';
 import '../favorites/node_favorites_providers.dart';
-import 'node_health_label.dart';
 
 /// A single proxy node row.
 ///
@@ -107,13 +106,7 @@ class _NodeTileState extends ConsumerState<NodeTile> {
     final isTesting = ref.watch(nodeIsTestingProvider(widget.name));
     final nodeType = ref.watch(nodeTypeProvider(widget.name));
     final isFavorite = ref.watch(nodeIsFavoriteProvider(widget.name));
-    final isRecent = ref.watch(nodeIsRecentProvider(widget.name));
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final healthTag = computeNodeHealthTag(
-      delay: delay,
-      isFavorite: isFavorite,
-      isRecent: isRecent,
-    );
 
     return Material(
       color: Colors.transparent,
@@ -151,11 +144,6 @@ class _NodeTileState extends ConsumerState<NodeTile> {
               Expanded(
                 child: _buildName(context, isSelected, isDark),
               ),
-              // ── Health label ───────────────────────────────────────────
-              if (healthTag != null) ...[
-                const SizedBox(width: 4),
-                NodeHealthLabel(tag: healthTag, isDark: isDark),
-              ],
               const SizedBox(width: YLSpacing.sm),
               // ── Star / favorite button ─────────────────────────────────
               GestureDetector(

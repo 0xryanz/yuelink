@@ -98,8 +98,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // ── Image cache limit (prevent 1GB+ memory from decoded bitmaps) ──
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 100 * 1024 * 1024;
-  PaintingBinding.instance.imageCache.maximumSize = 200;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024;
+  PaintingBinding.instance.imageCache.maximumSize = 100;
 
   // ── Error logging (local crash.log + optional remote Sentry/Crashlytics) ──
   ErrorLogger.init();

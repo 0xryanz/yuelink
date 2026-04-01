@@ -896,6 +896,9 @@ class ConfigTemplate {
     final ruleIndent = firstRule?.group(1) ?? '  ';
     var injection = '';
     for (final d in domains) {
+      // Google/gstatic/msft 域名被 GFW 干扰，不注入 DIRECT
+      // 让订阅自带的 Google→代理 规则处理
+      if (d.contains('google') || d.contains('gstatic') || d.contains('msft')) continue;
       if (!config.contains('DOMAIN,$d,')) {
         injection += '$ruleIndent- "DOMAIN,$d,DIRECT"\n';
       }

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../dashboard/home_content_provider.dart';
 import 'scene_mode.dart';
 import 'scene_mode_service.dart';
 
@@ -24,8 +25,10 @@ final sceneModeProvider =
     AsyncNotifierProvider<SceneModeNotifier, SceneMode>(SceneModeNotifier.new);
 
 /// Convenience derived provider — current [SceneModeConfig] (never null).
+/// Reads from [sceneModeConfigsProvider] which merges local presets + remote overrides.
 /// Falls back to [SceneMode.daily] config while loading.
 final sceneModeConfigProvider = Provider<SceneModeConfig>((ref) {
   final mode = ref.watch(sceneModeProvider).valueOrNull ?? SceneMode.daily;
-  return kSceneModeDefaults[mode]!;
+  final configs = ref.watch(sceneModeConfigsProvider);
+  return configs[mode] ?? kSceneModeDefaults[mode]!;
 });

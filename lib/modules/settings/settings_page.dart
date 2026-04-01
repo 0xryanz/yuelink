@@ -25,9 +25,9 @@ import '../../core/storage/settings_service.dart';
 import '../../modules/nodes/providers/nodes_providers.dart';
 import '../../core/env_config.dart';
 import '../../services/update_checker.dart';
+import '../../shared/rich_content.dart';
 import '../../theme.dart';
-import '../mine/widgets/account_card.dart';
-import '../mine/widgets/traffic_usage_card.dart';
+import '../mine/providers/account_providers.dart';
 
 // ── Settings-level providers ─────────────────────────────────────────────────
 
@@ -141,14 +141,30 @@ class SettingsPage extends ConsumerStatefulWidget {
   ConsumerState<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsPageState extends ConsumerState<SettingsPage> {
+class _SettingsPageState extends ConsumerState<SettingsPage> with WidgetsBindingObserver {
   UpdateInfo? _pendingUpdate;
   bool _checkingUpdate = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkForUpdate();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // App 从后台恢复时刷新账户数据
+      ref.invalidate(accountOverviewProvider);
+      ref.invalidate(accountNoticesProvider);
+    }
   }
 
   Future<void> _checkForUpdate() async {
@@ -181,9 +197,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxHeight: 200),
                       child: SingleChildScrollView(
-                        child: Text(
-                          info.releaseNotes,
-                          style: YLText.body.copyWith(color: YLColors.zinc500),
+                        child: RichContent(
+                          content: info.releaseNotes,
+                          textStyle: YLText.body.copyWith(color: YLColors.zinc500),
                         ),
                       ),
                     ),
@@ -294,7 +310,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    final isGuest = ref.watch(authProvider).isGuest;
+    final authState = ref.watch(authProvider);
+    final isGuest = authState.isGuest;
+    // loggedOut 状态同样不展示账户中心卡（避免显示"数据暂时无法获取"）
+    final isLoggedOut = !authState.isLoggedIn && !isGuest;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final dividerColor = isDark
@@ -332,13 +351,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
                   children: [
 
-              // ══ 0. Account card (top) ═════════════════════════════
-              if (isGuest) ...[
+              // ══ 0. Profile ═══════════════════════════════════════════
+              if (isGuest || isLoggedOut) ...[
                 _GuestLoginCard(isDark: isDark),
               ] else ...[
-                const AccountCard(),
-                const SizedBox(height: 12),
-                const TrafficUsageCard(),
+                // ── Profile row（Apple Settings 风格）──
+                _ProfileRow(isDark: isDark),
+
+                // ── 流量 ──
+                _SectionTitle('流量'),
+                _MineTrafficSection(isDark: isDark),
+
+
               ],
 
               // ══ 1. Service (订阅相关) ══════════════════════════════
@@ -500,6 +524,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   ],
                 ),
               ),
+              // 退出登录已移到 Profile 头像卡右上角
               const SizedBox(height: 32),
                   ],
                 ),
@@ -630,6 +655,212 @@ class _AccountSection extends ConsumerWidget {
 }
 
 /// Guest mode login prompt card for the Mine page.
+/// Apple Settings 风格 profile row — 头像+邮箱+套餐标签。精简，不含按钮。
+class _ProfileRow extends ConsumerWidget {
+  final bool isDark;
+  const _ProfileRow({required this.isDark});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final overviewAsync = ref.watch(accountOverviewProvider);
+    final overview = overviewAsync.valueOrNull;
+
+    // 始终显示，loading/error 时用占位数据
+    final email = overview?.email ?? '加载中...';
+    final plan = overview?.planName ?? '--';
+
+    return _SettingsCard(
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: isDark ? YLColors.zinc700 : YLColors.zinc200,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    email.isNotEmpty && email != '加载中...' ? email[0].toUpperCase() : '?',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600,
+                        color: isDark ? YLColors.zinc300 : YLColors.zinc600),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(email,
+                        style: YLText.titleMedium.copyWith(fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.white : YLColors.zinc900),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 3),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isDark ? YLColors.zinc700 : YLColors.zinc100,
+                        borderRadius: BorderRadius.circular(YLRadius.sm),
+                      ),
+                      child: Text(plan,
+                          style: YLText.caption.copyWith(fontWeight: FontWeight.w500,
+                              color: isDark ? YLColors.zinc300 : YLColors.zinc600)),
+                    ),
+                  ],
+                ),
+              ),
+              // 改密码 + 退出登录 小图标
+              IconButton(
+                icon: Icon(Icons.lock_outline_rounded, size: 18,
+                    color: isDark ? YLColors.zinc400 : YLColors.zinc500),
+                tooltip: '修改密码',
+                onPressed: () {
+                  final s = S.of(context);
+                  final oldPwCtrl = TextEditingController();
+                  final newPwCtrl = TextEditingController();
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: Text(s.mineChangePassword),
+                      content: Column(mainAxisSize: MainAxisSize.min, children: [
+                        TextField(controller: oldPwCtrl, obscureText: true, decoration: InputDecoration(labelText: s.oldPassword)),
+                        const SizedBox(height: 12),
+                        TextField(controller: newPwCtrl, obscureText: true, decoration: InputDecoration(labelText: s.newPassword)),
+                      ]),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)),
+                        FilledButton(
+                          onPressed: () async {
+                            final oldPw = oldPwCtrl.text.trim();
+                            final newPw = newPwCtrl.text.trim();
+                            if (oldPw.isEmpty || newPw.isEmpty) return;
+                            Navigator.pop(ctx);
+                            final token = ref.read(authProvider).token;
+                            if (token == null) return;
+                            try {
+                              await ref.read(xboardApiProvider).changePassword(token: token, oldPassword: oldPw, newPassword: newPw);
+                              AppNotifier.success(s.passwordChangedSuccess);
+                            } catch (_) {
+                              AppNotifier.error(s.passwordChangeFailed);
+                            }
+                          },
+                          child: Text(s.confirm),
+                        ),
+                      ],
+                    ),
+                  ).whenComplete(() { oldPwCtrl.dispose(); newPwCtrl.dispose(); });
+                },
+              ),
+              IconButton(
+                icon: Icon(Icons.logout_rounded, size: 18, color: YLColors.error.withValues(alpha: 0.7)),
+                tooltip: '退出登录',
+                onPressed: () {
+                  final s = S.of(context);
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: Text(s.authLogout),
+                      content: Text(s.authLogoutConfirm),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)),
+                        FilledButton(
+                          onPressed: () { Navigator.pop(ctx); ref.read(authProvider.notifier).logout(); },
+                          style: FilledButton.styleFrom(backgroundColor: YLColors.error),
+                          child: Text(s.authLogout),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MineTrafficSection extends ConsumerWidget {
+  final bool isDark;
+  const _MineTrafficSection({required this.isDark});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final overviewAsync = ref.watch(accountOverviewProvider);
+    final overview = overviewAsync.valueOrNull;
+
+    final usageRatio = overview?.usageRatio ?? 0.0;
+    final usedStr = overview != null && overview.transferTotalBytes > 0
+        ? formatBytes(overview.transferUsedBytes) : '--';
+    final totalStr = overview != null && overview.transferTotalBytes > 0
+        ? formatBytes(overview.transferTotalBytes) : '--';
+    final remainStr = overview != null && overview.transferTotalBytes > 0
+        ? formatBytes(overview.transferRemainingBytes) : '--';
+    final expiryStr = overview == null ? '--'
+        : overview.expireAt == null ? '永久有效'
+        : overview.daysRemaining == null || overview.daysRemaining! < 0 ? '已过期'
+        : overview.daysRemaining == 0 ? '今日到期'
+        : '${overview.daysRemaining} 天后到期';
+
+    return _SettingsCard(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Column(
+        children: [
+          Row(
+            children: [
+              Text('已用 / 总量', style: YLText.caption.copyWith(color: YLColors.zinc500)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('$usedStr / $totalStr',
+                    style: YLText.label.copyWith(fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : YLColors.zinc900),
+                    overflow: TextOverflow.ellipsis, textAlign: TextAlign.end),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: usageRatio,
+              minHeight: 5,
+              backgroundColor: isDark ? YLColors.zinc700 : YLColors.zinc200,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                usageRatio < 0.6 ? const Color(0xFF22C55E)
+                    : usageRatio < 0.85 ? Colors.orange : Colors.red,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text('剩余 $remainStr',
+                    style: YLText.caption.copyWith(color: YLColors.zinc500),
+                    overflow: TextOverflow.ellipsis),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(expiryStr,
+                    style: YLText.caption.copyWith(
+                      color: overview != null && (overview.daysRemaining ?? 999) <= 7
+                          ? Colors.orange : YLColors.zinc500,
+                    ),
+                    overflow: TextOverflow.ellipsis, textAlign: TextAlign.end),
+              ),
+            ],
+          ),
+        ],
+      ),
+      ),
+    );
+  }
+}
+
 class _GuestLoginCard extends ConsumerWidget {
   final bool isDark;
   const _GuestLoginCard({required this.isDark});
@@ -1083,7 +1314,6 @@ class _TestUrlRow extends ConsumerWidget {
   }
 }
 
-/// A settings row with a title, optional description, and a trailing widget.
 class YLSettingsRow extends StatelessWidget {
   final String title;
   final String? description;

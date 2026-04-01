@@ -342,6 +342,7 @@ class _EmbyDetailPageState extends State<EmbyDetailPage> {
                   url: widget.api.backdropUrl(widget.itemId, width: 1920),
                   fit: BoxFit.cover,
                   width: 800,
+                  isBackdrop: true,
                   placeholder: Container(color: const Color(0xFF27272A)),
                 )
               : widget.hasPoster
@@ -726,6 +727,7 @@ class _EmbyDetailPageState extends State<EmbyDetailPage> {
                         itemId: ep.id,
                         fit: BoxFit.cover,
                         width: 400,
+                        isBackdrop: true,
                         placeholder: _thumbPlaceholder(),
                       )
                     : _thumbPlaceholder(),

@@ -15,20 +15,15 @@ import '../../infrastructure/repositories/profile_repository.dart';
 import '../../providers/connection_provider.dart';
 import '../../theme.dart';
 import '../announcements/providers/announcements_providers.dart';
-import 'widgets/announcement_banner.dart';
 import 'widgets/live_status_card.dart';
 import 'widgets/metrics_row.dart';
 import 'widgets/carrier_card.dart';
-import 'widgets/subscription_card.dart';
 import '../checkin/presentation/checkin_card.dart';
 import '../checkin/providers/checkin_provider.dart';
-import 'widgets/connection_bar.dart';
 import 'widgets/hero_card.dart';
-import 'widgets/hero_banner.dart';
 import 'widgets/quick_actions.dart';
+import '../mine/widgets/notices_card.dart';
 import 'widgets/emby_preview_row.dart';
-import 'widgets/service_status_bar.dart';
-import 'home_content_provider.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
@@ -82,12 +77,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                         vertical: 24,
                       ),
                       children: [
-                        // ── 1. 顶部连接状态栏 ─────────────────────────
-                        const ConnectionBar(),
-
-                        const SizedBox(height: 16),
-
-                        // ── 2. VPN 连接卡 ─────────────────────────────
+                        // ── 1. VPN 连接卡 ─────────────────────────────
                         RepaintBoundary(
                           child: HeroCard(
                             status: status,
@@ -97,43 +87,27 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
                         const SizedBox(height: 12),
 
-                        // ── 3. 快捷操作 ───────────────────────────────
+                        // ── 2. 快捷操作 ───────────────────────────────
                         const RepaintBoundary(child: QuickActions()),
 
                         const SizedBox(height: 12),
 
-                        // ── 4. 运营 Hero Banner（数据驱动，支持配置）────
-                        const RepaintBoundary(child: HeroBanner()),
+                        // ── 3. 公告（服务通知优先）──────────────────
+                        const RepaintBoundary(child: NoticesCard()),
 
                         const SizedBox(height: 12),
 
-                        // ── 5. 套餐卡 ─────────────────────────────────
-                        const RepaintBoundary(child: SubscriptionCard()),
-
-                        const SizedBox(height: 8),
-
-                        // ── 5.5 服务状态概览（配置驱动开关）──────────
-                        if (ref.watch(serviceStatusBarVisibleProvider)) ...[
-                          const RepaintBoundary(child: ServiceStatusBar()),
-                          const SizedBox(height: 12),
-                        ],
-
-                        // ── 6. 悦视频推荐条 ───────────────────────────
+                        // ── 4. 悦视频推荐条 ───────────────────────────
                         const RepaintBoundary(child: EmbyPreviewRow()),
 
                         const SizedBox(height: 12),
 
-                        // ── 7. 签到卡 ─────────────────────────────────
+                        // ── 5. 签到 ─────────────────────────────────
                         const RepaintBoundary(child: CheckinCard()),
 
                         const SizedBox(height: 12),
 
-                        // ── 8. 公告摘要 ───────────────────────────────
-                        const RepaintBoundary(child: AnnouncementBanner()),
-
-                        const SizedBox(height: 12),
-
-                        // ── 9. 数据监控（可折叠，默认收起）───────────────
+                        // ── 5. 数据监控（折叠）───────────────────────
                         const RepaintBoundary(child: _TrafficSection()),
 
                         const SizedBox(height: 16),

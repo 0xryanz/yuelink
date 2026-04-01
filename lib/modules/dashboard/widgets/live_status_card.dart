@@ -86,7 +86,7 @@ class _LiveStatusCardState extends ConsumerState<LiveStatusCard> {
             ),
             const SizedBox(height: 10),
 
-            // ── Speed row + range controls ────────────────────────────────
+            // ── Speed row ─────────────────────────────────────────────────
             Row(
               children: [
                 Flexible(
@@ -112,7 +112,6 @@ class _LiveStatusCardState extends ConsumerState<LiveStatusCard> {
                     onTap: () => ref
                         .read(trafficChartRangeProvider.notifier)
                         .state = 60),
-                const SizedBox(width: 4),
                 _RangeButton(
                     label: '5m',
                     value: 300,
@@ -120,7 +119,6 @@ class _LiveStatusCardState extends ConsumerState<LiveStatusCard> {
                     onTap: () => ref
                         .read(trafficChartRangeProvider.notifier)
                         .state = 300),
-                const SizedBox(width: 4),
                 _RangeButton(
                     label: '30m',
                     value: 1800,
@@ -128,7 +126,6 @@ class _LiveStatusCardState extends ConsumerState<LiveStatusCard> {
                     onTap: () => ref
                         .read(trafficChartRangeProvider.notifier)
                         .state = 1800),
-                const SizedBox(width: 4),
                 _LockButton(
                   locked: locked,
                   tooltip: locked ? s.chartUnlock : s.chartLock,
@@ -381,13 +378,17 @@ class _SpeedChip extends StatelessWidget {
           decoration: BoxDecoration(shape: BoxShape.circle, color: color),
         ),
         const SizedBox(width: 4),
-        Text(
-          '$arrow ${TrafficFormatter.speed(bps)}/s',
-          style: YLText.caption.copyWith(
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-            color: YLColors.zinc400,
-            fontFeatures: const [FontFeature.tabularFigures()],
+        Flexible(
+          child: Text(
+            '$arrow ${TrafficFormatter.speed(bps)}/s',
+            style: YLText.caption.copyWith(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: YLColors.zinc400,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
@@ -414,7 +415,7 @@ class _RangeButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
         decoration: BoxDecoration(
           color: selected
               ? YLColors.zinc500.withValues(alpha: 0.15)

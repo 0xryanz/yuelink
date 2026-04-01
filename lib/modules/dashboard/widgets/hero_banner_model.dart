@@ -19,6 +19,15 @@ enum BannerActionType {
   /// Launch an external URL via the system browser.
   /// [HeroBannerItem.actionTarget] must be a valid HTTPS URL.
   openUrl,
+
+  /// Open an external URL via the system browser (alias for richer payloads).
+  external,
+
+  /// App-internal deep link. [HeroBannerItem.actionTarget] is a route path.
+  deepLink,
+
+  /// Open the native feedback page.
+  openFeedback,
 }
 
 // ── Model ─────────────────────────────────────────────────────────────────────
@@ -135,7 +144,7 @@ const kLocalHeroBanners = [
   HeroBannerItem(
     id: 'ai_mode',
     title: 'AI 加速模式',
-    subtitle: '专线直连 ChatGPT / Claude，低延迟稳定访问',
+    subtitle: '专线直连 ChatGPT / Gemini，低延迟稳定访问',
     gradientStart: Color(0xFF1a1a2e),
     gradientEnd: Color(0xFF533483),
     iconEmoji: '🤖',

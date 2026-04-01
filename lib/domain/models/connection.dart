@@ -102,10 +102,10 @@ class ConnectionsSnapshot {
   });
 
   factory ConnectionsSnapshot.fromJson(Map<String, dynamic> json) {
-    final list = (json['connections'] as List? ?? [])
-        .cast<Map<String, dynamic>>()
-        .map(ActiveConnection.fromJson)
-        .toList();
+    // Cap at 500 to prevent memory spikes from BT/P2P with thousands of peers.
+    final raw = (json['connections'] as List? ?? []).cast<Map<String, dynamic>>();
+    final capped = raw.length > 500 ? raw.sublist(0, 500) : raw;
+    final list = capped.map(ActiveConnection.fromJson).toList();
     return ConnectionsSnapshot(
       connections: list,
       downloadTotal: (json['downloadTotal'] as num?)?.toInt() ?? 0,

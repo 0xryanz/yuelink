@@ -384,6 +384,8 @@ class YLDelayBadge extends StatelessWidget {
         color: c,
         fontFeatures: const [FontFeature.tabularFigures()],
       ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 }

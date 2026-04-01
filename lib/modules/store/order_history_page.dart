@@ -36,7 +36,7 @@ class _OrderHistoryPageState extends ConsumerState<OrderHistoryPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed && mounted) {
       ref.read(orderHistoryProvider.notifier).refresh();
     }
   }

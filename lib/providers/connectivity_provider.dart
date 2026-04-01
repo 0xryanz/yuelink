@@ -21,6 +21,7 @@ class ConnectivityNotifier extends Notifier<ConnectivityStatus> {
   @override
   ConnectivityStatus build() {
     _disposed = false;
+    _timer?.cancel();
     ref.onDispose(() {
       _disposed = true;
       _timer?.cancel();

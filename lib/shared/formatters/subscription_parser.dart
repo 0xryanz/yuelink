@@ -39,13 +39,13 @@ class SubscriptionInfo {
   /// Whether the subscription has expired.
   bool get isExpired {
     if (expire == null) return false;
-    return DateTime.now().isAfter(expire!);
+    return DateTime.now().toUtc().isAfter(expire!.toUtc());
   }
 
   /// Days until expiry, or null if unknown.
   int? get daysRemaining {
     if (expire == null) return null;
-    return expire!.difference(DateTime.now()).inDays;
+    return expire!.toUtc().difference(DateTime.now().toUtc()).inDays;
   }
 
   /// Parse from HTTP response headers.

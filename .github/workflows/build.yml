@@ -147,7 +147,7 @@ jobs:
         shell: bash
         run: |
           cd core
-          go test ./... -count=1 -timeout 120s || true
+          go test ./... -count=1 -timeout 120s
           cd ..
 
       # ── Build ─────────────────────────────────────────────────────────────

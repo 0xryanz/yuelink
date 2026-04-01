@@ -293,11 +293,13 @@ class CoreManager {
 
       // ── Step 6: startCore (Go hub.Parse) ───────────────────────────
       await _step(steps, 'startCore', StartupError.coreStartFailed, () async {
-        // Write config to disk for debugging
+        // Write config to disk for debugging (atomic tmp+rename)
         debugPrint('[CoreManager] startCore: writing config to disk...');
         final appDir = await getApplicationSupportDirectory();
-        await File('${appDir.path}/${AppConstants.configFileName}')
-            .writeAsString(processed);
+        final configFile = File('${appDir.path}/${AppConstants.configFileName}');
+        final tmpFile = File('${configFile.path}.tmp');
+        await tmpFile.writeAsString(processed);
+        await tmpFile.rename(configFile.path);
 
         switch (_mode) {
           case CoreMode.mock:

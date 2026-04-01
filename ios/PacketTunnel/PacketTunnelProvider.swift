@@ -157,7 +157,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
-        // Inject TUN fd for hot-reload too
+        // Inject TUN fd for hot-reload too (invalidate cache for safety)
+        cachedTunFd = -1
         let tunFd = findTunFd()
         if tunFd > 0 {
             configYaml = injectTunConfig(configYaml, fd: tunFd)
@@ -189,14 +190,19 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         let configPath = containerURL.appendingPathComponent("mihomo/config.yaml").path
 
         // Ensure home directory exists
-        try? FileManager.default.createDirectory(
-            atPath: homeDir,
-            withIntermediateDirectories: true
-        )
+        do {
+            try FileManager.default.createDirectory(
+                atPath: homeDir,
+                withIntermediateDirectories: true
+            )
+        } catch {
+            NSLog("[PacketTunnel] ERROR: Failed to create home directory: %@", error.localizedDescription)
+        }
 
         // Read config written by the main app
         guard var configYaml = try? String(contentsOfFile: configPath, encoding: .utf8),
               !configYaml.isEmpty else {
+            NSLog("[PacketTunnel] ERROR: Config file missing or empty at %@", configPath)
             completionHandler(TunnelError.noConfig)
             return
         }
@@ -204,6 +210,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         // Inject TUN fd so mihomo reads packets from the system VPN tunnel.
         // Without this fd, no traffic is processed — fail early rather than
         // silently running a broken tunnel that appears connected but drops all packets.
+        // Invalidate cache — tunnel was just (re)created, old fd may be stale.
+        cachedTunFd = -1
         let tunFd = findTunFd()
         guard tunFd > 0 else {
             NSLog("[PacketTunnel] ERROR: Could not find TUN fd — refusing to start broken tunnel")

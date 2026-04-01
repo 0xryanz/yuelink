@@ -130,7 +130,7 @@ class StartupReport {
       };
 
   factory StartupReport.fromJson(Map<String, dynamic> json) => StartupReport(
-        timestamp: DateTime.parse(json['timestamp'] as String),
+        timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ?? DateTime.now(),
         platform: json['platform'] as String,
         overallSuccess: json['overallSuccess'] as bool,
         failedStep: json['failedStep'] as String?,

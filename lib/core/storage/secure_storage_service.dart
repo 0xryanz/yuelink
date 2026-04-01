@@ -70,7 +70,9 @@ class SecureStorageService {
       final tmp = File('${f.path}.tmp');
       await tmp.writeAsString(jsonEncode(data));
       await tmp.rename(f.path);
-    }, onError: (_) {});
+    }, onError: (e) {
+      debugPrint('[SecureStorage] saveMacos failed: $e');
+    });
     return _saveGuard;
   }
 

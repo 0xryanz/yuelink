@@ -37,7 +37,7 @@ class PaymentMethod {
 
   factory PaymentMethod.fromJson(Map<String, dynamic> json) {
     return PaymentMethod(
-      id: json['id'] as int? ?? 0,
+      id: _toInt(json['id']) ?? 0,
       name: json['name'] as String? ?? '',
       icon: json['icon'] as String?,
       payment: json['payment'] as String? ?? '',

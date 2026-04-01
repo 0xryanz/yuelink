@@ -44,8 +44,8 @@ class ConnectionInfo {
       type: meta['type'] as String? ?? '',
       rule: '${json['rule'] ?? ''}${json['rulePayload'] != null ? ' (${json['rulePayload']})' : ''}',
       chains: (json['chains'] as List?)?.join(' → ') ?? '',
-      upload: json['upload'] as int? ?? 0,
-      download: json['download'] as int? ?? 0,
+      upload: (json['upload'] as num?)?.toInt() ?? 0,
+      download: (json['download'] as num?)?.toInt() ?? 0,
       start: DateTime.tryParse(json['start'] as String? ?? '') ?? DateTime.now(),
     );
   }

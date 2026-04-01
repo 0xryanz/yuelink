@@ -142,22 +142,20 @@ class _EmbyPlayerPageState extends State<EmbyPlayerPage> with WidgetsBindingObse
 
   Future<void> _setupAndPlay() async {
     try {
-      if (!Platform.isIOS) {
-        final mixedPort = CoreManager.instance.mixedPort;
-        final np = _player.platform as NativePlayer;
-        if (mixedPort > 0) {
-          await np.setProperty('http-proxy', 'http://127.0.0.1:$mixedPort');
-        }
-        await np.setProperty('tls-verify', 'no');
-        // 改善 seek 响应速度 + 缓冲策略
-        await np.setProperty('demuxer-seekable-cache', 'yes');
-        await np.setProperty('cache', 'yes');
-        await np.setProperty('cache-secs', '60');
-        await np.setProperty('demuxer-max-bytes', '100MiB');
-        await np.setProperty('demuxer-max-back-bytes', '50MiB');
-        await np.setProperty('hr-seek', 'yes');
-        await np.setProperty('hr-seek-framedrop', 'yes');
+      final mixedPort = CoreManager.instance.mixedPort;
+      final np = _player.platform as NativePlayer;
+      if (mixedPort > 0) {
+        await np.setProperty('http-proxy', 'http://127.0.0.1:$mixedPort');
       }
+      await np.setProperty('tls-verify', 'no');
+      // 改善 seek 响应速度 + 缓冲策略
+      await np.setProperty('demuxer-seekable-cache', 'yes');
+      await np.setProperty('cache', 'yes');
+      await np.setProperty('cache-secs', '60');
+      await np.setProperty('demuxer-max-bytes', '100MiB');
+      await np.setProperty('demuxer-max-back-bytes', '50MiB');
+      await np.setProperty('hr-seek', 'yes');
+      await np.setProperty('hr-seek-framedrop', 'yes');
       await _player.open(Media(widget.streamUrl, httpHeaders: {
         'X-Emby-Authorization':
             'MediaBrowser Client="YueLink", Device="Flutter", '
@@ -921,7 +919,7 @@ class _SettingsPanelState extends State<_SettingsPanel>
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 10);
       final proxyPort = CoreManager.instance.mixedPort;
-      if (proxyPort > 0 && !Platform.isIOS) {
+      if (proxyPort > 0) {
         client.findProxy = (_) => 'PROXY 127.0.0.1:$proxyPort';
       }
       client.badCertificateCallback = (_, __, ___) => true;

@@ -26,15 +26,10 @@ class EmbyClient {
   }) {
     final hc = HttpClient();
     hc.badCertificateCallback = (cert, host, port) => true;
-    // Emby 走 Cloudflare 域名，不走 VPN 代理（直连更快更稳）
-    // 只有当 serverUrl 是内网 IP 时才走代理
-    final isPrivateIp = serverUrl.contains('192.168.') ||
-        serverUrl.contains('10.') || serverUrl.contains('127.0.0.1');
-    if (isPrivateIp) {
-      final mixedPort = CoreManager.instance.mixedPort;
-      if (mixedPort > 0) {
-        hc.findProxy = (uri) => 'PROXY 127.0.0.1:$mixedPort';
-      }
+    // Emby 流量始终走代理（需要通过代理节点访问 Emby 服务器）
+    final mixedPort = CoreManager.instance.mixedPort;
+    if (mixedPort > 0) {
+      hc.findProxy = (uri) => 'PROXY 127.0.0.1:$mixedPort';
     }
     hc.connectionTimeout = const Duration(seconds: 8);
     _inner = IOClient(hc);

@@ -91,15 +91,13 @@ class YueLinkVpnService : VpnService() {
         // Reset stop guard so stopTunnel() works on subsequent stop calls.
         // Android can reuse the same Service instance across start/stop cycles.
         stopped = false
+        // Force fresh tunnel establishment — stale fd from a previous session
+        // that died without stopTunnel() would cause silent VPN failure.
+        tunFd = -1
 
         // Must call startForeground ASAP (within 5s of startForegroundService)
         // to avoid ANR. Call it before establish() which may take time.
         startForeground(NOTIFICATION_ID, createNotification())
-
-        if (tunFd >= 0) {
-            onTunReady?.invoke(tunFd)
-            return
-        }
 
         // Register this VpnService for socket protection BEFORE TUN starts.
         // The Go core's DefaultSocketHook calls protect(fd) on every outbound

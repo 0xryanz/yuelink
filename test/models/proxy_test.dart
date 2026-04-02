@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:yuelink/models/proxy.dart';
+import 'package:yuelink/domain/models/proxy.dart';
 
 void main() {
   group('ProxyNode', () {

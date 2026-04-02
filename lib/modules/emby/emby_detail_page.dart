@@ -514,19 +514,23 @@ class _EmbyDetailPageState extends State<EmbyDetailPage> {
       width: 70,
       child: Column(
         children: [
-          CircleAvatar(
-            radius: 28,
-            backgroundColor: const Color(0xFF2A2A2E),
-            backgroundImage: p.hasImage && p.id != null
-                ? NetworkImage(
-                    '${widget.serverUrl}/emby/Items/${p.id}/Images/Primary'
-                    '?maxWidth=100&api_key=${widget.accessToken}')
-                : null,
-            child: !p.hasImage
-                ? const Icon(Icons.person_rounded,
-                    color: Colors.white24, size: 24)
-                : null,
-          ),
+          Builder(builder: (ctx) {
+            final dpr = MediaQuery.of(ctx).devicePixelRatio.clamp(1.0, 3.0);
+            final avatarPx = (56 * dpr).toInt(); // radius 28 * 2 * dpr
+            return CircleAvatar(
+              radius: 28,
+              backgroundColor: const Color(0xFF2A2A2E),
+              backgroundImage: p.hasImage && p.id != null
+                  ? NetworkImage(
+                      '${widget.serverUrl}/emby/Items/${p.id}/Images/Primary'
+                      '?maxWidth=$avatarPx&api_key=${widget.accessToken}')
+                  : null,
+              child: !p.hasImage
+                  ? const Icon(Icons.person_rounded,
+                      color: Colors.white24, size: 24)
+                  : null,
+            );
+          }),
           const SizedBox(height: 6),
           Text(p.name,
               style: const TextStyle(color: Colors.white70, fontSize: 10),

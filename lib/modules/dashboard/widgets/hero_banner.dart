@@ -244,12 +244,19 @@ class _BannerSlide extends StatelessWidget {
             // Optional background image
             if (item.imageUrl != null)
               Positioned.fill(
-                child: Image.network(
-                  item.imageUrl!,
-                  fit: BoxFit.cover,
-                  cacheWidth: 720,
-                  cacheHeight: 405,
-                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                child: LayoutBuilder(
+                  builder: (ctx, constraints) {
+                    final dpr = MediaQuery.of(ctx).devicePixelRatio.clamp(1.0, 3.0);
+                    final w = (constraints.maxWidth * dpr).toInt().clamp(0, 1920);
+                    final h = (w * 9 / 16).toInt();
+                    return Image.network(
+                      item.imageUrl!,
+                      fit: BoxFit.cover,
+                      cacheWidth: w,
+                      cacheHeight: h,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    );
+                  },
                 ),
               ),
 

@@ -198,6 +198,7 @@ class _NodesPageState extends ConsumerState<NodesPage> {
     //
     // The card layout — strategy group card → node card grid — never changes.
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final sortMode = ref.watch(nodeSortModeProvider);
     final viewMode = ref.watch(nodeViewModeProvider);
     final searchQuery = ref.watch(nodeSearchQueryProvider);
@@ -213,15 +214,19 @@ class _NodesPageState extends ConsumerState<NodesPage> {
 
     // Favorites filter: narrow each group's node list to favorited nodes only.
     if (showFavOnly && favorites.isNotEmpty) {
-      displayGroups = displayGroups
-          .map((g) => ProxyGroup(
-                name: g.name,
-                type: g.type,
-                all: g.all.where(favorites.contains).toList(),
-                now: g.now,
-              ))
-          .where((g) => g.all.isNotEmpty)
-          .toList();
+      final filtered = <ProxyGroup>[];
+      for (final g in displayGroups) {
+        final favNodes = g.all.where(favorites.contains).toList();
+        if (favNodes.isNotEmpty) {
+          filtered.add(ProxyGroup(
+            name: g.name,
+            type: g.type,
+            all: favNodes,
+            now: g.now,
+          ));
+        }
+      }
+      displayGroups = filtered;
     }
 
     final bool showBanner = routingMode != 'rule';
@@ -263,9 +268,7 @@ class _NodesPageState extends ConsumerState<NodesPage> {
                       decoration: BoxDecoration(
                         color: showFavOnly
                             ? Colors.amber.withValues(alpha: 0.15)
-                            : (Theme.of(context).brightness == Brightness.dark
-                                ? YLColors.zinc700
-                                : YLColors.zinc100),
+                            : (isDark ? YLColors.zinc700 : YLColors.zinc100),
                         borderRadius: BorderRadius.circular(YLRadius.sm),
                       ),
                       child: Icon(
@@ -290,9 +293,7 @@ class _NodesPageState extends ConsumerState<NodesPage> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 5),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? YLColors.zinc700
-                            : YLColors.zinc100,
+                        color: isDark ? YLColors.zinc700 : YLColors.zinc100,
                         borderRadius: BorderRadius.circular(YLRadius.sm),
                       ),
                       child: Row(

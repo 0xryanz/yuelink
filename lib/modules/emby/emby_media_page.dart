@@ -347,9 +347,16 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
           // ── Title bar（与我的页统一风格）──────────────────────────────
           Padding(
             padding: EdgeInsets.fromLTRB(
-                24, MediaQuery.of(context).padding.top + 16, 8, 12),
+                Navigator.canPop(context) ? 8 : 24,
+                MediaQuery.of(context).padding.top + 16, 8, 12),
             child: Row(
               children: [
+                if (Navigator.canPop(context))
+                  IconButton(
+                    icon: Icon(Icons.arrow_back_ios_new_rounded,
+                        size: 20, color: isDark ? Colors.white : Colors.black),
+                    onPressed: () => Navigator.pop(context),
+                  ),
                 Text(
                   S.of(context).navEmby,
                   style: TextStyle(
@@ -457,7 +464,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
               EmbyImage(
                 api: _api,
                 itemId: item.id,
-                url: _api.backdropUrl(item.id, width: 800),
+                url: _api.backdropUrl(item.id, width: 1920),
                 fit: BoxFit.cover,
                 width: 800,
                 isBackdrop: true,
@@ -650,7 +657,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
                   api: _api,
                   itemId: item.id,
                   fit: BoxFit.cover,
-                  width: height > 200 ? 300 : 200,
+                  width: height > 200 ? 480 : 300,
                   placeholder: _posterPlaceholder(item),
                 )
               else
@@ -1130,7 +1137,7 @@ class _LibraryGridPageState extends State<_LibraryGridPage> {
                                       api: widget.api,
                                       itemId: item.id,
                                       fit: BoxFit.cover,
-                                      width: 200,
+                                      width: 360,
                                     )
                                   else
                                     Container(
@@ -1307,7 +1314,7 @@ class _BoxSetGridPageState extends State<_BoxSetGridPage> {
                                 api: widget.api,
                                 itemId: item.id,
                                 fit: BoxFit.cover,
-                                width: 200,
+                                width: 360,
                               )
                             else
                               Container(

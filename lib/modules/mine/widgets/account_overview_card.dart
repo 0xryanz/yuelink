@@ -1,54 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
-import '../../../domain/account/account_actions.dart';
 import '../../../domain/account/account_overview.dart';
 import '../../../modules/yue_auth/providers/yue_auth_providers.dart';
-import '../../../modules/status/status_page.dart';
 import '../../../modules/store/store_page.dart';
-import '../views/feedback_page.dart';
 import '../../../shared/formatters/subscription_parser.dart' show formatBytes;
 import '../../../theme.dart';
 import '../providers/account_providers.dart';
 
-/// 账户总览卡 + 快捷操作卡（我的页面，使用 YueLink Checkin API 数据）。
+/// 账户总览卡（我的页面，使用 YueLink Checkin API 数据）。
 ///
-/// 设计：
-///   - 账户总览：邮箱、套餐名、流量进度条、剩余流量、到期天数、续费按钮
-///   - 快捷操作：网络状态、前往续费、加入群组、意见反馈（2×2 网格）
+/// 设计：邮箱、套餐名、流量进度条、剩余流量、到期天数、续费按钮
 class AccountOverviewCard extends ConsumerWidget {
   const AccountOverviewCard({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final overviewAsync = ref.watch(accountOverviewProvider);
-    final actionsAsync = ref.watch(accountActionsProvider);
 
-    return Column(
-      children: [
-        // ── 账户总览卡 ──────────────────────────────────────────────
-        overviewAsync.when(
-          loading: () => const _CardShell(child: _LoadingPlaceholder()),
-          error: (_, __) => const _CardShell(child: _ErrorPlaceholder(isNetworkError: true)),
-          data: (overview) {
-            // null 表示 token 为 null（未登录）或接口失败
-            if (overview == null) {
-              final hasToken = ref.read(authProvider).token != null;
-              return _CardShell(child: _ErrorPlaceholder(isNetworkError: hasToken));
-            }
-            return _CardShell(child: _OverviewContent(overview: overview));
-          },
-        ),
-        const SizedBox(height: 12),
-
-        // ── 快捷操作卡 ──────────────────────────────────────────────
-        actionsAsync.when(
-          loading: () => const _CardShell(child: _LoadingPlaceholder(height: 100)),
-          error: (_, __) => _CardShell(child: _ActionsContent(actions: AccountActions.fallback)),
-          data: (actions) => _CardShell(child: _ActionsContent(actions: actions)),
-        ),
-      ],
+    return overviewAsync.when(
+      loading: () => const _CardShell(child: _LoadingPlaceholder()),
+      error: (_, __) => const _CardShell(child: _ErrorPlaceholder(isNetworkError: true)),
+      data: (overview) {
+        if (overview == null) {
+          final hasToken = ref.read(authProvider).token != null;
+          return _CardShell(child: _ErrorPlaceholder(isNetworkError: hasToken));
+        }
+        return _CardShell(child: _OverviewContent(overview: overview));
+      },
     );
   }
 }
@@ -228,118 +207,6 @@ class _StatCell extends StatelessWidget {
   }
 }
 
-// ── 快捷操作内容 ──────────────────────────────────────────────────────────────
-
-class _ActionsContent extends StatelessWidget {
-  final AccountActions actions;
-  const _ActionsContent({required this.actions});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final items = [
-      _ActionItem(
-        icon: Icons.monitor_heart_outlined,
-        label: '网络状态',
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const StatusPage()),
-        ),
-      ),
-      _ActionItem(
-        icon: Icons.shopping_bag_outlined,
-        label: '前往续费',
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const StorePage()),
-        ),
-      ),
-      _ActionItem(
-        icon: Icons.telegram,
-        label: '加入群组',
-        onTap: () => _launchTelegram(actions.telegramGroupUrl),
-      ),
-      _ActionItem(
-        icon: Icons.feedback_outlined,
-        label: '意见反馈',
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const FeedbackPage()),
-        ),
-      ),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '快捷操作',
-          style: YLText.caption.copyWith(
-            color: YLColors.zinc500,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            for (int i = 0; i < items.length; i++) ...[
-              if (i > 0) const SizedBox(width: 8),
-              Expanded(
-                child: _ActionButton(item: items[i], isDark: isDark),
-              ),
-            ],
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _ActionItem {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  const _ActionItem({required this.icon, required this.label, required this.onTap});
-}
-
-class _ActionButton extends StatelessWidget {
-  final _ActionItem item;
-  final bool isDark;
-  const _ActionButton({required this.item, required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: item.onTap,
-      borderRadius: BorderRadius.circular(YLRadius.md),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: isDark ? YLColors.zinc700 : YLColors.zinc100,
-          borderRadius: BorderRadius.circular(YLRadius.md),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              item.icon,
-              size: 20,
-              color: isDark ? YLColors.zinc300 : YLColors.zinc600,
-            ),
-            const SizedBox(height: 5),
-            Text(
-              item.label,
-              style: YLText.caption.copyWith(
-                color: isDark ? YLColors.zinc300 : YLColors.zinc700,
-                fontWeight: FontWeight.w500,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // ── 共用外壳 / 状态占位 ────────────────────────────────────────────────────────
 
 class _CardShell extends StatelessWidget {
@@ -369,13 +236,12 @@ class _CardShell extends StatelessWidget {
 }
 
 class _LoadingPlaceholder extends StatelessWidget {
-  final double height;
-  const _LoadingPlaceholder({this.height = 140});
+  const _LoadingPlaceholder();
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: height,
+    return const SizedBox(
+      height: 140,
       child: const Center(
         child: CircularProgressIndicator(strokeWidth: 2),
       ),
@@ -408,27 +274,4 @@ class _ErrorPlaceholder extends StatelessWidget {
       ),
     );
   }
-}
-
-// ── URL 工具 ──────────────────────────────────────────────────────────────────
-
-Future<void> _launch(String url) async {
-  try {
-    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-  } catch (_) {}
-}
-
-Future<void> _launchTelegram(String url) async {
-  // 尝试打开 Telegram App，失败则降级为浏览器
-  try {
-    final uri = Uri.parse(url);
-    if (uri.host == 't.me') {
-      final tgUri = Uri.parse(url.replaceFirst('https://t.me/', 'tg://resolve?domain='));
-      if (await canLaunchUrl(tgUri)) {
-        await launchUrl(tgUri);
-        return;
-      }
-    }
-  } catch (_) {}
-  await _launch(url);
 }

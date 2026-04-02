@@ -110,6 +110,7 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
   String _searchQuery = '';
   bool _regexMode = false;
   bool _regexError = false;
+  RegExp? _cachedRegex;
   final _searchController = TextEditingController();
 
   static bool get _isDesktop =>
@@ -199,9 +200,16 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
                             hasError = true;
                           }
                         }
+                        RegExp? compiled;
+                        if (_regexMode && trimmed.isNotEmpty && !hasError) {
+                          try {
+                            compiled = RegExp(trimmed, caseSensitive: false);
+                          } catch (_) {}
+                        }
                         setState(() {
                           _searchQuery = trimmed;
                           _regexError = hasError;
+                          _cachedRegex = compiled;
                         });
                       },
                     ),
@@ -338,15 +346,10 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
 
     if (_searchQuery.isNotEmpty) {
       if (_regexMode) {
-        try {
-          final regex =
-              RegExp(_searchQuery, caseSensitive: false);
-          filtered =
-              filtered.where((l) => regex.hasMatch(l.payload)).toList();
-        } catch (_) {
-          // Invalid regex — show nothing to indicate error
-          return [];
-        }
+        final regex = _cachedRegex;
+        if (regex == null) return []; // invalid regex
+        filtered =
+            filtered.where((l) => regex.hasMatch(l.payload)).toList();
       } else {
         final q = _searchQuery.toLowerCase();
         filtered = filtered
@@ -397,13 +400,14 @@ class _LogTile extends StatelessWidget {
               ),
             )
           else
-            Container(
-              width: 8,
-              height: 8,
-              margin: const EdgeInsets.only(top: 3, right: 6),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _levelDotColor(entry.type),
+            Padding(
+              padding: const EdgeInsets.only(top: 3, right: 6),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _levelDotColor(entry.type),
+                ),
+                child: const SizedBox(width: 8, height: 8),
               ),
             ),
           // Payload

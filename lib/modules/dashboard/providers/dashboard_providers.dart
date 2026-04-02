@@ -135,9 +135,6 @@ Future<ExitIpInfo> _fetchPublicIp() async {
   }
 }
 
-// Keep legacy alias so any remaining references compile
-final proxyServerIpProvider = exitIpInfoProvider;
-
 // ── AI Unlock Detection ─────────────────────────────────────────────────────
 
 /// Common AI proxy group name patterns.

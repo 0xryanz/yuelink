@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:yuelink/models/traffic.dart';
+import 'package:yuelink/domain/models/traffic.dart';
 
 void main() {
   group('ConnectionInfo', () {

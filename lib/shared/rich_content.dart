@@ -114,8 +114,8 @@ class RichContent extends StatelessWidget {
   }
 
   /// Check if content contains HTML tags.
-  static bool _looksLikeHtml(String s) =>
-      RegExp(r'<[a-zA-Z][^>]*>').hasMatch(s);
+  static final _htmlTagRegex = RegExp(r'<[a-zA-Z][^>]*>');
+  static bool _looksLikeHtml(String s) => _htmlTagRegex.hasMatch(s);
 
   /// Convert plain text with newlines to basic HTML.
   static String _plainToHtml(String text) {

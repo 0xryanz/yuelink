@@ -363,11 +363,6 @@ class AuthNotifier extends Notifier<AuthState> {
 // Convenience providers
 // ------------------------------------------------------------------
 
-/// Whether the user is currently logged in.
-final isLoggedInProvider = Provider<bool>((ref) {
-  return ref.watch(authProvider).isLoggedIn;
-});
-
 /// Current user profile (may be null if not logged in or not yet fetched).
 final userProfileProvider = Provider<UserProfile?>((ref) {
   return ref.watch(authProvider).userProfile;

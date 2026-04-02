@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:yuelink/models/profile.dart';
-import 'package:yuelink/services/subscription_parser.dart';
+import 'package:yuelink/domain/models/profile.dart';
+import 'package:yuelink/shared/formatters/subscription_parser.dart';
 
 void main() {
   group('Profile', () {

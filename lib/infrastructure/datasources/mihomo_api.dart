@@ -51,11 +51,6 @@ class MihomoApi {
     }
   }
 
-  /// Get mihomo version info.
-  Future<Map<String, dynamic>> getVersion() async {
-    return _get('/version');
-  }
-
   // ------------------------------------------------------------------
   // Proxies
   // ------------------------------------------------------------------
@@ -218,17 +213,6 @@ class MihomoApi {
     await _get('/providers/proxies/${Uri.encodeComponent(name)}/healthcheck');
   }
 
-  /// Get all rule providers.
-  Future<Map<String, dynamic>> getRuleProviders() async {
-    return _get('/providers/rules');
-  }
-
-  /// Update a rule provider (trigger re-download).
-  Future<bool> updateRuleProvider(String name) async {
-    final resp = await _put('/providers/rules/${Uri.encodeComponent(name)}');
-    return resp.statusCode == 204 || resp.statusCode == 200;
-  }
-
   // ------------------------------------------------------------------
   // DNS
   // ------------------------------------------------------------------
@@ -237,22 +221,6 @@ class MihomoApi {
   Future<Map<String, dynamic>> queryDns(String name,
       {String type = 'A'}) async {
     return _get('/dns/query?name=${Uri.encodeComponent(name)}&type=$type');
-  }
-
-  /// Flush DNS cache.
-  Future<bool> flushDnsCache() async {
-    final resp = await http
-        .post(Uri.parse('$_baseUrl/cache/dns/flush'), headers: _headers)
-        .timeout(_kTimeout);
-    return resp.statusCode == 204 || resp.statusCode == 200;
-  }
-
-  /// Flush fake IP cache.
-  Future<bool> flushFakeIpCache() async {
-    final resp = await http
-        .post(Uri.parse('$_baseUrl/cache/fakeip/flush'), headers: _headers)
-        .timeout(_kTimeout);
-    return resp.statusCode == 204 || resp.statusCode == 200;
   }
 
   // ------------------------------------------------------------------

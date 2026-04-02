@@ -90,15 +90,17 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                padding: const EdgeInsets.all(24),
+              DecoratedBox(
                 decoration: BoxDecoration(
                   color: isDark ? YLColors.zinc900 : Colors.white,
                   shape: BoxShape.circle,
                   boxShadow: YLShadow.sm(context),
                 ),
-                child: Icon(Icons.cable_rounded, size: 48,
-                    color: isDark ? YLColors.zinc700 : YLColors.zinc300),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Icon(Icons.cable_rounded, size: 48,
+                      color: isDark ? YLColors.zinc700 : YLColors.zinc300),
+                ),
               ),
               const SizedBox(height: 24),
               Text(

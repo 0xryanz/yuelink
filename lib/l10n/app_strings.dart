@@ -497,9 +497,6 @@ class S {
   String get apiPort => _e ? 'API Port' : 'API 端口';
   String get dnsQuery => _e ? 'DNS Query' : 'DNS 查询';
   String get runningConfig => _e ? 'Running Config' : '运行配置';
-  String get flushDnsCache => _e ? 'Flush DNS Cache' : '清除 DNS 缓存';
-  String get flushFakeIpCache =>
-      _e ? 'Flush Fake-IP Cache' : '清除 Fake-IP 缓存';
   String get versionLabel => _e ? 'Version' : '版本';
   String get coreLabel => _e ? 'Core' : '内核';
   String get projectHome => _e ? 'Project Home' : '项目主页';

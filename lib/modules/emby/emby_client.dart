@@ -70,7 +70,7 @@ class EmbyClient {
       '$serverUrl/Videos/$itemId/stream?Static=true&api_key=$accessToken';
 
   /// Poster / thumbnail image URL.
-  String imageUrl(String itemId, {int width = 300}) =>
+  String imageUrl(String itemId, {int width = 480}) =>
       '$serverUrl/emby/Items/$itemId/Images/Primary'
       '?fillWidth=$width&quality=90&api_key=$accessToken';
 
@@ -80,7 +80,7 @@ class EmbyClient {
       '?api_key=$accessToken';
 
   /// 16:9 backdrop image URL.
-  String backdropUrl(String itemId, {int width = 800}) =>
+  String backdropUrl(String itemId, {int width = 1920}) =>
       '$serverUrl/emby/Items/$itemId/Images/Backdrop'
       '?maxWidth=$width&quality=90&api_key=$accessToken';
 
@@ -159,10 +159,10 @@ class EmbyImage extends StatelessWidget {
   // physicalWidth is clamped so a single full-screen backdrop doesn't
   // consume 30+ MB as a decoded bitmap (2400×3600 @3× DPI, RGBA8888).
   //
-  //   Poster  (2:3 portrait): max 480 × 720 × 4 = ~1.3 MB each
-  //   Backdrop (16:9 landscape): max 720 × 405 × 4 = ~1.1 MB each
-  static const _kMaxPosterWidth   = 480;
-  static const _kMaxBackdropWidth = 720;
+  //   Poster  (2:3 portrait): max 720 × 1080 × 4 = ~2.9 MB each
+  //   Backdrop (16:9 landscape): max 1280 × 720 × 4 = ~3.5 MB each
+  static const _kMaxPosterWidth   = 720;
+  static const _kMaxBackdropWidth = 1280;
 
   @override
   Widget build(BuildContext context) {

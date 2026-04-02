@@ -406,8 +406,8 @@ class _PosterTile extends StatelessWidget {
                   cacheManager: EmbyClient.imageCacheManager,
                   fit: BoxFit.cover,
                   fadeInDuration: const Duration(milliseconds: 200),
-                  memCacheWidth: physWidth.clamp(0, 300),
-                  memCacheHeight: (physWidth * 3 ~/ 2).clamp(0, 450),
+                  memCacheWidth: physWidth.clamp(0, 480),
+                  memCacheHeight: (physWidth * 3 ~/ 2).clamp(0, 720),
                   placeholder: (_, __) => Container(
                     color: isDark
                         ? const Color(0xFF1C1C1E)

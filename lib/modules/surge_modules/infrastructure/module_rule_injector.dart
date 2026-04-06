@@ -107,10 +107,11 @@ class ModuleRuleInjector {
     if (match != null) {
       // Check if _mitm_engine is already present (idempotent).
       if (yaml.contains('name: $_mitmProxyName')) {
-        // Update the port in the existing entry.
-        return yaml.replaceFirst(
-          RegExp(r'(name: _mitm_engine\n\s+type: http\n\s+server: 127\.0\.0\.1\n\s+port: )\d+'),
-          '${match.group(0)!.split('\n').last}$port',
+        // Update the port in the existing entry, preserving the prefix.
+        return yaml.replaceFirstMapped(
+          RegExp(
+              r'(name: _mitm_engine\n\s+type: http\n\s+server: 127\.0\.0\.1\n\s+port: )\d+'),
+          (m) => '${m.group(1)}$port',
         );
       }
       return yaml.replaceFirstMapped(

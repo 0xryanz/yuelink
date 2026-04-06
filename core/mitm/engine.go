@@ -62,27 +62,20 @@ func (e *Engine) Start() error {
 	e.port = ln.Addr().(*net.TCPAddr).Port
 	e.listener = ln
 
-	mux := http.NewServeMux()
-
-	// Health-check endpoint.
-	mux.HandleFunc(healthCheckPath, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok","engine":"YueLink Module Runtime"}`))
-	})
-
-	// All other requests (including CONNECT) go to the main handler.
-	mux.HandleFunc("/", e.handleRequest)
-
+	// Use a plain HandlerFunc instead of ServeMux so that CONNECT requests
+	// (whose request-URI is "host:port", not a path) reach handleRequest.
+	// ServeMux's "/" fallback does not match CONNECT URIs.
 	e.server = &http.Server{
-		Handler: mux,
+		Handler: http.HandlerFunc(e.handleRequest),
 	}
 
 	logEngine("starting on 127.0.0.1:%d", e.port)
 
-	// Serve on the pre-bound listener so we own the port immediately.
+	// Capture srv locally so the goroutine always holds a valid reference
+	// even if Stop() sets e.server = nil before this goroutine is scheduled.
+	srv := e.server
 	go func() {
-		if serveErr := e.server.Serve(ln); serveErr != nil && serveErr != http.ErrServerClosed {
+		if serveErr := srv.Serve(ln); serveErr != nil && serveErr != http.ErrServerClosed {
 			e.mu.Lock()
 			e.lastError = serveErr.Error()
 			e.running = false
@@ -198,9 +191,17 @@ func (e *Engine) Status() MitmEngineStatus {
 }
 
 // handleRequest dispatches incoming proxy requests.
-// CONNECT → passthrough tunnel (Phase 1, no MITM interception yet).
+// GET /ping   → health check.
+// CONNECT     → passthrough tunnel (Phase 1, no MITM interception yet).
 // Anything else → 501.
 func (e *Engine) handleRequest(w http.ResponseWriter, r *http.Request) {
+	// Health-check: direct GET /ping (not a proxy request).
+	if r.Method == http.MethodGet && r.URL.Path == healthCheckPath {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok","engine":"YueLink Module Runtime"}`))
+		return
+	}
 	if r.Method == http.MethodConnect {
 		e.handleConnect(w, r)
 		return
@@ -305,7 +306,10 @@ func GetMITMEngineStatus() MitmEngineStatus {
 	defer globalEngineMu.Unlock()
 
 	if globalEngine == nil {
-		return MitmEngineStatus{Running: false, Port: defaultMITMPort}
+		// Port: 0 when not running — callers should check Running first.
+		// Returning defaultMITMPort here was misleading: 9091 has never
+		// been bound, so reporting it as the port is semantically wrong.
+		return MitmEngineStatus{Running: false, Port: 0}
 	}
 	return globalEngine.Status()
 }

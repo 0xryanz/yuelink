@@ -15,53 +15,69 @@ import 'module_repository.dart';
 class ModuleRuleInjector {
   ModuleRuleInjector._();
 
-  static const _mitmProxyName = '_mitm_engine';
+  static const mitmProxyName = '_mitm_engine';
+
+  // ---------------------------------------------------------------------------
+  // Public entry point (I/O)
+  // ---------------------------------------------------------------------------
 
   /// Inject enabled module rules (and MITM routing if [mitmPort] > 0) into
   /// [configYaml]. Returns the modified config string unchanged when there is
   /// nothing to inject.
   static Future<String> inject(String configYaml, {int mitmPort = 0}) async {
     final repo = const ModuleRepository();
+    final moduleRules = await repo.getEnabledRules();
+    final mitmHostnames = mitmPort > 0
+        ? await repo.getEnabledMitmHostnames()
+        : const <String>[];
 
-    final rules = await repo.getEnabledRules();
+    return injectFromLists(
+      configYaml,
+      mitmPort: mitmPort,
+      moduleRules: moduleRules,
+      mitmHostnames: mitmHostnames,
+    );
+  }
 
-    // Collect MITM hostname rules when engine is running.
-    List<String> mitmRules = [];
-    if (mitmPort > 0) {
-      final hostnames = await repo.getEnabledMitmHostnames();
-      if (hostnames.isNotEmpty) {
-        mitmRules = _hostnameToRules(hostnames);
-        debugPrint(
-            '[ModuleRuntime] MITM engine on port $mitmPort — routing '
-            '${hostnames.length} hostname(s) to $_mitmProxyName');
-      }
-    }
+  // ---------------------------------------------------------------------------
+  // Pure transformation entry point (no I/O — testable directly)
+  // ---------------------------------------------------------------------------
 
-    if (rules.isEmpty && mitmRules.isEmpty) {
+  /// Inject rules from pre-resolved lists into [configYaml].
+  ///
+  /// This pure function contains all YAML transformation logic and has no
+  /// filesystem or repository dependencies. Used by [inject] and by tests.
+  static String injectFromLists(
+    String configYaml, {
+    int mitmPort = 0,
+    List<String> moduleRules = const [],
+    List<String> mitmHostnames = const [],
+  }) {
+    final mitmRules =
+        mitmPort > 0 ? hostnameToRules(mitmHostnames) : const <String>[];
+
+    if (moduleRules.isEmpty && mitmRules.isEmpty) {
       debugPrint('[ModuleRuntime] no enabled module rules — skipping injection');
       return configYaml;
     }
 
     debugPrint(
-        '[ModuleRuntime] injecting ${rules.length} module rules'
+        '[ModuleRuntime] injecting ${moduleRules.length} module rules'
         '${mitmRules.isNotEmpty ? ' + ${mitmRules.length} MITM rules' : ''}');
 
-    String result = configYaml;
+    var result = configYaml;
 
-    // Inject _mitm_engine proxy entry when MITM rules are present.
     if (mitmRules.isNotEmpty) {
-      result = _injectMitmProxy(result, mitmPort);
+      result = injectMitmProxy(result, mitmPort);
     }
 
-    // All rules to inject: MITM hostname rules first, then module rules.
-    final allRules = [...mitmRules, ...rules];
-    result = _injectRules(result, allRules);
-
+    final allRules = [...mitmRules, ...moduleRules];
+    result = injectRules(result, allRules);
     return result;
   }
 
   // ---------------------------------------------------------------------------
-  // Hostname → Rule conversion
+  // Hostname → Rule conversion  (public, pure, no side-effects)
   // ---------------------------------------------------------------------------
 
   /// Convert Surge-style MITM hostnames to mihomo rule strings targeting
@@ -71,49 +87,52 @@ class ModuleRuleInjector {
   ///   `.example.com`   → DOMAIN-SUFFIX,example.com,_mitm_engine
   ///   `*.example.com`  → DOMAIN-SUFFIX,example.com,_mitm_engine
   ///   `example.com`    → DOMAIN,example.com,_mitm_engine
-  static List<String> _hostnameToRules(List<String> hostnames) {
+  static List<String> hostnameToRules(List<String> hostnames) {
     final rules = <String>[];
     for (final h in hostnames) {
       final clean = h.trim();
       if (clean.isEmpty) continue;
       if (clean.startsWith('.')) {
-        rules.add('DOMAIN-SUFFIX,${clean.substring(1)},$_mitmProxyName');
+        rules.add('DOMAIN-SUFFIX,${clean.substring(1)},$mitmProxyName');
       } else if (clean.startsWith('*.')) {
-        rules.add('DOMAIN-SUFFIX,${clean.substring(2)},$_mitmProxyName');
+        rules.add('DOMAIN-SUFFIX,${clean.substring(2)},$mitmProxyName');
       } else {
-        rules.add('DOMAIN,$clean,$_mitmProxyName');
+        rules.add('DOMAIN,$clean,$mitmProxyName');
       }
     }
     return rules;
   }
 
   // ---------------------------------------------------------------------------
-  // Proxy injection
+  // Proxy injection  (public, pure, no side-effects)
   // ---------------------------------------------------------------------------
 
   /// Inject the `_mitm_engine` HTTP proxy into the `proxies:` section.
-  /// If no `proxies:` section exists, one is prepended before the first
-  /// top-level section (or appended at end).
-  static String _injectMitmProxy(String yaml, int port) {
-    final proxyEntry = '  - name: $_mitmProxyName\n'
+  ///
+  /// Behaviour:
+  /// - If `proxies:` exists and `_mitm_engine` is **absent** → prepend entry.
+  /// - If `proxies:` exists and `_mitm_engine` is **present** → update port only.
+  /// - If `proxies:` is **absent** → create section before first known section.
+  /// - If nothing matches → append at end.
+  static String injectMitmProxy(String yaml, int port) {
+    final proxyEntry = '  - name: $mitmProxyName\n'
         '    type: http\n'
         '    server: 127.0.0.1\n'
         '    port: $port\n';
 
-    // Try to insert after "proxies:\n"
     final proxiesPattern = RegExp(r'^(proxies:\s*\n)', multiLine: true);
     final match = proxiesPattern.firstMatch(yaml);
 
     if (match != null) {
-      // Check if _mitm_engine is already present (idempotent).
-      if (yaml.contains('name: $_mitmProxyName')) {
-        // Update the port in the existing entry, preserving the prefix.
+      // Idempotent update: _mitm_engine already present → update port only.
+      if (yaml.contains('name: $mitmProxyName')) {
         return yaml.replaceFirstMapped(
           RegExp(
               r'(name: _mitm_engine\n\s+type: http\n\s+server: 127\.0\.0\.1\n\s+port: )\d+'),
           (m) => '${m.group(1)}$port',
         );
       }
+      // First injection: prepend entry after "proxies:\n".
       return yaml.replaceFirstMapped(
         proxiesPattern,
         (m) => '${m.group(1)}$proxyEntry',
@@ -137,11 +156,12 @@ class ModuleRuleInjector {
   }
 
   // ---------------------------------------------------------------------------
-  // Rule injection
+  // Rule injection  (public, pure, no side-effects)
   // ---------------------------------------------------------------------------
 
   /// Prepend [rules] into the existing `rules:` section, or append a new one.
-  static String _injectRules(String yaml, List<String> rules) {
+  static String injectRules(String yaml, List<String> rules) {
+    if (rules.isEmpty) return yaml;
     final rulesBlock = rules.map((r) => '  - $r').join('\n');
 
     final rulesPattern = RegExp(r'^(rules:\s*\n)', multiLine: true);

@@ -160,21 +160,36 @@ class ModuleRuleInjector {
   // ---------------------------------------------------------------------------
 
   /// Prepend [rules] into the existing `rules:` section, or append a new one.
+  ///
+  /// Indentation is detected from the FIRST existing rule item, matching the
+  /// subscription's format (e.g. "    - rule" for 4-space, "  - rule" for
+  /// 2-space, "- rule" for 0-space). Mismatched indentation causes go-yaml to
+  /// treat subsequent items as a multiline plain-scalar continuation of the
+  /// last injected rule, concatenating all remaining rules into one broken
+  /// rule string (e.g. "DOMAIN,x,DIRECT - 'DOMAIN,y,...'").
   static String injectRules(String yaml, List<String> rules) {
     if (rules.isEmpty) return yaml;
-    final rulesBlock = rules.map((r) => '  - $r').join('\n');
 
     final rulesPattern = RegExp(r'^(rules:\s*\n)', multiLine: true);
     final match = rulesPattern.firstMatch(yaml);
 
     if (match != null) {
+      // Detect indentation from the first existing rule item so the injected
+      // rules use the same column as the subscription's rules.
+      final afterHeader = yaml.substring(match.end);
+      final firstItem =
+          RegExp(r'^([ \t]*)-[ \t]', multiLine: true).firstMatch(afterHeader);
+      final indent = firstItem?.group(1) ?? '  ';
+
+      final rulesBlock = rules.map((r) => '$indent- $r').join('\n');
       return yaml.replaceFirstMapped(
         rulesPattern,
         (m) => '${m.group(1)}$rulesBlock\n',
       );
     }
 
-    // No rules: section — append.
+    // No rules: section — append with default 2-space indent.
+    final rulesBlock = rules.map((r) => '  - $r').join('\n');
     final sep = yaml.endsWith('\n') ? '' : '\n';
     return '${yaml}${sep}rules:\n$rulesBlock\n';
   }

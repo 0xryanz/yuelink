@@ -181,6 +181,16 @@ class CoreController {
     return _callNoArgJsonFn(_bindings!.getRootCAStatus);
   }
 
+  /// Push Phase-2 interception config (MITM hostnames + URL/Header rewrites)
+  /// to the running MITM engine. [configJson] must be a JSON string matching
+  /// Go's MITMConfig struct:
+  ///   {"hostnames":[...],"url_rewrites":[...],"header_rewrites":[...]}
+  /// Returns null on success, error message on failure.
+  String? updateMitmConfig(String configJson) {
+    if (_useMock) return null;
+    return _callStringFn(_bindings!.updateMitmConfig, configJson);
+  }
+
   /// Convenience: returns the actual bound MITM engine port (0 = not running).
   int getMitmEnginePort() {
     try {

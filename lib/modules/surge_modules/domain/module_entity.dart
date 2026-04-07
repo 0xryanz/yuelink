@@ -149,6 +149,8 @@ class ModuleScript {
   final String scriptType;
   final String? pattern;
   final String scriptPath;
+  /// Fetched JavaScript source for http-response scripts. Null until downloaded.
+  final String? scriptContent;
   final bool requiresBody;
   final String? cronExpression;
   final String raw;
@@ -158,6 +160,7 @@ class ModuleScript {
     required this.scriptType,
     this.pattern,
     required this.scriptPath,
+    this.scriptContent,
     required this.requiresBody,
     this.cronExpression,
     required this.raw,
@@ -168,6 +171,7 @@ class ModuleScript {
     String? scriptType,
     String? pattern,
     String? scriptPath,
+    Object? scriptContent = _sentinel,
     bool? requiresBody,
     String? cronExpression,
     String? raw,
@@ -177,16 +181,22 @@ class ModuleScript {
         scriptType: scriptType ?? this.scriptType,
         pattern: pattern ?? this.pattern,
         scriptPath: scriptPath ?? this.scriptPath,
+        scriptContent: scriptContent == _sentinel
+            ? this.scriptContent
+            : scriptContent as String?,
         requiresBody: requiresBody ?? this.requiresBody,
         cronExpression: cronExpression ?? this.cronExpression,
         raw: raw ?? this.raw,
       );
+
+  static const _sentinel = Object();
 
   Map<String, dynamic> toJson() => {
         'name': name,
         'scriptType': scriptType,
         if (pattern != null) 'pattern': pattern,
         'scriptPath': scriptPath,
+        if (scriptContent != null) 'scriptContent': scriptContent,
         'requiresBody': requiresBody,
         if (cronExpression != null) 'cronExpression': cronExpression,
         'raw': raw,
@@ -197,6 +207,7 @@ class ModuleScript {
         scriptType: j['scriptType'] as String,
         pattern: j['pattern'] as String?,
         scriptPath: j['scriptPath'] as String,
+        scriptContent: j['scriptContent'] as String?,
         requiresBody: j['requiresBody'] as bool? ?? false,
         cronExpression: j['cronExpression'] as String?,
         raw: j['raw'] as String,

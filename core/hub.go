@@ -279,14 +279,13 @@ func GetVersion() *C.char {
 // MITM Engine
 // --------------------------------------------------------------------
 
-// StartMITMEngine starts the MITM proxy engine singleton.
-// Pass 0 as port to use the default port (9091); the engine will fall back
-// to an OS-assigned port if the preferred port is busy.
+// StartMITMEngine starts the MITM proxy engine singleton on the default port
+// (9091), falling back to an OS-assigned port if 9091 is busy.
 // Returns empty string on success, error message on failure.
 // Caller must free the returned string via FreeCString.
 //
 //export StartMITMEngine
-func StartMITMEngine(port C.int) (result *C.char) {
+func StartMITMEngine() (result *C.char) {
 	defer func() {
 		if r := recover(); r != nil {
 			result = C.CString(fmt.Sprintf("PANIC: %v", r))
@@ -295,9 +294,43 @@ func StartMITMEngine(port C.int) (result *C.char) {
 	state.lock()
 	defer state.unlock()
 
-	if err := mitm.StartMITMEngine(int(port)); err != nil {
+	if err := mitm.StartMITMEngine(0); err != nil {
 		return C.CString(err.Error())
 	}
+	return C.CString("")
+}
+
+// UpdateMITMConfig applies a Phase-2 interception configuration to the running
+// MITM engine. configJSON must be a JSON-encoded MITMConfig
+// ({"hostnames":[...],"url_rewrites":[...],"header_rewrites":[...]}).
+// Returns empty string on success, error message on failure.
+// Caller must free the returned string via FreeCString.
+//
+//export UpdateMITMConfig
+func UpdateMITMConfig(configJSON *C.char) (result *C.char) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = C.CString(fmt.Sprintf("PANIC: %v", r))
+		}
+	}()
+	state.lock()
+	defer state.unlock()
+
+	if !state.isInit {
+		return C.CString("core not initialized, call InitCore first")
+	}
+
+	jsonStr := C.GoString(configJSON)
+	var cfg mitm.MITMConfig
+	if err := json.Unmarshal([]byte(jsonStr), &cfg); err != nil {
+		return C.CString(fmt.Sprintf("invalid MITMConfig JSON: %v", err))
+	}
+
+	if err := mitm.ConfigureMITMEngine(state.homeDir, cfg); err != nil {
+		return C.CString(err.Error())
+	}
+	log.Infoln("[MITM] config updated: %d hosts, %d URL rules, %d header rules",
+		len(cfg.Hostnames), len(cfg.URLRewrites), len(cfg.HeaderRewrites))
 	return C.CString("")
 }
 

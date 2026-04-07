@@ -26,3 +26,15 @@ func logCA(format string, args ...interface{}) {
 func logConfig(format string, args ...interface{}) {
 	log.Printf(prefixConfig+" "+format, args...)
 }
+
+func logTLS(format string, args ...interface{}) {
+	log.Printf("[MITM][TLS] "+format, args...)
+}
+
+func logRewrite(format string, args ...interface{}) {
+	log.Printf("[Rewrite] "+format, args...)
+}
+
+func logScript(format string, args ...interface{}) {
+	log.Printf("[MITM][Script] "+format, args...)
+}

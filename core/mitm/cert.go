@@ -5,6 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
@@ -12,8 +13,10 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -184,4 +187,153 @@ func loadExistingCA(certPath, keyPath string) *CertStatus {
 func sha256Fingerprint(der []byte) string {
 	sum := sha256.Sum256(der)
 	return hex.EncodeToString(sum[:])
+}
+
+// ---------------------------------------------------------------------------
+// LeafCertCache – per-hostname TLS certs signed by the Root CA
+// ---------------------------------------------------------------------------
+
+const leafCertCacheMax = 200 // max cached leaf certs; oldest evicted when full
+
+// LeafCertCache generates and caches per-hostname TLS leaf certificates
+// signed by the Root CA. Leaf certs are valid for 24 h; expired certs are
+// evicted on next access. Cache is capped at leafCertCacheMax entries.
+type LeafCertCache struct {
+	mu     sync.Mutex
+	caCert *x509.Certificate
+	caKey  *ecdsa.PrivateKey
+	cache  map[string]*tls.Certificate
+}
+
+// NewLeafCertCache loads the Root CA from disk and returns a ready cache.
+// Returns an error if the CA files are missing or unreadable.
+func NewLeafCertCache(homeDir string) (*LeafCertCache, error) {
+	certPEM, err := os.ReadFile(caCertPath(homeDir))
+	if err != nil {
+		return nil, fmt.Errorf("[MITM] leaf cache: cannot read CA cert: %w", err)
+	}
+	keyPEM, err := os.ReadFile(caKeyPath(homeDir))
+	if err != nil {
+		return nil, fmt.Errorf("[MITM] leaf cache: cannot read CA key: %w", err)
+	}
+
+	certBlock, _ := pem.Decode(certPEM)
+	if certBlock == nil {
+		return nil, fmt.Errorf("[MITM] leaf cache: invalid CA cert PEM")
+	}
+	caCert, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("[MITM] leaf cache: parse CA cert: %w", err)
+	}
+
+	keyBlock, _ := pem.Decode(keyPEM)
+	if keyBlock == nil {
+		return nil, fmt.Errorf("[MITM] leaf cache: invalid CA key PEM")
+	}
+	caKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("[MITM] leaf cache: parse CA key: %w", err)
+	}
+
+	return &LeafCertCache{
+		caCert: caCert,
+		caKey:  caKey,
+		cache:  make(map[string]*tls.Certificate),
+	}, nil
+}
+
+// GetOrCreate returns a TLS certificate for hostname, generating one if not
+// cached or if the cached entry has expired (< 1 min remaining).
+func (lc *LeafCertCache) GetOrCreate(hostname string) (*tls.Certificate, error) {
+	// Strip port if present.
+	host := hostname
+	if h, _, err := net.SplitHostPort(hostname); err == nil {
+		host = h
+	}
+
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+
+	if cert, ok := lc.cache[host]; ok {
+		if cert.Leaf != nil && time.Until(cert.Leaf.NotAfter) > time.Minute {
+			return cert, nil
+		}
+		delete(lc.cache, host)
+	}
+
+	cert, err := lc.generateLeaf(host)
+	if err != nil {
+		return nil, err
+	}
+
+	// Evict one entry if the cache is at capacity (simple strategy: remove
+	// the first expired entry found, or any entry if none are expired).
+	if len(lc.cache) >= leafCertCacheMax {
+		var evictKey string
+		for k, c := range lc.cache {
+			if c.Leaf == nil || time.Until(c.Leaf.NotAfter) <= 0 {
+				evictKey = k
+				break
+			}
+			if evictKey == "" {
+				evictKey = k // fallback: evict any entry
+			}
+		}
+		if evictKey != "" {
+			delete(lc.cache, evictKey)
+			logCA("cache full (%d), evicted %s", leafCertCacheMax, evictKey)
+		}
+	}
+
+	lc.cache[host] = cert
+	logCA("issued leaf cert for %s", host)
+	return cert, nil
+}
+
+// generateLeaf creates a new 24-hour leaf certificate for hostname,
+// signed by the Root CA held in lc.
+func (lc *LeafCertCache) generateLeaf(hostname string) (*tls.Certificate, error) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("[MITM] leaf gen key: %w", err)
+	}
+
+	now := time.Now().UTC()
+	expiry := now.Add(24 * time.Hour)
+
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return nil, fmt.Errorf("[MITM] leaf gen serial: %w", err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: hostname},
+		NotBefore:    now,
+		NotAfter:     expiry,
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	// Use IP SAN for IP addresses, DNS SAN for hostnames.
+	if ip := net.ParseIP(hostname); ip != nil {
+		template.IPAddresses = []net.IP{ip}
+	} else {
+		template.DNSNames = []string{hostname}
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, lc.caCert, &privKey.PublicKey, lc.caKey)
+	if err != nil {
+		return nil, fmt.Errorf("[MITM] leaf sign: %w", err)
+	}
+
+	leafX509, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		return nil, fmt.Errorf("[MITM] leaf parse: %w", err)
+	}
+
+	return &tls.Certificate{
+		Certificate: [][]byte{certDER},
+		PrivateKey:  privKey,
+		Leaf:        leafX509,
+	}, nil
 }

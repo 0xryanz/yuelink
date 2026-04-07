@@ -63,6 +63,12 @@ class YueLinkVpnService : VpnService() {
 
     private var splitMode: String = "all"
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    // Tracks all currently available physical networks (INTERNET + NOT_VPN).
+    // Passed to setUnderlyingNetworks() so the VPN correctly reflects WiFi
+    // (or cellular) as its underlying transport. Without this set, the VPN
+    // defaults to the last network that fired onLinkPropertiesChanged, which
+    // is often cellular even when WiFi is active — causing the WiFi "!" icon.
+    private val availableNetworks = mutableSetOf<Network>()
 
     override fun onCreate() {
         super.onCreate()
@@ -164,43 +170,9 @@ class YueLinkVpnService : VpnService() {
 
         onTunReady?.invoke(tunFd)
 
-        // Fix WiFi exclamation mark: override Android captive portal to use
-        // reachable servers (Google blocked in China → system thinks no internet)
-        fixCaptivePortal()
-
-        // Start monitoring network changes for DNS updates
+        // Start monitoring network changes for DNS updates and underlying-network
+        // tracking. Must come AFTER establish() so setUnderlyingNetworks() works.
         startNetworkMonitor()
-    }
-
-    /**
-     * Override Android's captive portal check URL to servers reachable without proxy.
-     * Google's default (connectivitycheck.gstatic.com) is blocked in China →
-     * system shows WiFi "!" even with working internet.
-     *
-     * Uses Cloudflare's generate_204 (globally reachable, fast, no GFW interference).
-     * Requires WRITE_SECURE_SETTINGS for global settings; falls back silently if denied.
-     */
-    private fun fixCaptivePortal() {
-        try {
-            val cr = contentResolver
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                android.provider.Settings.Global.putString(cr, "captive_portal_http_url",
-                    "http://cp.cloudflare.com/generate_204")
-                android.provider.Settings.Global.putString(cr, "captive_portal_https_url",
-                    "https://cp.cloudflare.com/generate_204")
-            } else {
-                @Suppress("DEPRECATION")
-                android.provider.Settings.Global.putString(cr, "captive_portal_server",
-                    "cp.cloudflare.com")
-            }
-            // Force connectivity re-evaluation
-            val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
-            cm?.reportNetworkConnectivity(null, true)
-            android.util.Log.i("YueLinkVpn", "Captive portal URL overridden to Cloudflare")
-        } catch (e: Exception) {
-            // SecurityException if WRITE_SECURE_SETTINGS not granted — expected on most devices
-            android.util.Log.w("YueLinkVpn", "Cannot override captive portal: ${e.message}")
-        }
     }
 
     private var stopped = false
@@ -241,13 +213,29 @@ class YueLinkVpnService : VpnService() {
     }
 
     // ── Network change monitoring ───────────────────────────────────────────
-    // When the physical network changes (WiFi ↔ cellular), update mihomo's
-    // system DNS and flush the resolver cache. Without this, DNS resolution
-    // fails after network switches because cached servers are unreachable.
-    // CMFA has an equivalent NetworkObserveModule.
+    // Tracks all active physical networks (INTERNET + NOT_VPN) in a set.
+    // Passes the full set to setUnderlyingNetworks() on every change so the
+    // VPN's underlying transport correctly reflects WiFi when WiFi is up.
+    //
+    // Previous code only called setUnderlyingNetworks() in onLinkPropertiesChanged,
+    // meaning the underlying was whichever network last had a DNS change (often
+    // cellular), not the highest-priority network. This caused the WiFi "!" icon.
+    //
+    // Reference: ClashMetaForAndroid NetworkObserveModule, FlClash VpnService.
 
     private fun startNetworkMonitor() {
         val cm = getSystemService(ConnectivityManager::class.java) ?: return
+
+        // Seed availableNetworks with currently validated physical networks so
+        // setUnderlyingNetworks is correct immediately (don't wait for first callback).
+        for (net in cm.allNetworks) {
+            val caps = cm.getNetworkCapabilities(net) ?: continue
+            if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) {
+                synchronized(availableNetworks) { availableNetworks.add(net) }
+            }
+        }
+        applyUnderlyingNetworks()
 
         val request = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -255,29 +243,38 @@ class YueLinkVpnService : VpnService() {
             .build()
 
         val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                synchronized(availableNetworks) { availableNetworks.add(network) }
+                applyUnderlyingNetworks()
+            }
+
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                // Network gained/lost VALIDATED — keep set accurate.
+                if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) {
+                    synchronized(availableNetworks) { availableNetworks.add(network) }
+                } else {
+                    synchronized(availableNetworks) { availableNetworks.remove(network) }
+                }
+                applyUnderlyingNetworks()
+            }
+
             override fun onLinkPropertiesChanged(network: Network, lp: LinkProperties) {
+                // Forward updated DNS to mihomo so it can reach nameservers on the
+                // new interface after WiFi ↔ cellular switches.
                 val dnsServers = lp.dnsServers
                     .mapNotNull { it.hostAddress }
                     .filter { it.isNotEmpty() }
                 if (dnsServers.isNotEmpty()) {
                     val dnsList = dnsServers.joinToString(",")
-                    android.util.Log.d("YueLinkVpn", "DNS changed: $dnsList")
-                    try {
-                        nativeNotifyDnsChanged(dnsList)
-                    } catch (_: UnsatisfiedLinkError) {}
+                    android.util.Log.d("YueLinkVpn", "DNS changed on $network: $dnsList")
+                    try { nativeNotifyDnsChanged(dnsList) } catch (_: UnsatisfiedLinkError) {}
                 }
-
-                // Tell the system which physical network underlies the VPN.
-                // This fixes connectivity detection ("no internet" warnings).
-                try {
-                    setUnderlyingNetworks(arrayOf(network))
-                } catch (_: Exception) {}
             }
 
             override fun onLost(network: Network) {
-                try {
-                    setUnderlyingNetworks(null)
-                } catch (_: Exception) {}
+                synchronized(availableNetworks) { availableNetworks.remove(network) }
+                applyUnderlyingNetworks()
             }
         }
 
@@ -287,9 +284,23 @@ class YueLinkVpnService : VpnService() {
         } catch (_: Exception) {}
     }
 
+    /**
+     * Push the current physical network set to VpnService.setUnderlyingNetworks().
+     * Passing null lets the system decide; passing the explicit set makes
+     * Android show the correct transport icon (WiFi instead of cellular "!" icon).
+     */
+    private fun applyUnderlyingNetworks() {
+        try {
+            val nets = synchronized(availableNetworks) { availableNetworks.toTypedArray() }
+            setUnderlyingNetworks(if (nets.isEmpty()) null else nets)
+            android.util.Log.d("YueLinkVpn", "underlyingNetworks: ${nets.size}")
+        } catch (_: Exception) {}
+    }
+
     private fun stopNetworkMonitor() {
         val cb = networkCallback ?: return
         networkCallback = null
+        synchronized(availableNetworks) { availableNetworks.clear() }
         try {
             val cm = getSystemService(ConnectivityManager::class.java)
             cm?.unregisterNetworkCallback(cb)

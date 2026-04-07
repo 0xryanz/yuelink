@@ -34,6 +34,7 @@ type ModuleScript struct {
 	ScriptType     string `json:"script_type"` // http-request, http-response, cron, generic
 	Pattern        string `json:"pattern,omitempty"`
 	ScriptPath     string `json:"script_path"`
+	ScriptContent  string `json:"script_content,omitempty"` // fetched JS source (http-response only)
 	RequiresBody   bool   `json:"requires_body"`
 	CronExpression string `json:"cron_expression,omitempty"`
 	Raw            string `json:"raw"`
@@ -121,6 +122,40 @@ type RootCAStatus struct {
 	CreatedAt   *time.Time `json:"created_at,omitempty"`
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 	ExportPath  string     `json:"export_path,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 – TLS interception + rewrite config
+// ---------------------------------------------------------------------------
+
+// MITMUrlRewrite is a single URL rewrite rule pushed via UpdateMITMConfig FFI.
+type MITMUrlRewrite struct {
+	Pattern     string `json:"pattern"`
+	Replacement string `json:"replacement,omitempty"`
+	Action      string `json:"action"` // "reject" | "302" | "307"
+}
+
+// MITMHeaderRewrite is a single header rewrite rule pushed via UpdateMITMConfig FFI.
+type MITMHeaderRewrite struct {
+	Pattern string `json:"pattern"`
+	Name    string `json:"name,omitempty"`
+	Value   string `json:"value,omitempty"`
+	Action  string `json:"action"` // "add" | "replace" | "del"
+}
+
+// MITMScript is a single http-response script pushed via UpdateMITMConfig FFI.
+type MITMScript struct {
+	Pattern string `json:"pattern"` // URL regexp pattern
+	Code    string `json:"code"`    // JavaScript source
+}
+
+// MITMConfig is the full interception configuration pushed via the
+// UpdateMITMConfig FFI call. Dart builds this from enabled module records.
+type MITMConfig struct {
+	Hostnames      []string            `json:"hostnames"`
+	URLRewrites    []MITMUrlRewrite    `json:"url_rewrites"`
+	HeaderRewrites []MITMHeaderRewrite `json:"header_rewrites"`
+	Scripts        []MITMScript        `json:"scripts,omitempty"`
 }
 
 // CertStatusToRootCAStatus converts an internal CertStatus into the FFI-facing RootCAStatus.

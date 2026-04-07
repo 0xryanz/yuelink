@@ -216,13 +216,37 @@ void main() {
   // ══════════════════════════════════════════════════════════════════════════
 
   group('ModuleRuleInjector.injectRules', () {
-    test('prepends rules into existing rules: section', () {
+    test('prepends rules into existing rules: section (2-space indent)', () {
       const yaml = 'mixed-port: 7890\nrules:\n  - MATCH,DIRECT\n';
       final result = ModuleRuleInjector.injectRules(
           yaml, ['DOMAIN,example.com,PROXY']);
       expect(result, contains('  - DOMAIN,example.com,PROXY'));
       expect(result.indexOf('DOMAIN,example.com,PROXY'),
           lessThan(result.indexOf('MATCH,DIRECT')));
+    });
+
+    test('detects 4-space indent from existing rules', () {
+      // Subscription-style: 4-space indent (common in airport-provided configs).
+      // Mismatched indent causes go-yaml to fold subsequent items into a single
+      // plain-scalar continuation, producing "DOMAIN,x,DIRECT - 'DOMAIN,y,...'".
+      const yaml =
+          'mixed-port: 7890\nrules:\n    - MATCH,DIRECT\n    - \'DOMAIN,a.com,DIRECT\'\n';
+      final result = ModuleRuleInjector.injectRules(
+          yaml, ['DOMAIN,example.com,PROXY']);
+      // Injected rule must use the same 4-space indent as existing rules.
+      expect(result, contains('    - DOMAIN,example.com,PROXY'));
+      // Must NOT use 2-space indent (that would break YAML indentation).
+      expect(result, isNot(contains('\n  - DOMAIN,example.com,PROXY')));
+      // Injected rule must appear before the existing rules.
+      expect(result.indexOf('DOMAIN,example.com,PROXY'),
+          lessThan(result.indexOf('MATCH,DIRECT')));
+    });
+
+    test('detects 0-space indent from existing rules', () {
+      const yaml = 'mixed-port: 7890\nrules:\n- MATCH,DIRECT\n';
+      final result = ModuleRuleInjector.injectRules(
+          yaml, ['DOMAIN,example.com,PROXY']);
+      expect(result, contains('- DOMAIN,example.com,PROXY'));
     });
 
     test('appends rules: section when absent', () {

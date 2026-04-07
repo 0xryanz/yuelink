@@ -55,7 +55,7 @@ class ModuleDownloader {
     }
   }
 
-  /// Full flow: download → parse → create/update ModuleRecord in repository.
+  /// Full flow: download → parse → fetch script contents → create/update record.
   ///
   /// If [existing] is provided and the checksum hasn't changed, returns the
   /// existing record unchanged (no-op update).
@@ -80,6 +80,9 @@ class ModuleDownloader {
     // Parse
     final parseResult = ModuleParser.parse(content);
 
+    // Fetch JS source for http-response scripts.
+    final scripts = await _fetchScriptContents(parseResult.scripts);
+
     // Determine name: prefer parsed name, fall back to URL basename
     final effectiveName = parseResult.name.isNotEmpty
         ? parseResult.name
@@ -102,7 +105,7 @@ class ModuleDownloader {
             mitmHostnames: parseResult.mitmHostnames,
             urlRewrites: parseResult.urlRewrites,
             headerRewrites: parseResult.headerRewrites,
-            scripts: parseResult.scripts,
+            scripts: scripts,
             mapLocals: parseResult.mapLocals,
             unsupportedCounts: parseResult.unsupportedCounts,
             parseWarnings: parseResult.warnings,
@@ -126,7 +129,7 @@ class ModuleDownloader {
             mitmHostnames: parseResult.mitmHostnames,
             urlRewrites: parseResult.urlRewrites,
             headerRewrites: parseResult.headerRewrites,
-            scripts: parseResult.scripts,
+            scripts: scripts,
             mapLocals: parseResult.mapLocals,
             unsupportedCounts: parseResult.unsupportedCounts,
             parseWarnings: parseResult.warnings,
@@ -139,6 +142,39 @@ class ModuleDownloader {
     await repo.save(record);
     debugPrint('[ModuleDownloader] saved module: ${record.name} (id=${record.id})');
     return record;
+  }
+
+  /// Fetch the JavaScript source for each http-response script.
+  /// Non-http-response types and scripts whose path is not a valid HTTP URL
+  /// are returned unchanged. Failures are logged and the script is kept with
+  /// scriptContent = null (so the engine silently skips it).
+  static Future<List<ModuleScript>> _fetchScriptContents(
+      List<ModuleScript> scripts) async {
+    if (scripts.isEmpty) return scripts;
+
+    final result = <ModuleScript>[];
+    for (final s in scripts) {
+      if (s.scriptType != 'http-response') {
+        result.add(s);
+        continue;
+      }
+      final path = s.scriptPath.trim();
+      if (!path.startsWith('http://') && !path.startsWith('https://')) {
+        debugPrint('[ModuleDownloader] skipping non-URL script path: $path');
+        result.add(s);
+        continue;
+      }
+      try {
+        final jsCode = await download(path);
+        debugPrint(
+            '[ModuleDownloader] fetched script ${s.name}: ${jsCode.length} bytes');
+        result.add(s.copyWith(scriptContent: jsCode));
+      } catch (e) {
+        debugPrint('[ModuleDownloader] failed to fetch script ${s.name}: $e');
+        result.add(s); // keep with scriptContent = null
+      }
+    }
+    return result;
   }
 
   static String _nameFromUrl(String url) {

@@ -93,3 +93,74 @@ func EnabledRules(modules []ModuleRecord) []string {
 	}
 	return result
 }
+
+// CollectURLRewrites returns MITMUrlRewrite entries from all enabled modules.
+func CollectURLRewrites(modules []ModuleRecord) []MITMUrlRewrite {
+	var result []MITMUrlRewrite
+	for i := range modules {
+		if !modules[i].Enabled {
+			continue
+		}
+		for _, r := range modules[i].URLRewrites {
+			result = append(result, MITMUrlRewrite{
+				Pattern:     r.Pattern,
+				Replacement: r.Replacement,
+				Action:      r.RewriteType,
+			})
+		}
+	}
+	return result
+}
+
+// CollectHeaderRewrites returns MITMHeaderRewrite entries from all enabled modules.
+func CollectHeaderRewrites(modules []ModuleRecord) []MITMHeaderRewrite {
+	var result []MITMHeaderRewrite
+	for i := range modules {
+		if !modules[i].Enabled {
+			continue
+		}
+		for _, r := range modules[i].HeaderRewrites {
+			result = append(result, MITMHeaderRewrite{
+				Pattern: r.Pattern,
+				Name:    r.HeaderName,
+				Value:   r.HeaderValue,
+				Action:  r.HeaderAction,
+			})
+		}
+	}
+	return result
+}
+
+// CollectResponseScripts returns MITMScript entries from all enabled modules,
+// including only http-response scripts that have both a Pattern and ScriptContent.
+func CollectResponseScripts(modules []ModuleRecord) []MITMScript {
+	var result []MITMScript
+	for i := range modules {
+		if !modules[i].Enabled {
+			continue
+		}
+		for _, s := range modules[i].Scripts {
+			if s.ScriptType != "http-response" {
+				continue
+			}
+			if s.Pattern == "" || s.ScriptContent == "" {
+				continue
+			}
+			result = append(result, MITMScript{
+				Pattern: s.Pattern,
+				Code:    s.ScriptContent,
+			})
+		}
+	}
+	return result
+}
+
+// BuildMITMConfig assembles a MITMConfig from enabled modules.
+func BuildMITMConfig(modules []ModuleRecord) MITMConfig {
+	return MITMConfig{
+		Hostnames:      ExtractAllMitmHostnames(modules),
+		URLRewrites:    CollectURLRewrites(modules),
+		HeaderRewrites: CollectHeaderRewrites(modules),
+		Scripts:        CollectResponseScripts(modules),
+	}
+}

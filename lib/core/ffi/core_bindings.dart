@@ -190,6 +190,14 @@ class CoreBindings {
     'GetRootCAStatus',
   );
 
+  /// char* UpdateMITMConfig(char* configJSON) — applies Phase-2 interception
+  /// config (hostnames + URL/Header rewrites) to the running MITM engine.
+  /// Returns "" on success, error message on failure.
+  late final Pointer<Utf8> Function(Pointer<Utf8>) updateMitmConfig = _lib
+      .lookupFunction<Pointer<Utf8> Function(Pointer<Utf8>), Pointer<Utf8> Function(Pointer<Utf8>)>(
+    'UpdateMITMConfig',
+  );
+
   // ------------------------------------------------------------------
   // Memory management
   // ------------------------------------------------------------------

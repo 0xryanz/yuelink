@@ -48,6 +48,31 @@ static void my_application_activate(GApplication* application) {
   }
 
   gtk_window_set_default_size(window, 1280, 720);
+
+  // Set window icon. Try the named icon from the XDG icon theme first (works
+  // when installed via AppImage or a .desktop entry that registers the icon).
+  // Fall back to the bundled asset path for `flutter run` development.
+  gtk_window_set_icon_name(window, "yuelink");
+  {
+    // Resolve path relative to the executable: <exe_dir>/data/flutter_assets/assets/icon.png
+    gchar* exe_path = g_file_read_link("/proc/self/exe", nullptr);
+    if (exe_path) {
+      gchar* exe_dir = g_path_get_dirname(exe_path);
+      gchar* icon_path = g_build_filename(exe_dir, "data", "flutter_assets",
+                                          "assets", "icon.png", nullptr);
+      if (g_file_test(icon_path, G_FILE_TEST_EXISTS)) {
+        GdkPixbuf* pixbuf = gdk_pixbuf_new_from_file_at_size(icon_path, 256, 256, nullptr);
+        if (pixbuf) {
+          gtk_window_set_icon(window, pixbuf);
+          g_object_unref(pixbuf);
+        }
+      }
+      g_free(icon_path);
+      g_free(exe_dir);
+      g_free(exe_path);
+    }
+  }
+
   gtk_widget_show(GTK_WIDGET(window));
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();

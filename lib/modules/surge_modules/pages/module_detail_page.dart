@@ -205,79 +205,91 @@ class _ModuleDetailPageState extends ConsumerState<ModuleDetailPage> {
           ),
           const SizedBox(height: 12),
 
-          // ── Active rules section ─────────────────────────────────────
-          if (module.rules.isNotEmpty) ...[
+          // ── Active capabilities section ──────────────────────────────
+          if (module.rules.isNotEmpty ||
+              module.mitmHostnames.isNotEmpty ||
+              module.urlRewrites.isNotEmpty ||
+              module.headerRewrites.isNotEmpty) ...[
             _SectionTitle('Currently Active'),
             _SectionCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '${module.rules.length} rules active',
-                    style: YLText.body.copyWith(
-                      color: isDark ? YLColors.zinc300 : YLColors.zinc700,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ...module.rules.take(5).map(
-                    (r) => Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        r.raw,
-                        style: YLText.mono.copyWith(
-                          fontSize: 11,
-                          color: YLColors.zinc500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                  if (module.rules.isNotEmpty) ...[
+                    Text(
+                      '${module.rules.length} routing rules',
+                      style: YLText.body.copyWith(
+                        color: isDark ? YLColors.zinc300 : YLColors.zinc700,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                  ),
-                  if (module.rules.length > 5)
-                    Text(
-                      '… and ${module.rules.length - 5} more',
-                      style: YLText.caption.copyWith(
-                          color: YLColors.zinc400),
+                    const SizedBox(height: 8),
+                    ...module.rules.take(5).map(
+                      (r) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          r.raw,
+                          style: YLText.mono.copyWith(
+                            fontSize: 11,
+                            color: YLColors.zinc500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ),
+                    if (module.rules.length > 5)
+                      Text(
+                        '… and ${module.rules.length - 5} more',
+                        style: YLText.caption.copyWith(color: YLColors.zinc400),
+                      ),
+                  ],
+                  if (module.mitmHostnames.isNotEmpty) ...[
+                    if (module.rules.isNotEmpty) const SizedBox(height: 10),
+                    _ActiveRow(
+                      icon: Icons.security,
+                      label: 'TLS Interception',
+                      detail: '${module.mitmHostnames.length} hostnames',
+                      isDark: isDark,
+                    ),
+                  ],
+                  if (module.urlRewrites.isNotEmpty) ...[
+                    if (module.rules.isNotEmpty || module.mitmHostnames.isNotEmpty)
+                      const SizedBox(height: 10),
+                    _ActiveRow(
+                      icon: Icons.swap_horiz,
+                      label: 'URL Rewrite',
+                      detail: '${module.urlRewrites.length} rules',
+                      isDark: isDark,
+                    ),
+                  ],
+                  if (module.headerRewrites.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    _ActiveRow(
+                      icon: Icons.tune,
+                      label: 'Header Rewrite',
+                      detail: '${module.headerRewrites.length} rules',
+                      isDark: isDark,
+                    ),
+                  ],
                 ],
               ),
             ),
             const SizedBox(height: 12),
           ],
 
-          // ── Not active section ───────────────────────────────────────
-          if (module.unsupportedCounts.hasUnsupported) ...[
+          // ── Not active section (Scripts / Map Local only) ─────────────
+          if (module.scripts.isNotEmpty ||
+              module.mapLocals.isNotEmpty ||
+              module.unsupportedCounts.panelCount > 0) ...[
             _SectionTitle(s.moduleNotActive),
             _SectionCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (module.mitmHostnames.isNotEmpty)
-                    _UnsupportedRow(
-                      label:
-                          '${s.moduleMitmDetected}: ${module.mitmHostnames.length} hostnames',
-                      hint: s.moduleFutureVersion,
-                      isDark: isDark,
-                    ),
                   if (module.scripts.isNotEmpty)
                     _UnsupportedRow(
-                      label:
-                          '${s.moduleScriptDetected}: ${module.scripts.length}',
-                      hint: s.moduleFutureVersion,
-                      isDark: isDark,
-                    ),
-                  if (module.urlRewrites.isNotEmpty)
-                    _UnsupportedRow(
-                      label:
-                          '${s.moduleRewriteDetected}: ${module.urlRewrites.length}',
-                      hint: s.moduleFutureVersion,
-                      isDark: isDark,
-                    ),
-                  if (module.headerRewrites.isNotEmpty)
-                    _UnsupportedRow(
-                      label:
-                          'Header Rewrites: ${module.headerRewrites.length}',
+                      label: '${s.moduleScriptDetected}: ${module.scripts.length}',
                       hint: s.moduleFutureVersion,
                       isDark: isDark,
                     ),
@@ -289,8 +301,7 @@ class _ModuleDetailPageState extends ConsumerState<ModuleDetailPage> {
                     ),
                   if (module.unsupportedCounts.panelCount > 0)
                     _UnsupportedRow(
-                      label:
-                          'Panels: ${module.unsupportedCounts.panelCount}',
+                      label: 'Panels: ${module.unsupportedCounts.panelCount}',
                       hint: s.moduleFutureVersion,
                       isDark: isDark,
                     ),
@@ -501,6 +512,42 @@ class _MetaRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ActiveRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String detail;
+  final bool isDark;
+
+  const _ActiveRow({
+    required this.icon,
+    required this.label,
+    required this.detail,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: YLColors.connected),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: YLText.body.copyWith(
+              color: isDark ? YLColors.zinc300 : YLColors.zinc700,
+            ),
+          ),
+        ),
+        Text(
+          detail,
+          style: YLText.caption.copyWith(color: YLColors.zinc400),
+        ),
+      ],
     );
   }
 }

@@ -25,6 +25,11 @@ class AppConstants {
   /// Default ports (aligned with standard mihomo config).
   static const defaultMixedPort = 7890;
   static const defaultApiPort = 9090;
+  static const defaultDesktopTunStack = 'mixed';
+  static const serviceListenHost = '127.0.0.1';
+  static const serviceListenPort = 28653;
+  static const desktopServiceName = 'YueLinkServiceHelper';
+  static const desktopServiceLabel = 'com.yueto.yuelink.service';
 
   /// YueOps operations API base URL.
   static const yueOpsBaseUrl = 'https://ops.yue.to';

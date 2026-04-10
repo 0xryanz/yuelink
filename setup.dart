@@ -32,6 +32,8 @@ import 'dart:io';
 
 const String corePath = 'core';
 const String outputDir = 'core/build';
+const String servicePath = 'service';
+const String serviceOutputDir = 'service/build';
 
 /// Android API level for the NDK toolchain.
 const String androidApiLevel = '21';
@@ -57,6 +59,28 @@ const Map<String, Map<String, String>> outputNames = {
   'linux': {
     'amd64': 'linux-amd64/libclash.so',
     'arm64': 'linux-arm64/libclash.so',
+  },
+};
+
+const Map<String, Map<String, String>> serviceHelperOutputNames = {
+  'macos': {
+    'arm64': 'macos-arm64/yuelink-service-helper',
+    'amd64': 'macos-amd64/yuelink-service-helper',
+  },
+  'windows': {
+    'amd64': 'windows-amd64/yuelink-service-helper.exe',
+    'arm64': 'windows-arm64/yuelink-service-helper.exe',
+  },
+};
+
+const Map<String, Map<String, String>> serviceMihomoOutputNames = {
+  'macos': {
+    'arm64': 'macos-arm64/yuelink-mihomo',
+    'amd64': 'macos-amd64/yuelink-mihomo',
+  },
+  'windows': {
+    'amd64': 'windows-amd64/yuelink-mihomo.exe',
+    'arm64': 'windows-arm64/yuelink-mihomo.exe',
   },
 };
 
@@ -104,11 +128,13 @@ String resolveAndroidNdk() {
 
   // 2. ANDROID_NDK_HOME env var
   final envNdkHome = Platform.environment['ANDROID_NDK_HOME'];
-  if (envNdkHome != null && Directory(envNdkHome).existsSync()) return envNdkHome;
+  if (envNdkHome != null && Directory(envNdkHome).existsSync()) {
+    return envNdkHome;
+  }
 
   // 3. Derive from ANDROID_HOME / ANDROID_SDK_ROOT
-  final sdkRoot =
-      Platform.environment['ANDROID_HOME'] ?? Platform.environment['ANDROID_SDK_ROOT'];
+  final sdkRoot = Platform.environment['ANDROID_HOME'] ??
+      Platform.environment['ANDROID_SDK_ROOT'];
   if (sdkRoot != null) {
     final ndkDir = Directory('$sdkRoot/ndk');
     if (ndkDir.existsSync()) {
@@ -156,7 +182,8 @@ Future<void> run(
 }) async {
   final envDisplay =
       environment?.entries.map((e) => '${e.key}=${e.value}').join(' ') ?? '';
-  print('\n\$ ${envDisplay.isNotEmpty ? "$envDisplay " : ""}$executable ${args.join(" ")}');
+  print(
+      '\n\$ ${envDisplay.isNotEmpty ? "$envDisplay " : ""}$executable ${args.join(" ")}');
 
   final process = await Process.start(
     executable,
@@ -187,7 +214,8 @@ Future<void> buildCore({
   final goArch = goArchMap[arch] ?? arch;
   final platformArchNames = outputNames[platform];
   if (platformArchNames == null) {
-    throw Exception('Unsupported platform: $platform. Supported: android, ios, macos, windows');
+    throw Exception(
+        'Unsupported platform: $platform. Supported: android, ios, macos, windows');
   }
   final outName = platformArchNames[arch];
   if (outName == null) {
@@ -242,7 +270,8 @@ Future<void> buildCore({
       if (arch != 'arm64') {
         throw Exception('iOS only supports arm64');
       }
-      final sdkResult = Process.runSync('xcrun', ['--sdk', 'iphoneos', '--show-sdk-path']);
+      final sdkResult =
+          Process.runSync('xcrun', ['--sdk', 'iphoneos', '--show-sdk-path']);
       if (sdkResult.exitCode != 0) {
         throw Exception(
           'Cannot find iOS SDK. Install Xcode from the App Store.\n'
@@ -250,14 +279,17 @@ Future<void> buildCore({
         );
       }
       final sdkPath = (sdkResult.stdout as String).trim();
-      final ccResult = Process.runSync('xcrun', ['--sdk', 'iphoneos', '--find', 'clang']);
+      final ccResult =
+          Process.runSync('xcrun', ['--sdk', 'iphoneos', '--find', 'clang']);
       final cc = (ccResult.stdout as String).trim();
 
       env['GOOS'] = 'ios';
       env['GOARCH'] = 'arm64';
       env['CC'] = cc;
-      env['CGO_CFLAGS'] = '-isysroot $sdkPath -arch arm64 -miphoneos-version-min=15.0';
-      env['CGO_LDFLAGS'] = '-isysroot $sdkPath -arch arm64 -miphoneos-version-min=15.0';
+      env['CGO_CFLAGS'] =
+          '-isysroot $sdkPath -arch arm64 -miphoneos-version-min=15.0';
+      env['CGO_LDFLAGS'] =
+          '-isysroot $sdkPath -arch arm64 -miphoneos-version-min=15.0';
       buildMode = 'c-archive';
       // with_gvisor: required for TUN fd mode (file-descriptor) on iOS.
       // Same requirement as Android — without it, mihomo fails to initialize
@@ -354,14 +386,119 @@ Future<void> buildPlatformAll(String platform, {required bool debug}) async {
   final arches = outputNames[platform]!.keys.toList();
   for (final arch in arches) {
     await buildCore(platform: platform, arch: arch, debug: debug);
+    if (serviceHelperOutputNames.containsKey(platform) &&
+        serviceHelperOutputNames[platform]!.containsKey(arch)) {
+      await buildDesktopServiceHelper(
+        platform: platform,
+        arch: arch,
+        debug: debug,
+      );
+      await buildDesktopMihomoBinary(
+        platform: platform,
+        arch: arch,
+        debug: debug,
+      );
+    }
   }
+}
+
+Future<void> buildDesktopServiceHelper({
+  required String platform,
+  required String arch,
+  required bool debug,
+}) async {
+  final outName = serviceHelperOutputNames[platform]?[arch];
+  if (outName == null) return;
+
+  final outPath = '$serviceOutputDir/$outName';
+  File(outPath).parent.createSync(recursive: true);
+
+  final env = <String, String>{
+    'CGO_ENABLED': '0',
+    'GOOS': platform == 'macos' ? 'darwin' : platform,
+    'GOARCH': goArchMap[arch] ?? arch,
+  };
+  final ldflags = <String>[
+    if (!debug) '-s',
+    if (!debug) '-w',
+  ];
+
+  print('');
+  print('═══════════════════════════════════════════════════════');
+  print('  Building YueLink desktop service helper');
+  print('  Platform : $platform');
+  print('  Arch     : $arch');
+  print('  Output   : $outPath');
+  print('═══════════════════════════════════════════════════════');
+
+  await run(
+    'go',
+    [
+      'build',
+      '-trimpath',
+      '-ldflags=${ldflags.join(" ")}',
+      '-o',
+      '../$outPath',
+      '.',
+    ],
+    environment: env,
+    workingDirectory: servicePath,
+  );
+}
+
+Future<void> buildDesktopMihomoBinary({
+  required String platform,
+  required String arch,
+  required bool debug,
+}) async {
+  final outName = serviceMihomoOutputNames[platform]?[arch];
+  if (outName == null) return;
+
+  final outPath = '$serviceOutputDir/$outName';
+  File(outPath).parent.createSync(recursive: true);
+
+  final env = <String, String>{
+    'CGO_ENABLED': '0',
+    'GOOS': platform == 'macos' ? 'darwin' : platform,
+    'GOARCH': goArchMap[arch] ?? arch,
+  };
+  final ldflags = <String>[
+    if (!debug) '-s',
+    if (!debug) '-w',
+    '-X',
+    'github.com/metacubex/mihomo/constant.Version=yuelink',
+  ];
+
+  print('');
+  print('═══════════════════════════════════════════════════════');
+  print('  Building YueLink desktop mihomo binary');
+  print('  Platform : $platform');
+  print('  Arch     : $arch');
+  print('  Output   : $outPath');
+  print('═══════════════════════════════════════════════════════');
+
+  await run(
+    'go',
+    [
+      'build',
+      '-trimpath',
+      '-tags',
+      'with_gvisor',
+      '-ldflags=${ldflags.join(" ")}',
+      '-o',
+      '../../$outPath',
+      '.',
+    ],
+    environment: env,
+    workingDirectory: '$corePath/mihomo',
+  );
 }
 
 /// Create a macOS universal binary from arm64 + amd64 dylibs using lipo.
 Future<void> _createMacOSUniversal() async {
-  final arm64 = '$outputDir/macos-arm64/libclash.dylib';
-  final amd64 = '$outputDir/macos-amd64/libclash.dylib';
-  final universal = '$outputDir/macos-universal/libclash.dylib';
+  const arm64 = '$outputDir/macos-arm64/libclash.dylib';
+  const amd64 = '$outputDir/macos-amd64/libclash.dylib';
+  const universal = '$outputDir/macos-universal/libclash.dylib';
 
   if (!File(arm64).existsSync() || !File(amd64).existsSync()) {
     print('Skipping universal binary: need both arm64 and amd64 builds.');
@@ -381,6 +518,25 @@ Future<void> _createMacOSUniversal() async {
   final fileSize = File(universal).lengthSync();
   final sizeMb = (fileSize / 1024 / 1024).toStringAsFixed(1);
   print('\n Created universal binary: $universal ($sizeMb MB)');
+}
+
+Future<void> _createMacOSServiceUniversal(
+  String arm64,
+  String amd64,
+  String output,
+) async {
+  if (!File(arm64).existsSync() || !File(amd64).existsSync()) {
+    return;
+  }
+
+  File(output).parent.createSync(recursive: true);
+  await run('lipo', [
+    '-create',
+    arm64,
+    amd64,
+    '-output',
+    output,
+  ]);
 }
 
 /// Copy built libraries to the correct Flutter platform directories.
@@ -404,15 +560,15 @@ Future<void> installLibraries(String platform) async {
       break;
 
     case 'ios':
-      final src = '$outputDir/ios-arm64/libclash.a';
-      final dst = 'ios/Frameworks/libclash.a';
+      const src = '$outputDir/ios-arm64/libclash.a';
+      const dst = 'ios/Frameworks/libclash.a';
       if (File(src).existsSync()) {
         File(dst).parent.createSync(recursive: true);
         File(src).copySync(dst);
         print('Installed: $dst');
       }
-      final hSrc = '$outputDir/ios-arm64/libclash.h';
-      final hDst = 'ios/Frameworks/libclash.h';
+      const hSrc = '$outputDir/ios-arm64/libclash.h';
+      const hDst = 'ios/Frameworks/libclash.h';
       if (File(hSrc).existsSync()) {
         File(hSrc).copySync(hDst);
         print('Installed: $hDst');
@@ -421,14 +577,14 @@ Future<void> installLibraries(String platform) async {
 
     case 'macos':
       // Prefer universal binary if both arches were built
-      final arm64 = '$outputDir/macos-arm64/libclash.dylib';
-      final amd64 = '$outputDir/macos-amd64/libclash.dylib';
+      const arm64 = '$outputDir/macos-arm64/libclash.dylib';
+      const amd64 = '$outputDir/macos-amd64/libclash.dylib';
 
       if (File(arm64).existsSync() && File(amd64).existsSync()) {
         // Create universal binary via lipo and install that
         await _createMacOSUniversal();
-        final universalSrc = '$outputDir/macos-universal/libclash.dylib';
-        final dst = 'macos/Frameworks/libclash.dylib';
+        const universalSrc = '$outputDir/macos-universal/libclash.dylib';
+        const dst = 'macos/Frameworks/libclash.dylib';
         File(dst).parent.createSync(recursive: true);
         File(universalSrc).copySync(dst);
         print('Installed universal: $dst');
@@ -450,6 +606,52 @@ Future<void> installLibraries(String platform) async {
           }
         }
       }
+
+      const helperArm64 =
+          '$serviceOutputDir/macos-arm64/yuelink-service-helper';
+      const helperAmd64 =
+          '$serviceOutputDir/macos-amd64/yuelink-service-helper';
+      const helperUniversal =
+          '$serviceOutputDir/macos-universal/yuelink-service-helper';
+      const mihomoArm64 = '$serviceOutputDir/macos-arm64/yuelink-mihomo';
+      const mihomoAmd64 = '$serviceOutputDir/macos-amd64/yuelink-mihomo';
+      const mihomoUniversal =
+          '$serviceOutputDir/macos-universal/yuelink-mihomo';
+
+      if (File(helperArm64).existsSync() && File(helperAmd64).existsSync()) {
+        await _createMacOSServiceUniversal(
+          helperArm64,
+          helperAmd64,
+          helperUniversal,
+        );
+      }
+      if (File(mihomoArm64).existsSync() && File(mihomoAmd64).existsSync()) {
+        await _createMacOSServiceUniversal(
+          mihomoArm64,
+          mihomoAmd64,
+          mihomoUniversal,
+        );
+      }
+
+      final helperSrc = File(helperUniversal).existsSync()
+          ? helperUniversal
+          : (File(helperArm64).existsSync() ? helperArm64 : helperAmd64);
+      final mihomoSrc = File(mihomoUniversal).existsSync()
+          ? mihomoUniversal
+          : (File(mihomoArm64).existsSync() ? mihomoArm64 : mihomoAmd64);
+
+      if (File(helperSrc).existsSync()) {
+        const dst = 'macos/Frameworks/yuelink-service-helper';
+        File(dst).parent.createSync(recursive: true);
+        File(helperSrc).copySync(dst);
+        print('Installed: $dst');
+      }
+      if (File(mihomoSrc).existsSync()) {
+        const dst = 'macos/Frameworks/yuelink-mihomo';
+        File(dst).parent.createSync(recursive: true);
+        File(mihomoSrc).copySync(dst);
+        print('Installed: $dst');
+      }
       break;
 
     case 'windows':
@@ -460,6 +662,23 @@ Future<void> installLibraries(String platform) async {
           File(dst).parent.createSync(recursive: true);
           File(src).copySync(dst);
           print('Installed: $dst');
+        }
+      }
+      for (final arch in ['amd64', 'arm64']) {
+        final helperSrc =
+            '$serviceOutputDir/windows-$arch/yuelink-service-helper.exe';
+        final mihomoSrc = '$serviceOutputDir/windows-$arch/yuelink-mihomo.exe';
+        final helperDst = 'windows/libs/$arch/yuelink-service-helper.exe';
+        final mihomoDst = 'windows/libs/$arch/yuelink-mihomo.exe';
+        if (File(helperSrc).existsSync()) {
+          File(helperDst).parent.createSync(recursive: true);
+          File(helperSrc).copySync(helperDst);
+          print('Installed: $helperDst');
+        }
+        if (File(mihomoSrc).existsSync()) {
+          File(mihomoDst).parent.createSync(recursive: true);
+          File(mihomoSrc).copySync(mihomoDst);
+          print('Installed: $mihomoDst');
         }
       }
       break;
@@ -488,6 +707,12 @@ void cleanBuild() {
     print('Cleaned: $outputDir');
   } else {
     print('Nothing to clean.');
+  }
+
+  final serviceDir = Directory(serviceOutputDir);
+  if (serviceDir.existsSync()) {
+    serviceDir.deleteSync(recursive: true);
+    print('Cleaned: $serviceOutputDir');
   }
 
   final installDirs = [
@@ -527,7 +752,8 @@ void checkDeps() {
 
   // macOS SDK (for macOS build)
   if (Platform.isMacOS) {
-    final macSdk = Process.runSync('xcrun', ['--sdk', 'macosx', '--show-sdk-path']);
+    final macSdk =
+        Process.runSync('xcrun', ['--sdk', 'macosx', '--show-sdk-path']);
     if (macSdk.exitCode == 0) {
       print('  [OK] macOS SDK: ${(macSdk.stdout as String).trim()}');
     } else {
@@ -535,7 +761,8 @@ void checkDeps() {
     }
 
     // iOS SDK (for iOS build)
-    final iosSdk = Process.runSync('xcrun', ['--sdk', 'iphoneos', '--show-sdk-path']);
+    final iosSdk =
+        Process.runSync('xcrun', ['--sdk', 'iphoneos', '--show-sdk-path']);
     if (iosSdk.exitCode == 0) {
       print('  [OK] iOS SDK: ${(iosSdk.stdout as String).trim()}');
     } else {
@@ -554,7 +781,8 @@ void checkDeps() {
     final ndk = resolveAndroidNdk();
     print('  [OK] Android NDK: $ndk');
   } catch (_) {
-    print('  [MISSING] Android NDK — set ANDROID_HOME or install via Android Studio');
+    print(
+        '  [MISSING] Android NDK — set ANDROID_HOME or install via Android Studio');
   }
 
   // MinGW (for Windows cross-compile)
@@ -681,6 +909,19 @@ Future<void> main(List<String> args) async {
         }
       } else if (arch != null) {
         await buildCore(platform: platform, arch: arch, debug: debug);
+        if (serviceHelperOutputNames.containsKey(platform) &&
+            serviceHelperOutputNames[platform]!.containsKey(arch)) {
+          await buildDesktopServiceHelper(
+            platform: platform,
+            arch: arch,
+            debug: debug,
+          );
+          await buildDesktopMihomoBinary(
+            platform: platform,
+            arch: arch,
+            debug: debug,
+          );
+        }
       } else {
         await buildPlatformAll(platform, debug: debug);
       }

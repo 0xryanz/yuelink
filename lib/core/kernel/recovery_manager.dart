@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/traffic.dart';
 import '../../domain/models/traffic_history.dart';
 import '../../providers/core_provider.dart';
+import '../storage/settings_service.dart';
 import 'core_manager.dart';
 
 /// Centralised VPN recovery utilities.
@@ -56,6 +57,15 @@ class RecoveryManager {
           .timeout(const Duration(seconds: 2), onTimeout: () => false);
       return (alive: apiOk, apiOk: apiOk);
     }
+    if (Platform.isMacOS || Platform.isWindows) {
+      final connectionMode = await SettingsService.getConnectionMode();
+      if (connectionMode == 'tun') {
+        final apiOk = await manager.api
+            .isAvailable()
+            .timeout(const Duration(seconds: 2), onTimeout: () => false);
+        return (alive: apiOk, apiOk: apiOk);
+      }
+    }
     final alive = manager.isCoreActuallyRunning;
     final apiOk = alive ? await manager.api.isAvailable() : false;
     return (alive: alive, apiOk: apiOk);
@@ -73,7 +83,8 @@ void resetCoreToStopped(dynamic ref, {bool clearDesktopProxy = true}) {
     status: (ref as dynamic).read(coreStatusProvider.notifier),
     traffic: (ref as dynamic).read(trafficProvider.notifier),
     history: (ref as dynamic).read(trafficHistoryProvider.notifier),
-    historyVersion: (ref as dynamic).read(trafficHistoryVersionProvider.notifier),
+    historyVersion:
+        (ref as dynamic).read(trafficHistoryVersionProvider.notifier),
     clearDesktopProxy: clearDesktopProxy,
   );
 }

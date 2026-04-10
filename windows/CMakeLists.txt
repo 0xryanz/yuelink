@@ -114,3 +114,15 @@ if(EXISTS "${LIBCLASH_DIR}/libclash.dll")
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+if(EXISTS "${LIBCLASH_DIR}/yuelink-service-helper.exe")
+  install(FILES "${LIBCLASH_DIR}/yuelink-service-helper.exe"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
+
+if(EXISTS "${LIBCLASH_DIR}/yuelink-mihomo.exe")
+  install(FILES "${LIBCLASH_DIR}/yuelink-mihomo.exe"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()

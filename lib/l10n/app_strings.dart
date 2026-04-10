@@ -448,6 +448,36 @@ class S {
   String get connectionMode => _e ? 'Connection Mode' : '接入方式';
   String get modeTun => _e ? 'TUN Mode' : 'TUN 模式';
   String get modeSystemProxy => _e ? 'System Proxy' : '系统代理';
+  String get serviceModeLabel => _e ? 'Service Mode' : '服务模式';
+  String get serviceModeInstall => _e ? 'Install Service' : '安装服务';
+  String get serviceModeUninstall => _e ? 'Uninstall' : '卸载服务';
+  String get serviceModeRefresh => _e ? 'Refresh' : '刷新状态';
+  String get serviceModeNotInstalled =>
+      _e ? 'Privileged helper not installed' : '特权服务未安装';
+  String get serviceModeInstalled =>
+      _e ? 'Privileged helper installed' : '特权服务已安装';
+  String get serviceModeUnreachable =>
+      _e ? 'Installed, but helper is not reachable' : '已安装，但 helper 不可达';
+  String serviceModeRunning(int pid) => _e
+      ? 'Helper reachable · Mihomo running (PID $pid)'
+      : 'helper 可用 · Mihomo 运行中 (PID $pid)';
+  String get serviceModeIdle =>
+      _e ? 'Helper reachable · Mihomo is stopped' : 'helper 可用 · Mihomo 未运行';
+  String serviceModeNeedsUpdate(String version) => _e
+      ? 'Version mismatch ($version) — please reinstall'
+      : '版本不匹配 ($version) — 请重新安装';
+  String get serviceModeInstallOk =>
+      _e ? 'Desktop service installed' : '桌面服务已安装';
+  String serviceModeInstallFailed(String error) =>
+      _e ? 'Install service failed: $error' : '安装服务失败: $error';
+  String get serviceModeUninstallOk =>
+      _e ? 'Desktop service removed' : '桌面服务已卸载';
+  String serviceModeUninstallFailed(String error) =>
+      _e ? 'Uninstall service failed: $error' : '卸载服务失败: $error';
+  String get tunStackLabel => _e ? 'TUN Stack' : 'TUN 栈';
+  String get tunStackMixed => _e ? 'Mixed' : 'Mixed';
+  String get tunStackSystem => _e ? 'System' : 'System';
+  String get tunStackGvisor => _e ? 'gVisor' : 'gVisor';
   String get setSystemProxyOnConnect =>
       _e ? 'Set system proxy on connect' : '连接时设置系统代理';
   String get setSystemProxyOnConnectSub =>

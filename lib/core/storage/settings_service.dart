@@ -131,6 +131,34 @@ class SettingsService {
     await set('connectionMode', mode);
   }
 
+  // ── Desktop TUN stack (mixed / system / gvisor) ─────────────────────────
+
+  static Future<String> getDesktopTunStack() async {
+    return (await get<String>('desktopTunStack')) ?? 'mixed';
+  }
+
+  static Future<void> setDesktopTunStack(String stack) async {
+    await set('desktopTunStack', stack);
+  }
+
+  // ── Desktop Service Mode auth token / port ──────────────────────────────
+
+  static Future<String?> getServiceAuthToken() async {
+    return get<String>('serviceAuthToken');
+  }
+
+  static Future<void> setServiceAuthToken(String? token) async {
+    await set('serviceAuthToken', token);
+  }
+
+  static Future<int?> getServicePort() async {
+    return get<int>('servicePort');
+  }
+
+  static Future<void> setServicePort(int port) async {
+    await set('servicePort', port);
+  }
+
   // ── Log level ────────────────────────────────────────────────────────────
 
   static Future<String> getLogLevel() async {

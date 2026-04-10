@@ -29,17 +29,21 @@ class ConfigTemplate {
   };
 
   // Cached RegExp patterns
-  static final _reTunKey        = RegExp(r'^tun:', multiLine: true);
-  static final _reDnsKey        = RegExp(r'^dns:', multiLine: true);
+  static final _reTunKey = RegExp(r'^tun:', multiLine: true);
+  static final _reDnsKey = RegExp(r'^dns:', multiLine: true);
+
   /// Matches a top-level YAML key (non-whitespace, non-comment at line start).
   /// Excludes `#` comment lines which are not section boundaries.
-  static final _reTopLevel      = RegExp(r'^[^\s#]', multiLine: true);
-  static final _reEnableTrue    = RegExp(r'\benable:\s*true');
-  static final _reEnableFalse   = RegExp(r'\benable:\s*false');
-  static final _reExtController = RegExp(r'^(external-controller:\s*).*$', multiLine: true);
-  static final _reMixedPort     = RegExp(r'^mixed-port:\s*(\d+)', multiLine: true);
-  static final _reApiPort       = RegExp(r'^external-controller:\s*[\w.]*:(\d+)', multiLine: true);
-  static final _reSecret        = RegExp(r'^secret:\s*["\x27]?(.+?)["\x27]?\s*$', multiLine: true);
+  static final _reTopLevel = RegExp(r'^[^\s#]', multiLine: true);
+  static final _reEnableTrue = RegExp(r'\benable:\s*true');
+  static final _reEnableFalse = RegExp(r'\benable:\s*false');
+  static final _reExtController =
+      RegExp(r'^(external-controller:\s*).*$', multiLine: true);
+  static final _reMixedPort = RegExp(r'^mixed-port:\s*(\d+)', multiLine: true);
+  static final _reApiPort =
+      RegExp(r'^external-controller:\s*[\w.]*:(\d+)', multiLine: true);
+  static final _reSecret =
+      RegExp(r'^secret:\s*["\x27]?(.+?)["\x27]?\s*$', multiLine: true);
   static final _reProxiesSection = RegExp(r'^proxies:\s*\n', multiLine: true);
 
   /// Process a raw config from a subscription.
@@ -63,6 +67,8 @@ class ConfigTemplate {
     int apiPort = AppConstants.defaultApiPort,
     int mixedPort = AppConstants.defaultMixedPort,
     String? secret,
+    String connectionMode = 'systemProxy',
+    String desktopTunStack = AppConstants.defaultDesktopTunStack,
     int? tunFd,
   }) {
     var config = rawConfig;
@@ -126,9 +132,13 @@ class ConfigTemplate {
     debugPrint('[Config] 11 mode done');
 
     if (Platform.isMacOS || Platform.isWindows) {
-      config = _disableTun(config);
+      if (connectionMode == 'tun') {
+        config = _ensureDesktopTun(config, desktopTunStack);
+      } else {
+        config = _disableTun(config);
+      }
     }
-    debugPrint('[Config] 12 disableTun done');
+    debugPrint('[Config] 12 desktopTun done');
 
     if (tunFd != null && tunFd > 0) {
       config = _injectTunFd(config, tunFd);
@@ -148,11 +158,9 @@ class ConfigTemplate {
       if (yaml is! YamlMap) return config;
       final mutable = _toMutable(yaml) as Map<String, dynamic>;
 
-      final proxies =
-          (mutable['proxies'] as List<dynamic>?)?.cast<dynamic>() ??
-              <dynamic>[];
-      proxies.removeWhere(
-          (p) => p is Map && p['name'] == '_upstream');
+      final proxies = (mutable['proxies'] as List<dynamic>?)?.cast<dynamic>() ??
+          <dynamic>[];
+      proxies.removeWhere((p) => p is Map && p['name'] == '_upstream');
       proxies.insert(0, <String, dynamic>{
         'name': '_upstream',
         'type': type,
@@ -191,9 +199,8 @@ class ConfigTemplate {
       if (yaml is! YamlMap) return config;
       final mutable = _toMutable(yaml) as Map<String, dynamic>;
 
-      final proxies =
-          (mutable['proxies'] as List<dynamic>?)?.cast<dynamic>() ??
-              <dynamic>[];
+      final proxies = (mutable['proxies'] as List<dynamic>?)?.cast<dynamic>() ??
+          <dynamic>[];
       final proxyGroups =
           (mutable['proxy-groups'] as List<dynamic>?)?.cast<dynamic>() ??
               <dynamic>[];
@@ -222,8 +229,8 @@ class ConfigTemplate {
       }
 
       // Verify that the active group exists in this config.
-      final hasGroup = proxyGroups.any(
-          (g) => g is Map<String, dynamic> && g['name'] == activeGroup);
+      final hasGroup = proxyGroups
+          .any((g) => g is Map<String, dynamic> && g['name'] == activeGroup);
       if (!hasGroup) return config;
 
       // Set dialer-proxy on nodes[1..N-1]: each node dials through the previous.
@@ -253,9 +260,8 @@ class ConfigTemplate {
       if (yaml is! YamlMap) return config;
       final mutable = _toMutable(yaml) as Map<String, dynamic>;
 
-      final proxies =
-          (mutable['proxies'] as List<dynamic>?)?.cast<dynamic>() ??
-              <dynamic>[];
+      final proxies = (mutable['proxies'] as List<dynamic>?)?.cast<dynamic>() ??
+          <dynamic>[];
       final proxyGroups =
           (mutable['proxy-groups'] as List<dynamic>?)?.cast<dynamic>() ??
               <dynamic>[];
@@ -292,13 +298,13 @@ class ConfigTemplate {
     }
   }
 
-  static bool _isChainGroup(String name) =>
-      name.startsWith(chainGroupPrefix);
+  static bool _isChainGroup(String name) => name.startsWith(chainGroupPrefix);
 
   static dynamic _toMutable(dynamic value) {
     if (value is YamlMap) {
       return Map<String, dynamic>.fromEntries(
-        value.entries.map((e) => MapEntry(e.key.toString(), _toMutable(e.value))),
+        value.entries
+            .map((e) => MapEntry(e.key.toString(), _toMutable(e.value))),
       );
     } else if (value is YamlList) {
       return value.map(_toMutable).toList();
@@ -327,6 +333,99 @@ class ConfigTemplate {
     return config.substring(0, tunMatch.start) +
         newSection +
         config.substring(tunEnd);
+  }
+
+  /// Inject desktop-safe TUN configuration for macOS/Windows.
+  ///
+  /// Unlike Android, desktop platforms let mihomo create and manage the TUN
+  /// device itself. Replace any subscription-provided TUN section so we don't
+  /// inherit mobile-only settings such as `file-descriptor` or `gvisor`.
+  ///
+  /// Also forces fake-ip DNS mode — TUN requires fake-ip to work reliably.
+  /// Without it, DNS resolution for proxied domains fails because TUN
+  /// intercepts raw IP packets, not domain-based connections. This matches
+  /// Clash Verge Rev's `use_tun()` which forces fake-ip when TUN is enabled.
+  static String _ensureDesktopTun(String config, String stack) {
+    final normalizedStack = switch (stack) {
+      'system' => 'system',
+      'gvisor' => 'gvisor',
+      _ => 'mixed',
+    };
+
+    if (_hasKey(config, 'tun')) {
+      config = _removeSection(config, 'tun');
+    }
+
+    if (_hasKey(config, 'find-process-mode')) {
+      config = _replaceScalar(config, 'find-process-mode', 'always');
+    } else {
+      config += '\nfind-process-mode: always\n';
+    }
+
+    // Force fake-ip DNS mode for TUN (CVR does the same in use_tun())
+    config = _ensureFakeIpForTun(config);
+
+    return '$config\ntun:\n'
+        '  enable: true\n'
+        '  stack: $normalizedStack\n'
+        '  auto-route: true\n'
+        '  auto-detect-interface: true\n'
+        '  dns-hijack:\n'
+        '    - any:53\n'
+        '  mtu: 9000\n';
+  }
+
+  /// Force fake-ip DNS mode within the existing dns section.
+  ///
+  /// TUN mode requires fake-ip to function correctly. If the subscription
+  /// config uses redir-host or has no enhanced-mode, override it.
+  /// Only touches enhanced-mode and fake-ip-range — leaves nameservers,
+  /// fallback, and other DNS settings from the subscription intact.
+  static String _ensureFakeIpForTun(String config) {
+    if (!_hasKey(config, 'dns')) {
+      // No dns section — _ensureDns() already injected one with fake-ip
+      return config;
+    }
+
+    final dnsMatch = _reDnsKey.firstMatch(config);
+    if (dnsMatch == null) return config;
+
+    final afterDnsLine = config.indexOf('\n', dnsMatch.start);
+    final afterDns = afterDnsLine >= 0 ? afterDnsLine + 1 : config.length;
+    final nextTopLevel = _reTopLevel.firstMatch(config.substring(afterDns));
+    final dnsEnd =
+        nextTopLevel != null ? afterDns + nextTopLevel.start : config.length;
+
+    var dnsSection = config.substring(dnsMatch.start, dnsEnd);
+
+    // Force enhanced-mode: fake-ip
+    final enhancedRe = RegExp(r'enhanced-mode:\s*\S+');
+    if (enhancedRe.hasMatch(dnsSection)) {
+      dnsSection =
+          dnsSection.replaceFirst(enhancedRe, 'enhanced-mode: fake-ip');
+    } else {
+      // Inject after dns: line
+      final indentMatch = RegExp(r'\n( +)\S').firstMatch(dnsSection);
+      final indent = indentMatch?.group(1) ?? '  ';
+      dnsSection = dnsSection.replaceFirst(
+        'dns:\n',
+        'dns:\n${indent}enhanced-mode: fake-ip\n',
+      );
+    }
+
+    // Ensure fake-ip-range exists
+    if (!dnsSection.contains('fake-ip-range')) {
+      final indentMatch = RegExp(r'\n( +)\S').firstMatch(dnsSection);
+      final indent = indentMatch?.group(1) ?? '  ';
+      dnsSection = dnsSection.replaceFirst(
+        'enhanced-mode: fake-ip\n',
+        'enhanced-mode: fake-ip\n${indent}fake-ip-range: 198.18.0.1/16\n',
+      );
+    }
+
+    return config.substring(0, dnsMatch.start) +
+        dnsSection +
+        config.substring(dnsEnd);
   }
 
   /// Inject Android-safe TUN configuration with the VpnService file descriptor.
@@ -549,18 +648,24 @@ class ConfigTemplate {
       }
 
       if (!dnsSection.contains('nameserver-policy:')) {
-        final policy = '$indent' 'nameserver-policy:\n'
-            '$entryIndent' '"+.apple.com": ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"]\n'
-            '$entryIndent' '"+.icloud.com": ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"]\n';
+        final policy = '$indent'
+            'nameserver-policy:\n'
+            '$entryIndent'
+            '"+.apple.com": ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"]\n'
+            '$entryIndent'
+            '"+.icloud.com": ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"]\n';
         config =
             config.substring(0, dnsEnd) + policy + config.substring(dnsEnd);
         dnsEnd += policy.length;
       }
 
       if (!dnsSection.contains('direct-nameserver:')) {
-        final directNs = '$indent' 'direct-nameserver:\n'
-            '$entryIndent' '- https://doh.pub/dns-query\n'
-            '$entryIndent' '- https://dns.alidns.com/dns-query\n';
+        final directNs = '$indent'
+            'direct-nameserver:\n'
+            '$entryIndent'
+            '- https://doh.pub/dns-query\n'
+            '$entryIndent'
+            '- https://dns.alidns.com/dns-query\n';
         config =
             config.substring(0, dnsEnd) + directNs + config.substring(dnsEnd);
         dnsEnd += directNs.length;
@@ -627,12 +732,14 @@ class ConfigTemplate {
       ];
       if (dnsSection.contains('fake-ip-filter:')) {
         // Append missing domains to existing fake-ip-filter
-        final filterMatch = RegExp(r'fake-ip-filter:\s*\n').firstMatch(dnsSection);
+        final filterMatch =
+            RegExp(r'fake-ip-filter:\s*\n').firstMatch(dnsSection);
         if (filterMatch != null) {
           var insertOffset = dnsMatch.start + filterMatch.end;
           // Find end of list items (lines starting with entryIndent + "- ")
           final afterFilter = config.substring(insertOffset);
-          final listEnd = RegExp(r'^(?![ \t]+- )', multiLine: true).firstMatch(afterFilter);
+          final listEnd =
+              RegExp(r'^(?![ \t]+- )', multiLine: true).firstMatch(afterFilter);
           if (listEnd != null) insertOffset += listEnd.start;
           final existingFilter = dnsSection;
           var injection = '';
@@ -642,7 +749,9 @@ class ConfigTemplate {
             }
           }
           if (injection.isNotEmpty) {
-            config = config.substring(0, insertOffset) + injection + config.substring(insertOffset);
+            config = config.substring(0, insertOffset) +
+                injection +
+                config.substring(insertOffset);
             dnsEnd += injection.length;
           }
         }
@@ -650,7 +759,9 @@ class ConfigTemplate {
         // No fake-ip-filter at all — inject one with connectivity domains
         final filterBlock = '${indent}fake-ip-filter:\n'
             '${connectivityDomains.map((d) => '$entryIndent- "$d"').join('\n')}\n';
-        config = config.substring(0, dnsEnd) + filterBlock + config.substring(dnsEnd);
+        config = config.substring(0, dnsEnd) +
+            filterBlock +
+            config.substring(dnsEnd);
       }
     }
 
@@ -869,7 +980,8 @@ class ConfigTemplate {
   /// may still go through the proxy and fail (blocked, slow, or wrong response),
   /// causing WiFi exclamation mark on various Android brands.
   static String _ensureConnectivityRules(String config) {
-    final rulesMatch = RegExp(r'^rules:\s*\n', multiLine: true).firstMatch(config);
+    final rulesMatch =
+        RegExp(r'^rules:\s*\n', multiLine: true).firstMatch(config);
     if (rulesMatch == null) return config; // no rules section
 
     const domains = [
@@ -891,14 +1003,15 @@ class ConfigTemplate {
 
     // Only inject rules not already present.
     // Detect indentation from existing rules (e.g. "  - " or "- ").
-    final firstRule = RegExp(r'^([ \t]*)-\s', multiLine: true).firstMatch(
-        config.substring(rulesMatch.end));
+    final firstRule = RegExp(r'^([ \t]*)-\s', multiLine: true)
+        .firstMatch(config.substring(rulesMatch.end));
     final ruleIndent = firstRule?.group(1) ?? '  ';
     var injection = '';
     for (final d in domains) {
       // Google/gstatic/msft 域名被 GFW 干扰，不注入 DIRECT
       // 让订阅自带的 Google→代理 规则处理
-      if (d.contains('google') || d.contains('gstatic') || d.contains('msft')) continue;
+      if (d.contains('google') || d.contains('gstatic') || d.contains('msft'))
+        continue;
       if (!config.contains('DOMAIN,$d,')) {
         injection += '$ruleIndent- "DOMAIN,$d,DIRECT"\n';
       }

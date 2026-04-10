@@ -109,6 +109,7 @@ void main() async {
   final savedProfileId = await SettingsService.getActiveProfileId();
   final savedRoutingMode = await SettingsService.getRoutingMode();
   final savedConnectionMode = await SettingsService.getConnectionMode();
+  final savedDesktopTunStack = await SettingsService.getDesktopTunStack();
   final savedLogLevel = await SettingsService.getLogLevel();
   final savedAutoConnect = await SettingsService.getAutoConnect();
   final savedSystemProxy = await SettingsService.getSystemProxyOnConnect();
@@ -191,6 +192,7 @@ void main() async {
       preloadedProfileIdProvider.overrideWithValue(savedProfileId),
       routingModeProvider.overrideWith((ref) => savedRoutingMode),
       connectionModeProvider.overrideWith((ref) => savedConnectionMode),
+      desktopTunStackProvider.overrideWith((ref) => savedDesktopTunStack),
       logLevelProvider.overrideWith((ref) => savedLogLevel),
       autoConnectProvider.overrideWith((ref) => savedAutoConnect),
       systemProxyOnConnectProvider.overrideWith((ref) => savedSystemProxy),

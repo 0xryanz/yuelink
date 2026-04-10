@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yuelink/services/config_template.dart';
 
@@ -27,6 +29,49 @@ void main() {
       const config = 'mixed-port: 7890';
       final result = ConfigTemplate.process(config, secret: 'mytoken');
       expect(result, contains('secret: mytoken'));
+    });
+
+    test('desktop tun mode injects desktop-safe tun config', () {
+      const config = '''
+mixed-port: 7890
+tun:
+  enable: false
+  stack: gvisor
+  file-descriptor: 42
+find-process-mode: off
+''';
+      final result = ConfigTemplate.process(config, connectionMode: 'tun');
+
+      if (Platform.isMacOS || Platform.isWindows) {
+        expect(result, contains('tun:'));
+        expect(result, contains('enable: true'));
+        expect(result, contains('stack: mixed'));
+        expect(result, contains('auto-route: true'));
+        expect(result, contains('auto-detect-interface: true'));
+        expect(result, contains('dns-hijack:'));
+        expect(result, contains('find-process-mode: always'));
+        expect(result, isNot(contains('file-descriptor: 42')));
+      } else {
+        expect(result, contains('file-descriptor: 42'));
+        expect(result, contains('find-process-mode: off'));
+      }
+    });
+
+    test('desktop system-proxy mode disables tun section', () {
+      const config = '''
+mixed-port: 7890
+tun:
+  enable: true
+  stack: mixed
+''';
+      final result =
+          ConfigTemplate.process(config, connectionMode: 'systemProxy');
+
+      if (Platform.isMacOS || Platform.isWindows) {
+        expect(result, contains('enable: false'));
+      } else {
+        expect(result, contains('enable: true'));
+      }
     });
   });
 
@@ -65,7 +110,8 @@ void main() {
     test('uses subscription config directly if it has proxy-groups and rules',
         () {
       const template = 'mixed-port: 7890\nproxies:\n';
-      const sub = 'proxies:\n  - name: test\nproxy-groups:\n  - name: g\nrules:\n  - MATCH,DIRECT';
+      const sub =
+          'proxies:\n  - name: test\nproxy-groups:\n  - name: g\nrules:\n  - MATCH,DIRECT';
       final result = ConfigTemplate.mergeIfNeeded(template, sub);
       expect(result, equals(sub));
     });
@@ -113,8 +159,8 @@ rules:
       expect(result, contains('external-controller: 127.0.0.1:9090'));
       expect(result, contains('mode: rule'));
       // Existing keys should NOT be duplicated
-      expect(
-          'dns:'.allMatches(result).length, 1, reason: 'dns should not be duplicated');
+      expect('dns:'.allMatches(result).length, 1,
+          reason: 'dns should not be duplicated');
       expect('sniffer:'.allMatches(result).length, 1,
           reason: 'sniffer should not be duplicated');
       expect('geodata-mode:'.allMatches(result).length, 1,
@@ -206,11 +252,11 @@ proxy-groups:
       expect(result, isNot(contains('dialer-proxy: "C"')));
     });
 
-    test('is idempotent — re-inject clears old dialer-proxy before re-setting', () {
+    test('is idempotent — re-inject clears old dialer-proxy before re-setting',
+        () {
       var result =
           ConfigTemplate.injectProxyChain(baseConfig, ['HK', 'JP'], '自动选择');
-      result =
-          ConfigTemplate.injectProxyChain(result, ['HK', 'JP'], '自动选择');
+      result = ConfigTemplate.injectProxyChain(result, ['HK', 'JP'], '自动选择');
       // Exactly one dialer-proxy in the entire config (JP → HK)
       expect(RegExp(r'dialer-proxy:').allMatches(result).length, 1);
     });
@@ -248,8 +294,8 @@ proxy-groups:
       - HK
       - JP
 ''';
-      final result = ConfigTemplate.injectProxyChain(
-          legacyConfig, ['HK', 'JP'], '自动选择');
+      final result =
+          ConfigTemplate.injectProxyChain(legacyConfig, ['HK', 'JP'], '自动选择');
       expect(result, isNot(contains('dialer-proxy: SomeNode')));
       expect(result, isNot(contains('dialer-proxy: "SomeNode"')));
       // JP should now have dialer-proxy: HK
@@ -257,7 +303,8 @@ proxy-groups:
           anyOf(contains('dialer-proxy: HK'), contains('dialer-proxy: "HK"')));
     });
 
-    test('removes old _YueLink_Chain_* groups on re-inject (backward compat)', () {
+    test('removes old _YueLink_Chain_* groups on re-inject (backward compat)',
+        () {
       const oldChainConfig = '''
 proxies:
   - name: HK
@@ -284,8 +331,8 @@ proxy-groups:
     proxies:
       - JP
 ''';
-      final result = ConfigTemplate.injectProxyChain(
-          oldChainConfig, ['HK', 'JP'], '自动选择');
+      final result =
+          ConfigTemplate.injectProxyChain(oldChainConfig, ['HK', 'JP'], '自动选择');
       expect(result, isNot(contains('_YueLink_Chain_')));
       expect(result,
           anyOf(contains('dialer-proxy: HK'), contains('dialer-proxy: "HK"')));
@@ -339,7 +386,8 @@ proxy-groups:
       - HK
 ''';
       final result = ConfigTemplate.removeProxyChain(config);
-      expect(result,
+      expect(
+          result,
           anyOf(contains('dialer-proxy: _upstream'),
               contains('dialer-proxy: "_upstream"')));
     });
@@ -363,5 +411,4 @@ proxy-groups:
       expect(result, isNot(contains('dialer-proxy: "SomeNode"')));
     });
   });
-
 }

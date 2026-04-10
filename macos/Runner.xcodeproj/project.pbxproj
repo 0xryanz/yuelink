@@ -431,14 +431,18 @@
 			);
 			inputPaths = (
 				"$(SRCROOT)/Frameworks/libclash.dylib",
+				"$(SRCROOT)/Frameworks/yuelink-service-helper",
+				"$(SRCROOT)/Frameworks/yuelink-mihomo",
 			);
 			name = "Copy libclash.dylib";
 			outputPaths = (
 				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/libclash.dylib",
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/yuelink-service-helper",
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/yuelink-mihomo",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "mkdir -p \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH\"\ncp \"$SRCROOT/Frameworks/libclash.dylib\" \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/libclash.dylib\"\ncodesign --force --sign - \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/libclash.dylib\"\n";
+			shellScript = "mkdir -p \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH\"\ncp \"$SRCROOT/Frameworks/libclash.dylib\" \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/libclash.dylib\"\nif [ -f \"$SRCROOT/Frameworks/yuelink-service-helper\" ]; then\n  cp \"$SRCROOT/Frameworks/yuelink-service-helper\" \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/yuelink-service-helper\"\n  chmod 755 \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/yuelink-service-helper\"\n  codesign --force --sign - \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/yuelink-service-helper\"\nfi\nif [ -f \"$SRCROOT/Frameworks/yuelink-mihomo\" ]; then\n  cp \"$SRCROOT/Frameworks/yuelink-mihomo\" \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/yuelink-mihomo\"\n  chmod 755 \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/yuelink-mihomo\"\n  codesign --force --sign - \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/yuelink-mihomo\"\nfi\ncodesign --force --sign - \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/libclash.dylib\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

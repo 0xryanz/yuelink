@@ -18,7 +18,6 @@ import '../infrastructure/datasources/mihomo_api.dart';
 // (defined in modules/dashboard to avoid circular imports)
 export '../modules/dashboard/providers/traffic_providers.dart';
 
-
 // ------------------------------------------------------------------
 // App background state (battery optimization)
 // ------------------------------------------------------------------
@@ -60,6 +59,9 @@ final routingModeProvider = StateProvider<String>((ref) => 'rule');
 /// Connection mode: "tun" | "systemProxy"
 final connectionModeProvider = StateProvider<String>((ref) => 'systemProxy');
 
+/// Desktop TUN stack: "mixed" | "system" | "gvisor"
+final desktopTunStackProvider = StateProvider<String>((ref) => 'mixed');
+
 /// Log level: "info" | "debug" | "warning" | "error" | "silent"
 final logLevelProvider = StateProvider<String>((ref) => 'info');
 
@@ -85,7 +87,8 @@ class CoreActions {
   CoreActions(this.ref);
 
   Future<bool> start(String configYaml) async {
-    debugPrint('[CoreActions] start() called, config length: ${configYaml.length}');
+    debugPrint(
+        '[CoreActions] start() called, config length: ${configYaml.length}');
     ref.read(userStoppedProvider.notifier).state = false;
     ref.read(coreStatusProvider.notifier).state = CoreStatus.starting;
     ref.read(coreStartupErrorProvider.notifier).state = null;
@@ -94,13 +97,18 @@ class CoreActions {
 
     try {
       // Start Core — all steps (including VPN permission) are tracked inside CoreManager
-      final ok = await manager.start(configYaml);
+      final ok = await manager.start(
+        configYaml,
+        connectionMode: ref.read(connectionModeProvider),
+        desktopTunStack: ref.read(desktopTunStackProvider),
+      );
       if (!ok) {
         ref.read(coreStatusProvider.notifier).state = CoreStatus.stopped;
         final report = manager.lastReport;
         final detail = report?.failureSummary ?? S.current.errCoreStartFailed;
         ref.read(coreStartupErrorProvider.notifier).state = detail;
-        EventLog.write('[Core] connect_fail detail=${detail.split('\n').first}');
+        EventLog.write(
+            '[Core] connect_fail detail=${detail.split('\n').first}');
         AppNotifier.error(detail);
         return false;
       }
@@ -112,13 +120,16 @@ class CoreActions {
       // 3. Apply routing mode (non-blocking — errors logged, not thrown)
       await _applyRoutingMode(manager);
 
-      // 4. System proxy (desktop, real mode only — mock has no proxy port)
-      // Only set system proxy when connectionMode is 'systemProxy' (not 'tun')
-      if (!manager.isMockMode &&
-          (Platform.isMacOS || Platform.isWindows) &&
-          ref.read(connectionModeProvider) == 'systemProxy' &&
-          ref.read(systemProxyOnConnectProvider)) {
-        await applySystemProxy();
+      // 4. System proxy or TUN DNS (desktop only)
+      final connMode = ref.read(connectionModeProvider);
+      if (!manager.isMockMode && (Platform.isMacOS || Platform.isWindows)) {
+        if (connMode == 'tun' && Platform.isMacOS) {
+          // TUN mode: set system DNS to public resolvers to prevent DNS leak
+          await setTunDns();
+        } else if (connMode == 'systemProxy' &&
+            ref.read(systemProxyOnConnectProvider)) {
+          await applySystemProxy();
+        }
       }
 
       // Trigger initial proxy data fetch
@@ -166,6 +177,10 @@ class CoreActions {
       // "set system proxy on connect", a previous session may have set it.
       if (Platform.isMacOS || Platform.isWindows) {
         await clearSystemProxy();
+      }
+      // Restore macOS system DNS if TUN mode was active
+      if (Platform.isMacOS) {
+        await restoreTunDns();
       }
 
       final manager = CoreManager.instance;
@@ -242,10 +257,9 @@ class CoreActions {
           // Enable each proxy type
           await Future.wait([
             Process.run('networksetup', ['-setwebproxystate', svc, 'on']),
-            Process.run('networksetup',
-                ['-setsecurewebproxystate', svc, 'on']),
-            Process.run('networksetup',
-                ['-setsocksfirewallproxystate', svc, 'on']),
+            Process.run('networksetup', ['-setsecurewebproxystate', svc, 'on']),
+            Process.run(
+                'networksetup', ['-setsocksfirewallproxystate', svc, 'on']),
           ]);
           if (allOk) anySuccess = true;
         } catch (e) {
@@ -266,22 +280,37 @@ class CoreActions {
       const regKey =
           r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings';
       final r1 = await Process.run('reg', [
-        'add', regKey,
-        '/v', 'ProxyEnable', '/t', 'REG_DWORD', '/d', '1', '/f'
+        'add',
+        regKey,
+        '/v',
+        'ProxyEnable',
+        '/t',
+        'REG_DWORD',
+        '/d',
+        '1',
+        '/f'
       ]);
       final r2 = await Process.run('reg', [
-        'add', regKey,
-        '/v', 'ProxyServer', '/t', 'REG_SZ',
-        '/d', '127.0.0.1:$mixedPort', '/f'
+        'add',
+        regKey,
+        '/v',
+        'ProxyServer',
+        '/t',
+        'REG_SZ',
+        '/d',
+        '127.0.0.1:$mixedPort',
+        '/f'
       ]);
       // Bypass list: skip proxy for localhost, LAN, and local addresses
       final r3 = await Process.run('reg', [
-        'add', regKey,
-        '/v', 'ProxyOverride', '/t', 'REG_SZ',
-        '/d', 'localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*'
-            ';172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*'
-            ';172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*'
-            ';192.168.*;<local>',
+        'add',
+        regKey,
+        '/v',
+        'ProxyOverride',
+        '/t',
+        'REG_SZ',
+        '/d',
+        'localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*;<local>',
         '/f'
       ]);
       if (r1.exitCode != 0 || r2.exitCode != 0) {
@@ -306,8 +335,8 @@ class CoreActions {
         final verified = <String>[];
         final missing = <String>[];
         for (final svc in services) {
-          final result = await Process.run(
-              'networksetup', ['-getwebproxy', svc]);
+          final result =
+              await Process.run('networksetup', ['-getwebproxy', svc]);
           final output = result.stdout as String;
           if (output.contains('Enabled: Yes') &&
               output.contains('Port: $mixedPort')) {
@@ -336,11 +365,13 @@ class CoreActions {
       try {
         const regKey =
             r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings';
-        final r1 = await Process.run('reg', ['query', regKey, '/v', 'ProxyEnable']);
+        final r1 =
+            await Process.run('reg', ['query', regKey, '/v', 'ProxyEnable']);
         final o1 = r1.stdout as String;
         // Enabled value shows as "0x1" in reg query output
         if (!o1.contains('0x1')) return false;
-        final r2 = await Process.run('reg', ['query', regKey, '/v', 'ProxyServer']);
+        final r2 =
+            await Process.run('reg', ['query', regKey, '/v', 'ProxyServer']);
         final o2 = r2.stdout as String;
         if (!o2.contains('127.0.0.1:$mixedPort')) {
           debugPrint('[SystemProxy] Windows proxy server changed, '
@@ -354,6 +385,74 @@ class CoreActions {
       }
     }
     return true;
+  }
+
+  // ------------------------------------------------------------------
+  // macOS system DNS management for TUN mode
+  // ------------------------------------------------------------------
+  // When TUN is enabled, mihomo hijacks DNS via dns-hijack: [any:53].
+  // But macOS may still try to resolve via the original DNS servers
+  // configured on the active interface, causing DNS leaks.
+  // CVR sets system DNS to a public resolver (114.114.114.114) on TUN
+  // start and restores it on TUN stop.
+  // ------------------------------------------------------------------
+
+  /// Saved original DNS servers per interface — used to restore on TUN stop.
+  static final Map<String, String> _savedDnsServers = {};
+
+  /// Set macOS system DNS to public resolvers for TUN mode.
+  static Future<void> setTunDns() async {
+    if (!Platform.isMacOS) return;
+    final services = await _listNetworkServices();
+    _savedDnsServers.clear();
+    for (final svc in services) {
+      try {
+        // Save current DNS
+        final result =
+            await Process.run('networksetup', ['-getdnsservers', svc]);
+        final output = (result.stdout as String).trim();
+        _savedDnsServers[svc] = output;
+        // Set to public DNS (domestic + international)
+        await Process.run('networksetup', [
+          '-setdnsservers',
+          svc,
+          '114.114.114.114',
+          '223.5.5.5',
+          '8.8.8.8',
+        ]);
+        debugPrint('[TunDns] set DNS for $svc (was: ${output.split('\n').first})');
+      } catch (e) {
+        debugPrint('[TunDns] failed to set DNS for $svc: $e');
+      }
+    }
+  }
+
+  /// Restore macOS system DNS to original values after TUN stop.
+  static Future<void> restoreTunDns() async {
+    if (!Platform.isMacOS) return;
+    for (final entry in _savedDnsServers.entries) {
+      try {
+        final svc = entry.key;
+        final original = entry.value;
+        if (original.contains("any DNS Servers") || original.isEmpty) {
+          // Was DHCP/empty — clear DNS to restore DHCP
+          await Process.run('networksetup', ['-setdnsservers', svc, 'Empty']);
+        } else {
+          // Restore saved servers
+          final servers = original
+              .split('\n')
+              .map((s) => s.trim())
+              .where((s) => s.isNotEmpty)
+              .toList();
+          await Process.run(
+              'networksetup', ['-setdnsservers', svc, ...servers]);
+        }
+        debugPrint('[TunDns] restored DNS for $svc');
+      } catch (e) {
+        debugPrint('[TunDns] failed to restore DNS for ${entry.key}: $e');
+      }
+    }
+    _savedDnsServers.clear();
   }
 
   static Future<void> clearSystemProxyStatic() async {
@@ -376,16 +475,21 @@ class CoreActions {
       const regKey =
           r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings';
       final r = await Process.run('reg', [
-        'add', regKey,
-        '/v', 'ProxyEnable', '/t', 'REG_DWORD', '/d', '0', '/f'
+        'add',
+        regKey,
+        '/v',
+        'ProxyEnable',
+        '/t',
+        'REG_DWORD',
+        '/d',
+        '0',
+        '/f'
       ]);
       if (r.exitCode != 0) {
         debugPrint('[SystemProxy] Windows registry clear failed: ${r.stderr}');
       }
       // Also remove bypass list
-      await Process.run('reg', [
-        'delete', regKey, '/v', 'ProxyOverride', '/f'
-      ]);
+      await Process.run('reg', ['delete', regKey, '/v', 'ProxyOverride', '/f']);
       // Notify WinINet of the proxy change
       _notifyWindowsProxyChanged();
     }
@@ -475,23 +579,34 @@ final coreHeartbeatProvider = Provider<void>((ref) {
     if (apiOk && ffiRunning) {
       failures = 0;
 
-      // Every 30s on desktop, check if another proxy client stole our system proxy.
-      // If detected, stop the core gracefully — let the newer client take over.
+      // Proxy Guard: every 30s on desktop, check if system proxy was tampered.
+      // First attempt: silently restore. If restore also fails (another
+      // client actively fighting), then stop gracefully.
       if (Platform.isMacOS || Platform.isWindows) {
         proxyCheckTick++;
         if (proxyCheckTick >= 3) {
           proxyCheckTick = 0;
-          if (ref.read(systemProxyOnConnectProvider)) {
+          final connMode = ref.read(connectionModeProvider);
+          if (connMode == 'systemProxy' &&
+              ref.read(systemProxyOnConnectProvider)) {
             final port = manager.mixedPort;
             final proxyOk = await CoreActions.verifySystemProxy(port);
             if (!proxyOk) {
-              debugPrint('[Heartbeat] system proxy conflict — another client took over port $port');
-              AppNotifier.warning(S.current.msgSystemProxyConflict);
-              resetCoreToStopped(ref, clearDesktopProxy: false);
-              ref.read(delayResultsProvider.notifier).state = {};
-              ref.read(delayTestingProvider.notifier).state = {};
-              failures = 0;
-              return;
+              debugPrint(
+                  '[ProxyGuard] system proxy tampered — attempting restore');
+              final restored = await CoreActions._setSystemProxy(port);
+              if (restored) {
+                debugPrint('[ProxyGuard] system proxy restored successfully');
+              } else {
+                debugPrint(
+                    '[ProxyGuard] restore failed — another client took over');
+                AppNotifier.warning(S.current.msgSystemProxyConflict);
+                resetCoreToStopped(ref, clearDesktopProxy: false);
+                ref.read(delayResultsProvider.notifier).state = {};
+                ref.read(delayTestingProvider.notifier).state = {};
+                failures = 0;
+                return;
+              }
             }
           }
         }
@@ -531,4 +646,3 @@ final trafficHistoryVersionProvider = StateProvider<int>((ref) => 0);
 // ------------------------------------------------------------------
 
 final memoryUsageProvider = StateProvider<int>((ref) => 0);
-

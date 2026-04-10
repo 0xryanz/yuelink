@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:yuelink/constants.dart';
 import 'package:yuelink/core/kernel/core_manager.dart';
 
 /// CoreManager tests run in **mock mode** (no native library / FFI).
@@ -221,6 +222,34 @@ void main() {
       await cm.start(_minimalConfig());
       // ConfigTemplate ensures mixed-port exists; default is 7890
       expect(cm.mixedPort, greaterThan(0));
+    });
+
+    test('connectionMode is forwarded into config processing', () async {
+      const config = '''
+mixed-port: 7890
+tun:
+  enable: false
+  stack: gvisor
+  file-descriptor: 42
+proxies: []
+proxy-groups: []
+rules:
+  - MATCH,DIRECT
+''';
+
+      await cm.start(config, connectionMode: 'tun');
+
+      final written =
+          await File('${tempDir.path}/${AppConstants.configFileName}')
+              .readAsString();
+
+      if (Platform.isMacOS || Platform.isWindows) {
+        expect(written, contains('stack: mixed'));
+        expect(written, contains('enable: true'));
+        expect(written, isNot(contains('file-descriptor: 42')));
+      } else {
+        expect(written, contains('file-descriptor: 42'));
+      }
     });
   });
 

@@ -8,10 +8,14 @@ import 'package:launch_at_startup/launch_at_startup.dart';
 
 import '../../../core/kernel/core_manager.dart';
 import '../../../core/platform/vpn_service.dart';
+import '../../../core/service/service_manager.dart';
+import '../../../core/service/service_models.dart';
+import '../../../core/service/service_mode_provider.dart';
 import '../../../core/storage/settings_service.dart';
 import '../../../l10n/app_strings.dart';
 import '../../../providers/core_provider.dart';
 import '../../../providers/split_tunnel_provider.dart';
+import '../../../shared/app_notifier.dart';
 import '../../../theme.dart';
 import '../settings_page.dart';
 
@@ -28,6 +32,7 @@ class GeneralSettingsPage extends ConsumerStatefulWidget {
 
 class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
   bool _launchAtStartup = false;
+  bool _serviceBusy = false;
 
   @override
   void initState() {
@@ -42,6 +47,76 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
     }
   }
 
+  Future<void> _refreshDesktopService() async {
+    ref.read(desktopServiceRefreshProvider.notifier).state++;
+  }
+
+  Future<void> _installDesktopService() async {
+    if (_serviceBusy) return;
+    final s = S.of(context);
+    setState(() => _serviceBusy = true);
+    try {
+      await ServiceManager.install();
+      await _refreshDesktopService();
+      if (!mounted) return;
+      AppNotifier.success(s.serviceModeInstallOk);
+    } catch (e) {
+      if (!mounted) return;
+      AppNotifier.error(
+        s.serviceModeInstallFailed(e.toString().split('\n').first),
+      );
+    } finally {
+      if (mounted) setState(() => _serviceBusy = false);
+    }
+  }
+
+  Future<void> _uninstallDesktopService(CoreStatus status) async {
+    if (_serviceBusy) return;
+    final s = S.of(context);
+    setState(() => _serviceBusy = true);
+    try {
+      if (status == CoreStatus.running) {
+        await ref.read(coreActionsProvider).stop();
+      }
+      await ServiceManager.uninstall();
+      await _refreshDesktopService();
+      if (!mounted) return;
+      AppNotifier.success(s.serviceModeUninstallOk);
+    } catch (e) {
+      if (!mounted) return;
+      AppNotifier.error(
+        s.serviceModeUninstallFailed(e.toString().split('\n').first),
+      );
+    } finally {
+      if (mounted) setState(() => _serviceBusy = false);
+    }
+  }
+
+  String _serviceDescription(
+    S s,
+    AsyncValue<DesktopServiceInfo> serviceInfo,
+  ) {
+    final info = serviceInfo.valueOrNull;
+    if (serviceInfo.isLoading && info == null) {
+      return '...';
+    }
+    if (info == null || info.installed == false) {
+      return s.serviceModeNotInstalled;
+    }
+    if (!info.reachable) {
+      return info.detail?.isNotEmpty == true
+          ? '${s.serviceModeUnreachable} · ${info.detail}'
+          : s.serviceModeUnreachable;
+    }
+    if (info.needsReinstall) {
+      return s.serviceModeNeedsUpdate(info.serviceVersion ?? '?');
+    }
+    if (info.mihomoRunning) {
+      return s.serviceModeRunning(info.pid ?? 0);
+    }
+    return s.serviceModeIdle;
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
@@ -50,8 +125,10 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
     final language = ref.watch(languageProvider);
     final autoConnect = ref.watch(autoConnectProvider);
     final connectionMode = ref.watch(connectionModeProvider);
+    final desktopTunStack = ref.watch(desktopTunStackProvider);
     final systemProxyOnConnect = ref.watch(systemProxyOnConnectProvider);
     final status = ref.watch(coreStatusProvider);
+    final serviceInfo = ref.watch(desktopServiceInfoProvider);
     final routingMode = ref.watch(routingModeProvider);
     final isDesktop =
         Platform.isMacOS || Platform.isWindows || Platform.isLinux;
@@ -190,8 +267,7 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                           value: connectionMode,
                           underline: const SizedBox.shrink(),
                           style: YLText.body.copyWith(
-                            color:
-                                isDark ? YLColors.zinc200 : YLColors.zinc700,
+                            color: isDark ? YLColors.zinc200 : YLColors.zinc700,
                           ),
                           dropdownColor:
                               isDark ? YLColors.zinc800 : Colors.white,
@@ -209,6 +285,103 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                           },
                         ),
                       ),
+                      if (connectionMode == 'tun') ...[
+                        Divider(height: 1, thickness: 0.5, color: dividerColor),
+                        YLSettingsRow(
+                          title: s.serviceModeLabel,
+                          description: _serviceDescription(s, serviceInfo),
+                          trailing: _serviceBusy
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    TextButton(
+                                      onPressed: _refreshDesktopService,
+                                      style: TextButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        s.serviceModeRefresh,
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    if (serviceInfo.valueOrNull?.installed ==
+                                        true)
+                                      TextButton(
+                                        onPressed: () =>
+                                            _uninstallDesktopService(status),
+                                        style: TextButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          s.serviceModeUninstall,
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      )
+                                    else
+                                      FilledButton(
+                                        onPressed: _installDesktopService,
+                                        style: FilledButton.styleFrom(
+                                          visualDensity: VisualDensity.compact,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          s.serviceModeInstall,
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                        ),
+                        Divider(height: 1, thickness: 0.5, color: dividerColor),
+                        YLInfoRow(
+                          label: s.tunStackLabel,
+                          trailing: DropdownButton<String>(
+                            value: desktopTunStack,
+                            underline: const SizedBox.shrink(),
+                            style: YLText.body.copyWith(
+                              color:
+                                  isDark ? YLColors.zinc200 : YLColors.zinc700,
+                            ),
+                            dropdownColor:
+                                isDark ? YLColors.zinc800 : Colors.white,
+                            items: [
+                              DropdownMenuItem(
+                                value: 'mixed',
+                                child: Text(s.tunStackMixed),
+                              ),
+                              DropdownMenuItem(
+                                value: 'system',
+                                child: Text(s.tunStackSystem),
+                              ),
+                              DropdownMenuItem(
+                                value: 'gvisor',
+                                child: Text(s.tunStackGvisor),
+                              ),
+                            ],
+                            onChanged: (v) async {
+                              if (v == null) return;
+                              ref.read(desktopTunStackProvider.notifier).state =
+                                  v;
+                              await SettingsService.setDesktopTunStack(v);
+                            },
+                          ),
+                        ),
+                      ],
                       Divider(height: 1, thickness: 0.5, color: dividerColor),
                       YLSettingsRow(
                         title: s.setSystemProxyOnConnect,
@@ -247,8 +420,7 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                       Divider(height: 1, thickness: 0.5, color: dividerColor),
                       if (!Platform.isLinux) ...[
                         _CloseBehaviorRow(),
-                        Divider(
-                            height: 1, thickness: 0.5, color: dividerColor),
+                        Divider(height: 1, thickness: 0.5, color: dividerColor),
                       ],
                       _HotkeyRow(),
                     ],
@@ -361,8 +533,7 @@ class _HotkeyRowState extends ConsumerState<_HotkeyRow> {
               const SizedBox(width: 8),
               TextButton(
                 onPressed: _registering ? null : () => _startRecording(s),
-                child: Text(
-                    _registering ? s.hotkeyListening : s.hotkeyEdit),
+                child: Text(_registering ? s.hotkeyListening : s.hotkeyEdit),
               ),
             ],
           ),
@@ -464,7 +635,10 @@ class _SplitTunnelSectionState extends ConsumerState<_SplitTunnelSection> {
   String? _loadError;
 
   Future<void> _loadApps() async {
-    setState(() { _loading = true; _loadError = null; });
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
     try {
       final apps = await VpnService.getInstalledApps(showSystem: true);
       if (mounted) {
@@ -483,9 +657,8 @@ class _SplitTunnelSectionState extends ConsumerState<_SplitTunnelSection> {
         setState(() {
           _apps = [];
           _loading = false;
-          _loadError = S.of(context).isEn
-              ? 'Failed to load apps: $e'
-              : '加载应用列表失败: $e';
+          _loadError =
+              S.of(context).isEn ? 'Failed to load apps: $e' : '加载应用列表失败: $e';
         });
       }
     }
@@ -526,7 +699,9 @@ class _SplitTunnelSectionState extends ConsumerState<_SplitTunnelSection> {
                     child: Text(s.splitTunnelModeBlacklist)),
               ],
               onChanged: (v) {
-                if (v != null) ref.read(splitTunnelModeProvider.notifier).set(v);
+                if (v != null) {
+                  ref.read(splitTunnelModeProvider.notifier).set(v);
+                }
               },
             ),
           ),
@@ -540,8 +715,8 @@ class _SplitTunnelSectionState extends ConsumerState<_SplitTunnelSection> {
                 label: Text(s.splitTunnelManage),
                 onPressed: () async {
                   if (_apps == null) await _loadApps();
-                  if (!mounted) return;
-                  _showAppPicker(context, selectedPkgs); // ignore: use_build_context_synchronously
+                  if (!context.mounted) return;
+                  _showAppPicker(context, selectedPkgs);
                 },
               ),
             ),
@@ -553,10 +728,9 @@ class _SplitTunnelSectionState extends ConsumerState<_SplitTunnelSection> {
                   runSpacing: 4,
                   children: selectedPkgs
                       .map((pkg) => Chip(
-                            label: Text(pkg,
-                                style: const TextStyle(fontSize: 11)),
-                            deleteIcon:
-                                const Icon(Icons.close, size: 14),
+                            label:
+                                Text(pkg, style: const TextStyle(fontSize: 11)),
+                            deleteIcon: const Icon(Icons.close, size: 14),
                             onDeleted: () => ref
                                 .read(splitTunnelAppsProvider.notifier)
                                 .remove(pkg),
@@ -628,22 +802,32 @@ class _SplitTunnelSectionState extends ConsumerState<_SplitTunnelSection> {
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    const Icon(Icons.apps_outlined, size: 40, color: YLColors.zinc400),
+                                    const Icon(Icons.apps_outlined,
+                                        size: 40, color: YLColors.zinc400),
                                     const SizedBox(height: 12),
                                     Text(
-                                      _loadError ?? (_search.isNotEmpty
-                                          ? (S.of(context).isEn ? 'No matching apps' : '未找到匹配应用')
-                                          : (S.of(context).isEn ? 'No apps found' : '未获取到应用')),
+                                      _loadError ??
+                                          (_search.isNotEmpty
+                                              ? (S.of(context).isEn
+                                                  ? 'No matching apps'
+                                                  : '未找到匹配应用')
+                                              : (S.of(context).isEn
+                                                  ? 'No apps found'
+                                                  : '未获取到应用')),
                                       textAlign: TextAlign.center,
-                                      style: YLText.body.copyWith(color: YLColors.zinc500),
+                                      style: YLText.body
+                                          .copyWith(color: YLColors.zinc500),
                                     ),
                                     if (_loadError != null) ...[
                                       const SizedBox(height: 12),
                                       TextButton(
                                         onPressed: () {
-                                          _loadApps().then((_) => setModal(() {}));
+                                          _loadApps()
+                                              .then((_) => setModal(() {}));
                                         },
-                                        child: Text(S.of(context).isEn ? 'Retry' : '重试'),
+                                        child: Text(S.of(context).isEn
+                                            ? 'Retry'
+                                            : '重试'),
                                       ),
                                     ],
                                   ],

@@ -11,6 +11,8 @@ import 'config_template.dart';
 import 'geodata_service.dart';
 import '../../infrastructure/datasources/mihomo_api.dart';
 import '../../infrastructure/datasources/mihomo_stream.dart';
+import '../service/service_client.dart';
+import '../service/service_manager.dart';
 import '../../services/overwrite_service.dart';
 import '../../services/process_manager.dart';
 import '../storage/settings_service.dart';
@@ -35,6 +37,7 @@ class CoreManager {
   static void resetForTesting() {
     _instance?._running = false;
     _instance?._initialized = false;
+    _instance?._serviceModeActive = false;
     _instance?._pendingOperation = null;
     _instance?.lastReport = null;
   }
@@ -45,6 +48,7 @@ class CoreManager {
   MihomoStream? _stream;
   bool _running = false;
   bool _initialized = false;
+  bool _serviceModeActive = false;
 
   /// Guards against concurrent start/stop calls.
   Completer<void>? _pendingOperation;
@@ -75,7 +79,7 @@ class CoreManager {
   /// Check Go core's actual running state via FFI (not the Dart _running flag).
   /// Use this to detect if the core is still alive after Flutter engine restart.
   bool get isCoreActuallyRunning {
-    if (isMockMode) return _running;
+    if (isMockMode || _serviceModeActive) return _running;
     try {
       return _core.isRunning;
     } catch (e) {
@@ -88,6 +92,11 @@ class CoreManager {
   /// Go core survived a Flutter engine restart. Called from _onAppResumed.
   Future<void> markRunning() async {
     _running = true;
+    final savedConnectionMode = await SettingsService.getConnectionMode();
+    _serviceModeActive = ServiceManager.isSupported &&
+        (Platform.isMacOS || Platform.isWindows) &&
+        savedConnectionMode == 'tun' &&
+        await ServiceManager.isInstalled();
     // Restore ports from persisted settings (engine restart loses Dart state)
     final savedApiPort = await SettingsService.get<int>('lastApiPort');
     final savedMixedPort = await SettingsService.get<int>('lastMixedPort');
@@ -103,6 +112,7 @@ class CoreManager {
     await SettingsService.set('lastApiPort', _apiPort);
     await SettingsService.set('lastMixedPort', _mixedPort);
   }
+
   int _mixedPort = 7890;
 
   void configure({int? port, String? secret, CoreMode? mode}) {
@@ -128,7 +138,11 @@ class CoreManager {
   //  waitApi    | E007_API_TIMEOUT            | REST API readiness
   //  verify     | E008_CORE_DIED_AFTER_START  | isRunning + API recheck
 
-  Future<bool> start(String configYaml) async {
+  Future<bool> start(
+    String configYaml, {
+    String connectionMode = 'systemProxy',
+    String desktopTunStack = AppConstants.defaultDesktopTunStack,
+  }) async {
     debugPrint('[CoreManager] ══════ START ══════');
     if (_running) return true;
 
@@ -145,8 +159,23 @@ class CoreManager {
     try {
       // iOS: separate process, different path
       if (Platform.isIOS && !isMockMode) {
-        return _startIos(configYaml, steps);
+        return _startIos(
+          configYaml,
+          steps,
+          connectionMode: connectionMode,
+          desktopTunStack: desktopTunStack,
+        );
       }
+
+      if (await _shouldUseDesktopServiceMode(connectionMode)) {
+        return _startDesktopServiceMode(
+          configYaml,
+          steps,
+          connectionMode: connectionMode,
+          desktopTunStack: desktopTunStack,
+        );
+      }
+      _serviceModeActive = false;
 
       // ── Steps 1+2: ensureGeo + initCore (parallelized) ─────────────
       // These steps are independent — geo files don't need the core, and
@@ -158,33 +187,33 @@ class CoreManager {
           return 'installed=$installed';
         }),
         _step(steps, 'initCore', StartupError.initCoreFailed, () async {
-        if (_initialized) {
-          return 'skip (already initialized)';
-        }
-        if (_mode == CoreMode.mock) {
-          // Mock mode: call init so CoreMock._isInit = true (required for
-          // mock start/getProxies to return data).
+          if (_initialized) {
+            return 'skip (already initialized)';
+          }
+          if (_mode == CoreMode.mock) {
+            // Mock mode: call init so CoreMock._isInit = true (required for
+            // mock start/getProxies to return data).
+            final appDir = await getApplicationSupportDirectory();
+            homeDir = appDir.path;
+            _core.init(homeDir!);
+            _initialized = true;
+            return 'mock init, homeDir=$homeDir';
+          }
           final appDir = await getApplicationSupportDirectory();
           homeDir = appDir.path;
-          _core.init(homeDir!);
+
+          // Verify writable
+          final testFile = File('$homeDir/.write_test');
+          await testFile.writeAsString('ok');
+          await testFile.delete();
+
+          final error = await _core.initAsync(homeDir!);
+          if (error != null && error.isNotEmpty) {
+            throw Exception(error);
+          }
           _initialized = true;
-          return 'mock init, homeDir=$homeDir';
-        }
-        final appDir = await getApplicationSupportDirectory();
-        homeDir = appDir.path;
-
-        // Verify writable
-        final testFile = File('$homeDir/.write_test');
-        await testFile.writeAsString('ok');
-        await testFile.delete();
-
-        final error = await _core.initAsync(homeDir!);
-        if (error != null && error.isNotEmpty) {
-          throw Exception(error);
-        }
-        _initialized = true;
-        return 'homeDir=$homeDir';
-      }),
+          return 'homeDir=$homeDir';
+        }),
       ]); // end Future.wait(ensureGeo, initCore)
 
       // ── Step 3: vpnPermission (Android only) ───────────────────────
@@ -207,45 +236,7 @@ class CoreManager {
       String processed = '';
 
       // Pre-compute config overwrite layer while VPN fd is being obtained.
-      Future<String> prepareConfig() async {
-        final overwrite = await OverwriteService.load();
-        var withOverwrite = OverwriteService.apply(configYaml, overwrite);
-
-        // [ModuleRuntime] inject enabled module rules (+ MITM routing if engine running)
-        final mitmPort = CoreController.instance.getMitmEnginePort();
-        withOverwrite = await ModuleRuleInjector.inject(withOverwrite, mitmPort: mitmPort);
-
-        final upstream = await SettingsService.getUpstreamProxy();
-        if (upstream != null && (upstream['server'] as String).isNotEmpty) {
-          withOverwrite = ConfigTemplate.injectUpstreamProxy(
-            withOverwrite,
-            upstream['type'] as String,
-            upstream['server'] as String,
-            upstream['port'] as int,
-          );
-        }
-
-        if ((Platform.isMacOS || Platform.isWindows) && !isMockMode) {
-          final preferredMixed = ConfigTemplate.getMixedPort(withOverwrite);
-          final ports = await Future.wait([
-            _findAvailablePort(preferredMixed),
-            _findAvailablePort(_apiPort),
-          ]);
-          final freeMixed = ports[0];
-          final freeApi = ports[1];
-          if (freeMixed != preferredMixed) {
-            debugPrint('[CoreManager] mixed-port $preferredMixed busy → remapped to $freeMixed');
-            withOverwrite = ConfigTemplate.setMixedPort(withOverwrite, freeMixed);
-          }
-          if (freeApi != _apiPort) {
-            debugPrint('[CoreManager] apiPort $_apiPort busy → remapped to $freeApi');
-            _apiPort = freeApi;
-            _api = null;
-            _stream = null;
-          }
-        }
-        return withOverwrite;
-      }
+      Future<String> prepareConfig() => _prepareConfig(configYaml);
 
       if (Platform.isAndroid && !isMockMode) {
         // Run VPN fd + config prep in parallel
@@ -267,6 +258,8 @@ class CoreManager {
             withOverwrite,
             apiPort: _apiPort,
             secret: _apiSecret,
+            connectionMode: connectionMode,
+            desktopTunStack: desktopTunStack,
             tunFd: tunFd,
           );
           _apiPort = ConfigTemplate.getApiPort(processed);
@@ -285,6 +278,8 @@ class CoreManager {
             withOverwrite,
             apiPort: _apiPort,
             secret: _apiSecret,
+            connectionMode: connectionMode,
+            desktopTunStack: desktopTunStack,
             tunFd: tunFd,
           );
           _apiPort = ConfigTemplate.getApiPort(processed);
@@ -301,7 +296,8 @@ class CoreManager {
         // Write config to disk for debugging (atomic tmp+rename)
         debugPrint('[CoreManager] startCore: writing config to disk...');
         final appDir = await getApplicationSupportDirectory();
-        final configFile = File('${appDir.path}/${AppConstants.configFileName}');
+        final configFile =
+            File('${appDir.path}/${AppConstants.configFileName}');
         final tmpFile = File('${configFile.path}.tmp');
         await tmpFile.writeAsString(processed);
         await tmpFile.rename(configFile.path);
@@ -314,7 +310,8 @@ class CoreManager {
             return 'mock started';
 
           case CoreMode.ffi:
-            debugPrint('[CoreManager] startCore: calling StartCore FFI (may take 1-3s)...');
+            debugPrint(
+                '[CoreManager] startCore: calling StartCore FFI (may take 1-3s)...');
             final error = await _core.startAsync(processed);
             debugPrint('[CoreManager] startCore: StartCore returned: $error');
             if (error != null && error.isNotEmpty) throw Exception(error);
@@ -324,8 +321,8 @@ class CoreManager {
 
           case CoreMode.subprocess:
             final path = await ProcessManager.writeConfig(processed);
-            final ok = await ProcessManager.instance.start(
-                configPath: path, apiPort: _apiPort);
+            final ok = await ProcessManager.instance
+                .start(configPath: path, apiPort: _apiPort);
             if (!ok) throw Exception('subprocess start failed');
             _running = true;
             return 'subprocess OK';
@@ -352,21 +349,23 @@ class CoreManager {
         String portState;
         try {
           final sock = await Socket.connect(
-            '127.0.0.1', _apiPort,
+            '127.0.0.1',
+            _apiPort,
             timeout: const Duration(milliseconds: 300),
           );
           sock.destroy();
-          portState = 'port $_apiPort IS listening (HTTP not responding — secret mismatch or non-200?)';
+          portState =
+              'port $_apiPort IS listening (HTTP not responding — secret mismatch or non-200?)';
         } on SocketException catch (e) {
-          portState = 'port $_apiPort NOT listening (${e.osError?.message ?? e.message}) '
+          portState =
+              'port $_apiPort NOT listening (${e.osError?.message ?? e.message}) '
               '— external-controller may not have started (config parse failed/fallback?)';
         } catch (e) {
           portState = 'port $_apiPort probe error: $e';
         }
         _running = false;
         _core.stop();
-        throw Exception(
-            'API not available after 50 attempts (5s): '
+        throw Exception('API not available after 50 attempts (5s): '
             'isRunning=$goRunning, $portState');
       });
 
@@ -413,11 +412,17 @@ class CoreManager {
       if (_running) {
         _running = false;
         try {
-          if (!Platform.isIOS) _core.stop();
+          if (_serviceModeActive) {
+            await ServiceClient.stop();
+          } else if (!Platform.isIOS) {
+            _core.stop();
+          }
         } catch (e) {
-          debugPrint('[CoreManager] cleanup core.stop() after failed start: $e');
+          debugPrint(
+              '[CoreManager] cleanup core.stop() after failed start: $e');
         }
       }
+      _serviceModeActive = false;
       if (Platform.isAndroid || Platform.isIOS) {
         try {
           await vpn.VpnService.stopVpn();
@@ -436,7 +441,12 @@ class CoreManager {
   // iOS start
   // ==================================================================
 
-  Future<bool> _startIos(String configYaml, List<StartupStep> steps) async {
+  Future<bool> _startIos(
+    String configYaml,
+    List<StartupStep> steps, {
+    String connectionMode = 'systemProxy',
+    String desktopTunStack = AppConstants.defaultDesktopTunStack,
+  }) async {
     String processed = configYaml;
 
     try {
@@ -447,7 +457,8 @@ class CoreManager {
 
         // [ModuleRuntime] inject enabled module rules (+ MITM routing if engine running)
         final mitmPort = CoreController.instance.getMitmEnginePort();
-        withOverwrite = await ModuleRuleInjector.inject(withOverwrite, mitmPort: mitmPort);
+        withOverwrite =
+            await ModuleRuleInjector.inject(withOverwrite, mitmPort: mitmPort);
 
         // Inject upstream proxy if configured
         final upstream = await SettingsService.getUpstreamProxy();
@@ -461,10 +472,12 @@ class CoreManager {
         }
 
         processed = ConfigTemplate.process(
-              withOverwrite,
-              apiPort: _apiPort,
-              secret: _apiSecret,
-            );
+          withOverwrite,
+          apiPort: _apiPort,
+          secret: _apiSecret,
+          connectionMode: connectionMode,
+          desktopTunStack: desktopTunStack,
+        );
         _apiPort = ConfigTemplate.getApiPort(processed);
         _mixedPort = ConfigTemplate.getMixedPort(processed);
         _apiSecret ??= ConfigTemplate.getSecret(processed);
@@ -525,6 +538,124 @@ class CoreManager {
     }
   }
 
+  Future<bool> _startDesktopServiceMode(
+    String configYaml,
+    List<StartupStep> steps, {
+    required String connectionMode,
+    required String desktopTunStack,
+  }) async {
+    String processed = configYaml;
+    String? homeDir;
+
+    try {
+      await _step(steps, 'ensureGeo', StartupError.geoFilesFailed, () async {
+        final installed = await GeoDataService.ensureFiles();
+        return 'installed=$installed';
+      });
+
+      await _step(steps, 'buildConfig', StartupError.configBuildFailed,
+          () async {
+        final appDir = await getApplicationSupportDirectory();
+        homeDir = appDir.path;
+
+        final withOverwrite = await _prepareConfig(configYaml);
+        processed = ConfigTemplate.process(
+          withOverwrite,
+          apiPort: _apiPort,
+          secret: _apiSecret,
+          connectionMode: connectionMode,
+          desktopTunStack: desktopTunStack,
+        );
+        _apiPort = ConfigTemplate.getApiPort(processed);
+        _mixedPort = ConfigTemplate.getMixedPort(processed);
+        _apiSecret ??= ConfigTemplate.getSecret(processed);
+        _api = null;
+        _stream = null;
+        return 'output=${processed.length}b, apiPort=$_apiPort, mixedPort=$_mixedPort, homeDir=$homeDir';
+      });
+
+      await _step(steps, 'startService', StartupError.coreStartFailed,
+          () async {
+        final status = await ServiceClient.start(
+          configYaml: processed,
+          homeDir: homeDir!,
+        );
+        _running = true;
+        _serviceModeActive = true;
+        return 'service OK, pid=${status.pid ?? 0}';
+      });
+
+      await _step(steps, 'waitApi', StartupError.apiTimeout, () async {
+        for (var i = 1; i <= 50; i++) {
+          if (await api.isAvailable()) {
+            return 'ready after $i attempts';
+          }
+          try {
+            final status = await ServiceClient.status();
+            if (!status.mihomoRunning) {
+              throw Exception(
+                  'service child stopped before API ready: ${status.lastError ?? status.lastExit ?? 'unknown'}');
+            }
+          } catch (e) {
+            throw Exception('service helper unavailable while waiting API: $e');
+          }
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+        throw Exception('API not available after 50 attempts (5s)');
+      });
+
+      await _step(steps, 'verify', StartupError.coreDiedAfterStart, () async {
+        final status = await ServiceClient.status();
+        final apiOk = await api.isAvailable();
+
+        if (!status.mihomoRunning) {
+          throw Exception('service child is not running');
+        }
+        if (!apiOk) {
+          throw Exception('API unavailable after startup');
+        }
+
+        final appDir = await getApplicationSupportDirectory();
+        await File('${appDir.path}/$_kLastWorkingConfig')
+            .writeAsString(processed);
+
+        var info = 'serviceRunning=${status.mihomoRunning}, apiOk=$apiOk';
+        try {
+          final dns = await api.queryDns('google.com');
+          final answers = dns['Answer'] as List?;
+          info += ', dns=${answers?.length ?? 0}answers';
+        } catch (e) {
+          info += ', dnsErr=$e';
+        }
+        return info;
+      });
+
+      await _persistPorts();
+      await _finishReport(steps, true, null);
+      _pendingOperation?.complete();
+      _pendingOperation = null;
+      return true;
+    } catch (e) {
+      final failedName =
+          steps.where((s) => !s.success).firstOrNull?.name ?? 'unknown';
+      await _finishReport(steps, false, failedName);
+
+      if (_running || _serviceModeActive) {
+        _running = false;
+        try {
+          await ServiceClient.stop();
+        } catch (stopError) {
+          debugPrint(
+              '[CoreManager] cleanup ServiceClient.stop() after failed desktop start: $stopError');
+        }
+      }
+      _serviceModeActive = false;
+      _pendingOperation?.complete();
+      _pendingOperation = null;
+      rethrow;
+    }
+  }
+
   // ==================================================================
   // Stop
   // ==================================================================
@@ -544,39 +675,51 @@ class CoreManager {
     _running = false;
 
     try {
-      switch (_mode) {
-        case CoreMode.mock:
-          _core.stop();
+      if (_serviceModeActive) {
+        try {
+          await api.closeAllConnections().timeout(const Duration(seconds: 2));
+        } catch (e) {
+          debugPrint('[CoreManager] closeAllConnections: $e');
+        }
+        await ServiceClient.stop();
+        _serviceModeActive = false;
+      } else {
+        switch (_mode) {
+          case CoreMode.mock:
+            _core.stop();
 
-        case CoreMode.ffi:
-          // Close active connections with a timeout — the REST API may already
-          // be unresponsive if the core is in a bad state.
-          try {
-            await api.closeAllConnections()
-                .timeout(const Duration(seconds: 2));
-          } catch (e) {
-            debugPrint('[CoreManager] closeAllConnections: $e');
-          }
-          // On iOS, Go core runs in the PacketTunnel extension — FFI StopCore
-          // only affects the main process (no-op). VPN stop is handled below.
-          if (!Platform.isIOS) {
+          case CoreMode.ffi:
+            // Close active connections with a timeout — the REST API may already
+            // be unresponsive if the core is in a bad state.
             try {
-              _core.stop();
+              await api
+                  .closeAllConnections()
+                  .timeout(const Duration(seconds: 2));
             } catch (e) {
-              // FFI call can throw if Go runtime is in a bad state.
-              // Catch to ensure VPN cleanup still happens below.
-              debugPrint('[CoreManager] core.stop() error: $e');
+              debugPrint('[CoreManager] closeAllConnections: $e');
             }
-          }
+            // On iOS, Go core runs in the PacketTunnel extension — FFI StopCore
+            // only affects the main process (no-op). VPN stop is handled below.
+            if (!Platform.isIOS) {
+              try {
+                _core.stop();
+              } catch (e) {
+                // FFI call can throw if Go runtime is in a bad state.
+                // Catch to ensure VPN cleanup still happens below.
+                debugPrint('[CoreManager] core.stop() error: $e');
+              }
+            }
 
-        case CoreMode.subprocess:
-          try {
-            await api.closeAllConnections()
-                .timeout(const Duration(seconds: 2));
-          } catch (e) {
-            debugPrint('[CoreManager] closeAllConnections: $e');
-          }
-          await ProcessManager.instance.stop();
+          case CoreMode.subprocess:
+            try {
+              await api
+                  .closeAllConnections()
+                  .timeout(const Duration(seconds: 2));
+            } catch (e) {
+              debugPrint('[CoreManager] closeAllConnections: $e');
+            }
+            await ProcessManager.instance.stop();
+        }
       }
     } catch (e) {
       debugPrint('[CoreManager] stop error: $e');
@@ -606,6 +749,55 @@ class CoreManager {
   // ==================================================================
 
   static const _kLastWorkingConfig = 'last_working_config.yaml';
+
+  Future<bool> _shouldUseDesktopServiceMode(String connectionMode) async {
+    if (!ServiceManager.isSupported || isMockMode) return false;
+    if (!(Platform.isMacOS || Platform.isWindows)) return false;
+    if (connectionMode != 'tun') return false;
+    return ServiceManager.isInstalled();
+  }
+
+  Future<String> _prepareConfig(String configYaml) async {
+    final overwrite = await OverwriteService.load();
+    var withOverwrite = OverwriteService.apply(configYaml, overwrite);
+
+    final mitmPort = CoreController.instance.getMitmEnginePort();
+    withOverwrite =
+        await ModuleRuleInjector.inject(withOverwrite, mitmPort: mitmPort);
+
+    final upstream = await SettingsService.getUpstreamProxy();
+    if (upstream != null && (upstream['server'] as String).isNotEmpty) {
+      withOverwrite = ConfigTemplate.injectUpstreamProxy(
+        withOverwrite,
+        upstream['type'] as String,
+        upstream['server'] as String,
+        upstream['port'] as int,
+      );
+    }
+
+    if ((Platform.isMacOS || Platform.isWindows) && !isMockMode) {
+      final preferredMixed = ConfigTemplate.getMixedPort(withOverwrite);
+      final ports = await Future.wait([
+        _findAvailablePort(preferredMixed),
+        _findAvailablePort(_apiPort),
+      ]);
+      final freeMixed = ports[0];
+      final freeApi = ports[1];
+      if (freeMixed != preferredMixed) {
+        debugPrint(
+            '[CoreManager] mixed-port $preferredMixed busy → remapped to $freeMixed');
+        withOverwrite = ConfigTemplate.setMixedPort(withOverwrite, freeMixed);
+      }
+      if (freeApi != _apiPort) {
+        debugPrint(
+            '[CoreManager] apiPort $_apiPort busy → remapped to $freeApi');
+        _apiPort = freeApi;
+        _api = null;
+        _stream = null;
+      }
+    }
+    return withOverwrite;
+  }
 
   Future<String?> loadLastWorkingConfig() async {
     final appDir = await getApplicationSupportDirectory();
@@ -653,7 +845,8 @@ class CoreManager {
     for (var port = preferred; port < preferred + 20; port++) {
       try {
         final server = await ServerSocket.bind(
-          InternetAddress.loopbackIPv4, port,
+          InternetAddress.loopbackIPv4,
+          port,
           shared: false,
         );
         await server.close();
@@ -679,7 +872,8 @@ class CoreManager {
       if (logFile.existsSync()) {
         final lines = await logFile.readAsLines();
         // Keep last 100 lines to avoid huge reports
-        coreLogs = lines.length > 100 ? lines.sublist(lines.length - 100) : lines;
+        coreLogs =
+            lines.length > 100 ? lines.sublist(lines.length - 100) : lines;
       }
     } catch (e) {
       debugPrint('[CoreManager] failed to read core.log: $e');

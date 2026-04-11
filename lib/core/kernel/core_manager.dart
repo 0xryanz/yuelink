@@ -594,8 +594,17 @@ class CoreManager {
 
       await _step(steps, 'startService', StartupError.coreStartFailed,
           () async {
+        // Write the processed config to a file in homeDir BEFORE calling
+        // the helper. The helper no longer accepts raw YAML over IPC — it
+        // reads from the file path we hand it (which it validates against
+        // its install-time path allowlist). This eliminates the previous
+        // "client → root file write" attack surface.
+        final configFile = File('$homeDir/yuelink-service.yaml');
+        await configFile.parent.create(recursive: true);
+        await configFile.writeAsString(processed);
+
         final status = await ServiceClient.start(
-          configYaml: processed,
+          configPath: configFile.path,
           homeDir: homeDir!,
         );
         _running = true;

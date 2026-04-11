@@ -163,7 +163,11 @@ class SettingsService {
     await set('tunBypassProcesses', procs);
   }
 
-  // ── Desktop Service Mode auth token / port ──────────────────────────────
+  // ── Desktop Service Mode auth token / port / socket ─────────────────────
+  // macOS / Linux: socket path is the auth boundary (peer-cred check on
+  //                the helper side); token + port are unused.
+  // Windows:       token + port (HTTP loopback) is the auth boundary; socket
+  //                path is unused.
 
   static Future<String?> getServiceAuthToken() async {
     return get<String>('serviceAuthToken');
@@ -179,6 +183,17 @@ class SettingsService {
 
   static Future<void> setServicePort(int port) async {
     await set('servicePort', port);
+  }
+
+  /// Absolute path to the Unix domain socket the helper listens on
+  /// (macOS / Linux only). Set at install time, read by the Dart client
+  /// on every IPC call.
+  static Future<String?> getServiceSocketPath() async {
+    return get<String>('serviceSocketPath');
+  }
+
+  static Future<void> setServiceSocketPath(String? path) async {
+    await set('serviceSocketPath', path);
   }
 
   // ── Log level ────────────────────────────────────────────────────────────

@@ -15,6 +15,52 @@ import (
 	"time"
 )
 
+// validatePath ensures `target` resolves to a real path inside one of the
+// install-time allowlisted prefixes. Symlinks are followed via EvalSymlinks
+// so the client can't escape the allowlist with symlink tricks. Returns the
+// canonicalised path on success, or an error describing the rejection.
+//
+// Why: the helper runs as root and the client runs as the user. Without
+// this gate, the client could pass `home_dir = /etc/passwd_dir` and the
+// helper would happily MkdirAll there as root.
+func (s *ServiceRuntime) validatePath(target string) (string, error) {
+	if target == "" {
+		return "", fmt.Errorf("path is empty")
+	}
+	if !filepath.IsAbs(target) {
+		return "", fmt.Errorf("path must be absolute: %q", target)
+	}
+
+	// Clean removes ../ etc. but doesn't follow symlinks.
+	clean := filepath.Clean(target)
+
+	// Try to resolve symlinks. If the path doesn't exist yet (which is
+	// allowed for home_dir on first call), fall back to its parent.
+	resolved := clean
+	if r, err := filepath.EvalSymlinks(clean); err == nil {
+		resolved = r
+	} else if r, err := filepath.EvalSymlinks(filepath.Dir(clean)); err == nil {
+		resolved = filepath.Join(r, filepath.Base(clean))
+	}
+
+	for _, prefix := range s.cfg.AllowedHomeDirs {
+		cleanPrefix := filepath.Clean(prefix)
+		// Resolve symlinks in the allowlist entry too so /var vs /private/var
+		// (macOS) match correctly.
+		if rp, err := filepath.EvalSymlinks(cleanPrefix); err == nil {
+			cleanPrefix = rp
+		}
+		if resolved == cleanPrefix ||
+			strings.HasPrefix(resolved, cleanPrefix+string(filepath.Separator)) {
+			return resolved, nil
+		}
+	}
+	return "", fmt.Errorf(
+		"path %q is not inside any allowed prefix (allowed: %v)",
+		clean, s.cfg.AllowedHomeDirs,
+	)
+}
+
 type ServiceRuntime struct {
 	cfg *Config
 
@@ -43,15 +89,15 @@ func NewServiceRuntime(cfg *Config) (*ServiceRuntime, error) {
 	return &ServiceRuntime{cfg: cfg}, nil
 }
 
-func (s *ServiceRuntime) Run(ctx context.Context) error {
+// Run accepts an already-bound listener and a handler (possibly wrapped
+// with auth middleware by the transport layer). The Unix-socket transport
+// passes the raw mux (peer cred check happens at accept time inside the
+// listener wrapper), while the HTTP transport wraps the mux with
+// withTokenAuth.
+func (s *ServiceRuntime) Run(ctx context.Context, listener net.Listener, handler http.Handler) error {
 	server := &http.Server{
-		Addr:    fmt.Sprintf("%s:%d", s.cfg.ListenHost, s.cfg.ListenPort),
-		Handler: s.newHandler(),
-	}
-
-	listener, err := net.Listen("tcp", server.Addr)
-	if err != nil {
-		return fmt.Errorf("listen on %s: %w", server.Addr, err)
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	go func() {
@@ -67,8 +113,8 @@ func (s *ServiceRuntime) Run(ctx context.Context) error {
 		_ = server.Shutdown(shutdownCtx)
 	}()
 
-	log.Printf("[service] listening on http://%s", server.Addr)
-	err = server.Serve(listener)
+	log.Printf("[service] serving on %s", listener.Addr())
+	err := server.Serve(listener)
 	if err == nil || errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
@@ -76,12 +122,30 @@ func (s *ServiceRuntime) Run(ctx context.Context) error {
 }
 
 func (s *ServiceRuntime) startMihomo(req startRequest) (statusResponse, error) {
-	if req.ConfigYAML == "" {
-		return statusResponse{}, fmt.Errorf("missing config_yaml")
-	}
 	if req.HomeDir == "" {
 		return statusResponse{}, fmt.Errorf("missing home_dir")
 	}
+	if req.ConfigPath == "" {
+		return statusResponse{}, fmt.Errorf("missing config_path")
+	}
+
+	// Validate both paths against the install-time allowlist BEFORE any
+	// privileged operation. Reject early if either is outside.
+	cleanHome, err := s.validatePath(req.HomeDir)
+	if err != nil {
+		return statusResponse{}, fmt.Errorf("home_dir rejected: %w", err)
+	}
+	cleanCfg, err := s.validatePath(req.ConfigPath)
+	if err != nil {
+		return statusResponse{}, fmt.Errorf("config_path rejected: %w", err)
+	}
+	// Sanity: config file must actually exist (the client wrote it before
+	// calling start). Helper does NOT accept raw content anymore.
+	if st, err := os.Stat(cleanCfg); err != nil || st.IsDir() {
+		return statusResponse{}, fmt.Errorf("config_path is not a regular file: %q", cleanCfg)
+	}
+	req.HomeDir = cleanHome
+	req.ConfigPath = cleanCfg
 
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
@@ -93,16 +157,17 @@ func (s *ServiceRuntime) startMihomo(req startRequest) (statusResponse, error) {
 	return s.startMihomoInternal(req)
 }
 
-// startMihomoInternal does the actual start work. Caller must hold opMu.
+// startMihomoInternal does the actual start work. Caller must hold opMu and
+// has already validated req paths via validatePath().
 func (s *ServiceRuntime) startMihomoInternal(req startRequest) (statusResponse, error) {
 	if err := os.MkdirAll(req.HomeDir, 0o755); err != nil {
 		return statusResponse{}, fmt.Errorf("mkdir home_dir: %w", err)
 	}
 
-	configPath := filepath.Join(req.HomeDir, "yuelink-service.yaml")
-	if err := os.WriteFile(configPath, []byte(req.ConfigYAML), 0o600); err != nil {
-		return statusResponse{}, fmt.Errorf("write config: %w", err)
-	}
+	// Use the client-supplied (already validated) config path directly.
+	// Helper no longer writes config content from a request body — that
+	// closes the "raw YAML from network → root file" surface.
+	configPath := req.ConfigPath
 
 	logPath := filepath.Join(req.HomeDir, "mihomo-service.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)

@@ -40,9 +40,15 @@ func (m *yueWindowsService) Execute(
 		return false, 1
 	}
 
-	runtime, err := NewServiceRuntime(cfg)
+	rt, err := NewServiceRuntime(cfg)
 	if err != nil {
 		log.Printf("[service] create runtime failed: %v", err)
+		return false, 1
+	}
+
+	listener, handler, err := openTransport(rt)
+	if err != nil {
+		log.Printf("[service] open transport: %v", err)
 		return false, 1
 	}
 
@@ -51,7 +57,7 @@ func (m *yueWindowsService) Execute(
 
 	runDone := make(chan error, 1)
 	go func() {
-		runDone <- runtime.Run(ctx)
+		runDone <- rt.Run(ctx, listener, handler)
 	}()
 
 	changes <- svc.Status{

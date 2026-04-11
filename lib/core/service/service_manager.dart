@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:path_provider/path_provider.dart';
+
 import '../../constants.dart';
 import '../storage/settings_service.dart';
 import 'service_client.dart';
@@ -74,10 +76,27 @@ class ServiceManager {
           'Desktop service mode is only available on macOS, Windows and Linux');
     }
 
-    final token =
-        await SettingsService.getServiceAuthToken() ?? _generateToken();
-    await SettingsService.setServiceAuthToken(token);
-    await SettingsService.setServicePort(AppConstants.serviceListenPort);
+    // Resolve identity / paths captured at install time. The helper will
+    // refuse any later request whose peer UID doesn't match this UID
+    // (macOS/Linux) or that targets a path outside this allowlist.
+    final ownerUid = _currentUid();
+    final appSupport = await getApplicationSupportDirectory();
+    final tempBase = Directory.systemTemp.path;
+    final allowedHomeDirs = <String>[
+      appSupport.path,
+      tempBase,
+    ];
+
+    // Windows still needs a token for HTTP loopback. macOS/Linux don't.
+    String? token;
+    if (Platform.isWindows) {
+      token = await SettingsService.getServiceAuthToken() ?? _generateToken();
+      await SettingsService.setServiceAuthToken(token);
+      await SettingsService.setServicePort(AppConstants.serviceListenPort);
+    } else {
+      // Clean up any legacy token from a previous install
+      await SettingsService.setServiceAuthToken(null);
+    }
 
     final binaries = await _resolveSourceBinaries();
     final tempDir = await Directory.systemTemp.createTemp('yuelink_service_');
@@ -85,23 +104,36 @@ class ServiceManager {
     try {
       String mihomoInstallPath;
       String helperLogPath;
+      String? socketPath;
       if (Platform.isMacOS) {
         mihomoInstallPath = _macInstalledMihomoPath;
         helperLogPath = _macInstalledHelperLogPath;
+        socketPath = _macSocketPath;
       } else if (Platform.isLinux) {
         mihomoInstallPath = _linuxInstalledMihomoPath;
         helperLogPath = _linuxInstalledHelperLogPath;
+        socketPath = _linuxSocketPath;
       } else {
         mihomoInstallPath = _windowsInstalledMihomoPath;
         helperLogPath = _windowsInstalledHelperLogPath;
       }
 
+      // Persist socket path to settings so the Dart client can find it.
+      if (socketPath != null) {
+        await SettingsService.setServiceSocketPath(socketPath);
+      }
+
       final configFile = File('${tempDir.path}/service-config.json');
       await configFile.writeAsString(
         const JsonEncoder.withIndent('  ').convert({
-          'token': token,
-          'listen_host': AppConstants.serviceListenHost,
-          'listen_port': AppConstants.serviceListenPort,
+          if (token != null) 'token': token,
+          if (Platform.isWindows) ...{
+            'listen_host': AppConstants.serviceListenHost,
+            'listen_port': AppConstants.serviceListenPort,
+          },
+          if (socketPath != null) 'socket_path': socketPath,
+          'owner_uid': ownerUid,
+          'allowed_home_dirs': allowedHomeDirs,
           'mihomo_path': mihomoInstallPath,
           'helper_log_path': helperLogPath,
         }),
@@ -285,11 +317,13 @@ Start-Service -Name $serviceName
     } else if (Platform.isLinux) {
       helperCandidates.addAll([
         '$execDir/yuelink-service-helper',
+        '$cwd/linux/libs/yuelink-service-helper',
         '$cwd/service/build/linux-amd64/yuelink-service-helper',
         '$cwd/service/build/linux-arm64/yuelink-service-helper',
       ]);
       mihomoCandidates.addAll([
         '$execDir/yuelink-mihomo',
+        '$cwd/linux/libs/yuelink-mihomo',
         '$cwd/service/build/linux-amd64/yuelink-mihomo',
         '$cwd/service/build/linux-arm64/yuelink-mihomo',
       ]);
@@ -484,10 +518,22 @@ $helperDst = __HELPER_DST__
 $mihomoDst = __MIHOMO_DST__
 $configDst = __CONFIG_DST__
 
+# Stop and delete the existing service if present.
 if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
   Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
   sc.exe delete $serviceName | Out-Null
-  Start-Sleep -Seconds 1
+  # sc.exe delete is async — the service stays "marked for deletion" until
+  # all open handles close. Poll for actual removal up to 15 s before
+  # creating the new service, otherwise New-Service hits error 1072.
+  for ($i = 0; $i -lt 30; $i++) {
+    Start-Sleep -Milliseconds 500
+    if (-not (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)) {
+      break
+    }
+  }
+  if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
+    Write-Warning "Service '$serviceName' still present after 15s — attempting New-Service anyway"
+  }
 }
 
 New-Item -ItemType Directory -Force -Path $serviceDir | Out-Null
@@ -496,8 +542,29 @@ Copy-Item -Force $mihomoSrc $mihomoDst
 Copy-Item -Force $configSrc $configDst
 
 $binPath = '"' + $helperDst + '" -config "' + $configDst + '"'
-New-Service -Name $serviceName -BinaryPathName $binPath -DisplayName 'YueLink Service Helper' -StartupType Automatic | Out-Null
+
+# Retry New-Service up to 3 times in case the previous deletion is still
+# settling in the SCM database.
+$created = $false
+for ($i = 0; $i -lt 3; $i++) {
+  try {
+    New-Service -Name $serviceName -BinaryPathName $binPath `
+      -DisplayName 'YueLink Service Helper' -StartupType Automatic `
+      -Description 'Privileged YueLink desktop TUN helper' | Out-Null
+    $created = $true
+    break
+  } catch {
+    if ($i -eq 2) { throw }
+    Start-Sleep -Seconds 2
+  }
+}
+if (-not $created) { throw "Failed to create service after 3 attempts" }
+
+# sc.exe description is redundant now (PowerShell New-Service supports it
+# via -Description on PS 6+), but kept for older Win 10 hosts that ship
+# Windows PowerShell 5.1 where -Description is silently ignored.
 sc.exe description $serviceName "Privileged YueLink desktop TUN helper" | Out-Null
+
 Start-Service -Name $serviceName
 '''
         .replaceAll('__SERVICE_NAME__', AppConstants.desktopServiceName)
@@ -555,6 +622,28 @@ if (Test-Path $serviceDir) {
   static String get _macInstalledHelperLogPath => '$_macServiceDir/helper.log';
   static String get _macPlistPath =>
       '/Library/LaunchDaemons/${AppConstants.desktopServiceLabel}.plist';
+  // Unix domain socket the helper binds to. Lives in /var/run because
+  // /tmp is sometimes mode 1777 + auto-cleaned, while /var/run is the
+  // canonical macOS daemon socket location.
+  static String get _macSocketPath => '/var/run/yuelink-helper.sock';
+
+  // ── Linux socket ────────────────────────────────────────────────────
+  static String get _linuxSocketPath => '/run/yuelink-helper.sock';
+
+  /// Current user's UID. On Unix-likes we read it via `id -u` (avoids the
+  /// FFI dance for getuid()). On Windows we return -1 — the field is
+  /// informational there since auth is bearer-token.
+  static int _currentUid() {
+    if (Platform.isWindows) return -1;
+    try {
+      final r = Process.runSync('id', ['-u']);
+      if (r.exitCode == 0) {
+        final uid = int.tryParse(r.stdout.toString().trim());
+        if (uid != null) return uid;
+      }
+    } catch (_) {}
+    return -1;
+  }
 
   static String get _windowsProgramData =>
       Platform.environment['ProgramData'] ?? r'C:\ProgramData';

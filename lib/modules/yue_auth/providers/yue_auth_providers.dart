@@ -10,6 +10,7 @@ export '../../../infrastructure/datasources/xboard_api.dart'
     show XBoardApi, XBoardApiException, UserProfile, SubscribeData;
 import '../../../l10n/app_strings.dart';
 import '../../../modules/profiles/providers/profiles_providers.dart';
+import '../../../domain/models/profile.dart' show ProfileSource;
 import '../../../core/kernel/core_manager.dart';
 import '../../../core/kernel/recovery_manager.dart';
 import '../../../infrastructure/repositories/profile_repository.dart';
@@ -247,13 +248,25 @@ class AuthNotifier extends Notifier<AuthState> {
       debugPrint('[Auth] stop core on logout failed: $e');
     }
 
-    // Clear all subscription profiles
+    // Clear ONLY profiles synced from this account (source == account).
+    // User-imported profiles (source == manual) survive logout to prevent
+    // data loss. Legacy profiles created before the `source` field existed
+    // default to manual and are also preserved.
     try {
       final repo = ref.read(profileRepositoryProvider);
       final profiles = await repo.loadProfiles();
+      var deleted = 0;
+      var preserved = 0;
       for (final p in profiles) {
-        await repo.deleteProfile(p.id);
+        if (p.isAccountManaged) {
+          await repo.deleteProfile(p.id);
+          deleted++;
+        } else {
+          preserved++;
+        }
       }
+      debugPrint(
+          '[Auth] logout: deleted $deleted account profile(s), preserved $preserved manual profile(s)');
     } catch (e) {
       debugPrint('[Auth] clear profiles on logout failed: $e');
     }
@@ -336,17 +349,20 @@ class AuthNotifier extends Notifier<AuthState> {
         : null;
 
     if (existing.isNotEmpty) {
-      // Update existing profile
+      // Update existing profile and tag it as account-managed so logout
+      // knows it's safe to delete (it'll be recreated on next login).
       final profile = existing.first;
       profile.url = subscribeUrl;
+      profile.source = ProfileSource.account;
       await repo.updateProfile(profile, proxyPort: proxyPort);
       debugPrint('[Auth] Updated existing 悦通 profile: ${profile.id}');
     } else {
-      // Create new profile
+      // Create new profile, marked as account-managed.
       final profile = await repo.addProfile(
         name: '悦通',
         url: subscribeUrl,
         proxyPort: proxyPort,
+        source: ProfileSource.account,
       );
       debugPrint('[Auth] Created new 悦通 profile: ${profile.id}');
 

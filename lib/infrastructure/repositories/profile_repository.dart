@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../constants.dart';
 import '../../core/kernel/config_template.dart';
+import '../../core/util/ulid.dart';
 import '../../domain/models/profile.dart';
 import '../../l10n/app_strings.dart';
 import '../../shared/formatters/subscription_parser.dart';
@@ -120,9 +121,12 @@ class ProfileRepository {
     required String name,
     required String url,
     int? proxyPort,
+    ProfileSource source = ProfileSource.manual,
   }) async {
     final result = await _downloadConfig(url, proxyPort: proxyPort);
-    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    // ULID instead of milliseconds — bulk imports in the same ms used to
+    // collide and overwrite each other's yaml/metadata.
+    final id = Ulid.generate();
 
     // Heavy config processing in background isolate to prevent ANR
     final fallback = ConfigTemplate.isCompleteConfig(result.content)
@@ -150,6 +154,7 @@ class ProfileRepository {
       updateInterval: result.subInfo.updateInterval != null
           ? Duration(hours: result.subInfo.updateInterval!)
           : const Duration(hours: 24),
+      source: source,
     );
 
     final dir = await _getProfilesDir();
@@ -222,7 +227,7 @@ class ProfileRepository {
     String url = '',
     Duration updateInterval = Duration.zero,
   }) async {
-    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    final id = Ulid.generate();
 
     String finalContent = configContent;
     if (!ConfigTemplate.isCompleteConfig(configContent)) {

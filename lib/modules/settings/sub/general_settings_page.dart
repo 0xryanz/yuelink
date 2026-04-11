@@ -143,7 +143,11 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
     final addrCtrl = TextEditingController(text: addrs.join('\n'));
     final procCtrl = TextEditingController(text: procs.join('\n'));
 
-    if (!mounted) return;
+    // Use context.mounted (not just State.mounted) to guarantee the
+    // captured BuildContext itself is still valid after the awaits — the
+    // State.mounted check is unrelated to the specific context tree this
+    // function received.
+    if (!context.mounted) return;
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -200,37 +201,20 @@ class ModuleRepository {
   }
 
   /// Compute SHA-256 hex digest of a string.
-  static String _sha256(String content) {
-    // Use a simple hash since `crypto` package may not be available.
-    // We rely on a deterministic content fingerprint.
-    // crypto IS in pubspec (transitively via http or directly).
-    // Rather than importing crypto, use a portable approach:
-    // dart:convert does not have SHA256. We'll use length+sample hash.
-    // Actually let's use the real crypto package approach via the import.
-    // Since crypto is not in pubspec.yaml directly, we use a fallback.
-    // Per the project's pubspec.yaml, crypto is NOT listed. We use
-    // a simpler checksum that is still useful for change detection.
-    final bytes = utf8.encode(content);
-    var h = 0;
-    for (final b in bytes) {
-      h = ((h << 5) - h + b) & 0xFFFFFFFF;
-    }
-    return h.toRadixString(16).padLeft(8, '0') +
-        bytes.length.toRadixString(16).padLeft(8, '0');
-  }
+  static String _sha256(String content) =>
+      sha256.convert(utf8.encode(content)).toString();
 }
 
-/// Compute a checksum of raw .sgmodule content.
-/// Public so ModuleDownloader can use it.
-String moduleChecksum(String content) {
-  final bytes = utf8.encode(content);
-  var h = 0;
-  for (final b in bytes) {
-    h = ((h << 5) - h + b) & 0xFFFFFFFF;
-  }
-  return h.toRadixString(16).padLeft(8, '0') +
-      bytes.length.toRadixString(16).padLeft(8, '0');
-}
+/// Compute a SHA-256 checksum of raw .sgmodule content.
+/// Public so ModuleDownloader can use it for change detection.
+///
+/// Previously this was a 32-bit DJB2-style rolling hash, which has trivial
+/// collisions (e.g. "Aa" and "BB" hash to the same value). Module repositories
+/// use this for "did the upstream content change" checks, and the old hash
+/// would skip real updates that happened to collide. Now uses real SHA-256
+/// from package:crypto.
+String moduleChecksum(String content) =>
+    sha256.convert(utf8.encode(content)).toString();
 
 /// Generate a module ID similar to the profile ID pattern.
 String generateModuleId() {

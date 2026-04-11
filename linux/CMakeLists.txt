@@ -127,9 +127,28 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
     COMPONENT Runtime)
 endif()
 
-# Install libclash.so (mihomo Go core) if present.
+# Bundle native binaries next to the main executable. All three are
+# OPTIONAL — Dart side has mock-mode fallback for libclash and the
+# service binaries are only needed for desktop TUN service mode.
+# Mirrors macos/scripts/bundle_native_libs.sh and windows/CMakeLists.txt.
 set(LIBCLASH "${CMAKE_SOURCE_DIR}/libs/libclash.so")
 if(EXISTS "${LIBCLASH}")
   install(FILES "${LIBCLASH}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
+
+# Linux service helper + mihomo binary (for desktop TUN service mode).
+# Installed next to the yuelink executable so service_manager.dart's
+# `$execDir/yuelink-{service-helper,mihomo}` lookup finds them.
+set(YUELINK_SERVICE_HELPER "${CMAKE_SOURCE_DIR}/libs/yuelink-service-helper")
+if(EXISTS "${YUELINK_SERVICE_HELPER}")
+  install(PROGRAMS "${YUELINK_SERVICE_HELPER}"
+    DESTINATION "${INSTALL_BUNDLE_DATA_DIR}/.."
+    COMPONENT Runtime)
+endif()
+set(YUELINK_MIHOMO "${CMAKE_SOURCE_DIR}/libs/yuelink-mihomo")
+if(EXISTS "${YUELINK_MIHOMO}")
+  install(PROGRAMS "${YUELINK_MIHOMO}"
+    DESTINATION "${INSTALL_BUNDLE_DATA_DIR}/.."
     COMPONENT Runtime)
 endif()

@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yaml/yaml.dart';
 
-import '../../../core/ffi/core_controller.dart';
 import '../../../core/storage/settings_service.dart';
 import '../../../domain/models/proxy.dart';
 import '../../../providers/profile_provider.dart';
@@ -117,8 +116,8 @@ class ProxyGroupsNotifier extends Notifier<List<ProxyGroup>> {
       // Parse real subscription YAML instead of using hardcoded mock data
       data = await _parseMockProxiesFromProfile();
       if (data.isEmpty) {
-        // Fallback to CoreMock data if no profile available
-        data = CoreController.instance.getProxies();
+        // Fallback to canned mock data if no profile available
+        data = await manager.core.getProxies();
       }
     } else {
       try {
@@ -294,7 +293,7 @@ class ProxyGroupsNotifier extends Notifier<List<ProxyGroup>> {
 
     bool ok;
     if (manager.isMockMode) {
-      ok = CoreController.instance.changeProxy(groupName, proxyName);
+      ok = await manager.core.changeProxy(groupName, proxyName);
     } else {
       ok = await _repo.changeProxy(groupName, proxyName);
     }
@@ -340,9 +339,7 @@ class DelayTestActions {
     final results = Map<String, int>.from(ref.read(delayResultsProvider));
 
     if (manager.isMockMode) {
-      delay = await Future(() {
-        return CoreController.instance.testDelay(proxyName);
-      });
+      delay = await manager.core.testDelay(proxyName);
     } else {
       delay = await _repo.testDelayWithBatch(
         proxyName,

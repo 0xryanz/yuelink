@@ -3,9 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/ffi/core_mock.dart';
-import '../../../domain/models/connection.dart';
 import '../../../core/kernel/core_manager.dart';
+import '../../../domain/models/connection.dart';
 import '../../../infrastructure/repositories/connection_repository.dart';
 import '../../../providers/core_provider.dart';
 
@@ -41,10 +40,10 @@ final connectionsStreamProvider = Provider<void>((ref) {
   final manager = CoreManager.instance;
 
   if (manager.isMockMode) {
-    // Mock mode: use CoreMock data directly (no REST API in mock mode)
+    // Mock mode: poll the unified ClashCore interface (no REST API in mock).
     Future<void> poll() async {
       try {
-        final data = CoreMock.instance.getConnections();
+        final data = await manager.core.getConnections();
         final snapshot = ConnectionsSnapshot.fromJson(data);
         ref.read(connectionsSnapshotProvider.notifier).state = snapshot;
       } catch (e) {

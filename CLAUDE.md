@@ -49,7 +49,7 @@ Flutter UI (Dart, Riverpod) → CoreController (dart:ffi) → hub.go (CGO //expo
 XBoardApi (HTTPS) ← ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ CloudFront → XBoard panel
 ```
 
-**Critical split**: FFI is for lifecycle only (init/start/stop). All data operations (proxies, traffic, connections, rules) go through the REST API (`MihomoApi`), never FFI. This matches FlClash/Clash Verge Rev architecture.
+**Unified `ClashCore` interface** (`lib/core/clash_core.dart`): every clash operation — lifecycle AND data — lives on one abstract class. `RealClashCore` (`clash_core_real.dart`) dispatches lifecycle to FFI bindings (`CoreController`) and data to REST (`MihomoApi`). `MockClashCore` (`clash_core_mock.dart`) routes everything to `CoreMock`. Callers do `CoreManager.instance.core.X()` and don't care which implementation is in use. The old hand-policed rule "FFI for lifecycle, REST for data, never mix" is no longer needed — there is exactly one place to add a new operation (the abstract interface) and both implementations must satisfy it. This matches FlClash's `CoreInterface` pattern. Streaming operations (traffic / connections / logs websockets) stay in their dedicated repositories — those are real-mode-only and the mock equivalents are timer-based polls in providers.
 
 ### Directory structure (dual-layer — in transition)
 
@@ -185,7 +185,7 @@ client.connectionTimeout = const Duration(seconds: 10);
 
 ### FFI symbol alignment
 
-Dart bindings (`core_bindings.dart`) must exactly match Go exports (`core/hub.go`). Current 8 Dart bindings match 8 of 9 Go exports (`GetVersion` is intentionally unbound — version comes via REST API). **Never add FFI bindings for data operations** — those belong in `MihomoApi`. All failable exports return `Pointer<Utf8>` (C string), not `int`.
+Dart bindings (`core_bindings.dart`) must exactly match Go exports (`core/hub.go`). Current bindings cover lifecycle + MITM control. Data operations (proxies/connections/rules/traffic/logs) belong on `MihomoApi`, which is wrapped by `RealClashCore` so callers go through `CoreManager.instance.core` and don't reach into FFI directly. All failable exports return `Pointer<Utf8>` (C string), not `int`.
 
 ### Mock mode
 

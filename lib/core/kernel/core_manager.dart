@@ -5,6 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../constants.dart';
+import '../clash_core.dart';
+import '../clash_core_mock.dart';
+import '../clash_core_real.dart';
 import '../ffi/core_controller.dart';
 import '../../domain/models/startup_report.dart';
 import 'config_template.dart';
@@ -46,6 +49,18 @@ class CoreManager {
   late CoreMode _mode;
   MihomoApi? _api;
   MihomoStream? _stream;
+  ClashCore? _clashCore;
+
+  /// Unified clash interface — same surface in mock and real mode.
+  /// Lifecycle delegates to FFI (real) or [CoreMock] (mock); data delegates
+  /// to [MihomoApi] (real) or [CoreMock] (mock). Created lazily so the
+  /// `_api` getter has a chance to bind to the right port first.
+  ///
+  /// Prefer this in new code over reaching into [CoreController] /
+  /// [MihomoApi] / [CoreMock] directly. The `if (isMockMode) ... else ...`
+  /// dispatch sites in providers and pages should use `core.X()` instead.
+  ClashCore get core =>
+      _clashCore ??= isMockMode ? MockClashCore() : RealClashCore(api);
   bool _running = false;
   bool _initialized = false;
   bool _serviceModeActive = false;
@@ -107,6 +122,7 @@ class CoreManager {
     // Recreate API/stream clients with restored ports
     _api = null;
     _stream = null;
+    _clashCore = null;
   }
 
   /// Persist current ports so they can be restored after engine restart.
@@ -123,6 +139,7 @@ class CoreManager {
     if (mode != null) _mode = mode;
     _api = null;
     _stream = null;
+    _clashCore = null;
   }
 
   // ==================================================================
@@ -277,6 +294,7 @@ class CoreManager {
           _apiSecret ??= ConfigTemplate.getSecret(processed);
           _api = null;
           _stream = null;
+          _clashCore = null;
           return 'output=${processed.length}b, apiPort=$_apiPort, mixedPort=$_mixedPort, tunFd=$tunFd';
         });
       } else {
@@ -299,6 +317,7 @@ class CoreManager {
           _apiSecret ??= ConfigTemplate.getSecret(processed);
           _api = null;
           _stream = null;
+          _clashCore = null;
           return 'output=${processed.length}b, apiPort=$_apiPort, mixedPort=$_mixedPort';
         });
       }
@@ -499,6 +518,7 @@ class CoreManager {
         _apiSecret ??= ConfigTemplate.getSecret(processed);
         _api = null;
         _stream = null;
+        _clashCore = null;
         return 'len=${processed.length}, apiPort=$_apiPort';
       });
 
@@ -591,6 +611,7 @@ class CoreManager {
         _apiSecret ??= ConfigTemplate.getSecret(processed);
         _api = null;
         _stream = null;
+        _clashCore = null;
         return 'output=${processed.length}b, apiPort=$_apiPort, mixedPort=$_mixedPort, homeDir=$homeDir';
       });
 
@@ -833,6 +854,7 @@ class CoreManager {
         _apiPort = freeApi;
         _api = null;
         _stream = null;
+        _clashCore = null;
       }
     }
     return withOverwrite;

@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/ffi/core_controller.dart';
 import '../../../core/kernel/core_manager.dart';
 import '../../../core/storage/settings_service.dart';
 import '../../../domain/models/traffic.dart';
@@ -105,8 +104,8 @@ final trafficStreamProvider = Provider<void>((ref) {
   final history = ref.read(trafficHistoryProvider);
 
   if (manager.isMockMode) {
-    final timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      final t = CoreController.instance.getTraffic();
+    final timer = Timer.periodic(const Duration(seconds: 1), (_) async {
+      final t = await manager.core.getTraffic();
       final traffic = Traffic(up: t.up, down: t.down);
       ref.read(trafficProvider.notifier).state = traffic;
       history.add(t.up, t.down);

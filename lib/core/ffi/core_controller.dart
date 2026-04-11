@@ -203,13 +203,11 @@ class CoreController {
   }
 
   // ------------------------------------------------------------------
-  // Mock-only data methods (used in mock mode for UI development).
-  // In FFI mode, all data goes through MihomoApi REST API instead.
+  // Note: data methods (getProxies/changeProxy/testDelay/getTraffic) used
+  // to live here as 4 stubs that forwarded to CoreMock for mock-mode UI
+  // development. They were removed when ClashCore was introduced — all
+  // callers now use `CoreManager.instance.core.X()` which gives them the
+  // right implementation (RealClashCore for FFI mode, MockClashCore for
+  // mock mode) without a per-call-site if-else dispatch.
   // ------------------------------------------------------------------
-
-  Map<String, dynamic> getProxies() => _mock.getProxies();
-  bool changeProxy(String groupName, String proxyName) =>
-      _mock.changeProxy(groupName, proxyName);
-  int testDelay(String proxyName) => _mock.testDelay(proxyName);
-  ({int up, int down}) getTraffic() => _mock.getTraffic();
 }

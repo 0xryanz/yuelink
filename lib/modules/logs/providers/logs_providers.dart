@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/ffi/core_mock.dart';
 import '../../../core/kernel/core_manager.dart';
 import '../../../domain/logs/log_entry.dart';
 import '../../../infrastructure/repositories/log_repository.dart';
@@ -58,8 +57,9 @@ class LogEntriesNotifier extends Notifier<List<LogEntry>> {
     final level = ref.read(logLevelProvider);
 
     if (manager.isMockMode) {
-      // Generate mock log entries periodically
-      final mockLogs = CoreMock.instance.getLogs();
+      // Generate mock log entries periodically — pulled from the unified
+      // ClashCore interface (snapshot-only; real mode uses websocket stream).
+      final mockLogs = manager.core.getLogsSnapshot();
       var index = 0;
       _mockTimer = Timer.periodic(const Duration(seconds: 2), (_) {
         if (_disposed) return;

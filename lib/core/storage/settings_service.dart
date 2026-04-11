@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,14 +6,30 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// Persistent settings storage using a simple JSON file.
+///
+/// Write strategy: every `set()` updates the in-memory cache immediately
+/// (so subsequent `get()` calls see the new value with no latency) but
+/// COALESCES the disk write into a single flush ~250 ms later. Bursts of
+/// updates — speed-test rounds, group expand/collapse spam, tab switches —
+/// all collapse into one atomic file rewrite instead of N rewrites.
+///
+/// `setImmediate()` is available for the rare cases where the caller needs
+/// the write to hit disk before continuing (e.g. before triggering an
+/// elevation prompt that may kill the process).
 class SettingsService {
   static const _fileName = 'settings.json';
+  static const _flushInterval = Duration(milliseconds: 250);
+
   static Map<String, dynamic>? _cache;
 
   // Serialize concurrent saves: each save waits for the previous to finish.
-  // This prevents the race where two writes share the same .tmp path and the
-  // second rename throws PathNotFoundException after the first already moved it.
+  // Prevents .tmp path races where two writes share the same temp file
+  // and the second rename throws PathNotFoundException.
   static Future<void> _saveGuard = Future.value();
+
+  // Coalescing flush state
+  static Timer? _flushTimer;
+  static bool _flushPending = false;
 
   static Future<File> _getFile() async {
     final dir = await getApplicationSupportDirectory();
@@ -40,32 +57,74 @@ class SettingsService {
   /// Invalidate the in-memory cache so the next read comes from disk.
   static void invalidateCache() => _cache = null;
 
-  static Future<void> save(Map<String, dynamic> settings) {
-    _cache = settings;
-    // Chain onto the previous save so concurrent calls never race on .tmp.
+  /// Internal: actually write the current cache to disk. Atomic via
+  /// tmp+rename. Chained on `_saveGuard` so concurrent flushes serialise.
+  static Future<void> _flushNow() async {
+    _flushPending = false;
+    final snapshot = _cache;
+    if (snapshot == null) return;
     _saveGuard = _saveGuard.then((_) async {
       final file = await _getFile();
-      // Ensure parent directory exists (first run or after cleanup)
       final dir = file.parent;
       if (!await dir.exists()) {
         await dir.create(recursive: true);
       }
-      // Atomic write: write to temp file then rename to prevent corruption
       final tmp = File('${file.path}.tmp');
-      await tmp.writeAsString(json.encode(settings));
+      await tmp.writeAsString(json.encode(snapshot));
       await tmp.rename(file.path);
     }, onError: (e) {
-      // Swallow errors in chained saves so _saveGuard never stays in a
-      // rejected state (which would block all subsequent saves).
       debugPrint('[SettingsService] save failed: $e');
     });
     return _saveGuard;
   }
 
+  /// Schedule a coalesced flush. Multiple set() calls within
+  /// [_flushInterval] all collapse into one disk write.
+  static void _scheduleFlush() {
+    if (_flushPending) {
+      // Already scheduled, restart the timer to extend the coalescing window.
+      _flushTimer?.cancel();
+      _flushTimer = Timer(_flushInterval, () => unawaited(_flushNow()));
+      return;
+    }
+    _flushPending = true;
+    _flushTimer?.cancel();
+    _flushTimer = Timer(_flushInterval, () => unawaited(_flushNow()));
+  }
+
+  /// Replace the entire settings map and schedule a coalesced flush.
+  /// Kept for backwards compatibility — most callers should use [set].
+  static Future<void> save(Map<String, dynamic> settings) async {
+    _cache = settings;
+    _scheduleFlush();
+    return _saveGuard;
+  }
+
+  /// Set a single key and schedule a coalesced flush. The in-memory cache
+  /// is updated synchronously so subsequent `get()` returns the new value
+  /// immediately.
   static Future<void> set(String key, dynamic value) async {
     final settings = await load();
     settings[key] = value;
-    await save(settings);
+    _scheduleFlush();
+  }
+
+  /// Force an immediate flush, bypassing the coalescing timer. Use this
+  /// before risky operations (osascript elevation, app quit) where you
+  /// can't afford to lose the write.
+  static Future<void> flush() async {
+    _flushTimer?.cancel();
+    if (_flushPending || _cache != null) {
+      await _flushNow();
+    }
+  }
+
+  /// Like [set] but flushes immediately. Use only when latency matters
+  /// (e.g. about to trigger a privileged operation that may kill the app).
+  static Future<void> setImmediate(String key, dynamic value) async {
+    final settings = await load();
+    settings[key] = value;
+    await _flushNow();
   }
 
   static Future<T?> get<T>(String key) async {

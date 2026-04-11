@@ -333,8 +333,11 @@ class CoreActions {
           debugPrint('[SystemProxy] Failed to set proxy for $svc: $e');
         }
       }
-      // Verify the proxy was actually set
+      // Verify the proxy was actually set. Invalidate the verify cache
+      // first so we hit `scutil --proxy` fresh instead of returning a
+      // stale result from a previous "no" check.
       if (anySuccess) {
+        invalidateVerifyCache();
         final verified = await verifySystemProxy(mixedPort);
         if (!verified) {
           debugPrint('[SystemProxy] WARNING: proxy set commands succeeded '
@@ -476,82 +479,137 @@ class CoreActions {
     return false;
   }
 
+  // ── ProxyGuard verification cache ──────────────────────────────────────
+  // The system-proxy verification used to spawn N+1 subprocesses every time
+  // (1 to list network services, N to query each one), AND ran every 30s
+  // from the heartbeat — that was ~720 process spawns per hour just to
+  // confirm "yes, our proxy is still active".
+  //
+  // Two-pronged fix:
+  //   (a) On macOS use `scutil --proxy` which returns the EFFECTIVE system
+  //       proxy state in a single subprocess call. No service enumeration.
+  //   (b) Cache the verification result for 60 seconds. The heartbeat now
+  //       triggers a real verify at most every 5 minutes (see proxyCheckTick
+  //       below) and any cache hit between then is a no-op.
+  static bool? _verifyCached;
+  static DateTime? _verifyCachedAt;
+  static int? _verifyCachedPort;
+  static const _verifyCacheTtl = Duration(seconds: 60);
+
+  /// Invalidate the cached verification result. Call this whenever the
+  /// system proxy was just set/restored so the next verify hits fresh.
+  static void invalidateVerifyCache() {
+    _verifyCached = null;
+    _verifyCachedAt = null;
+    _verifyCachedPort = null;
+  }
+
   /// Verify that system proxy is actually pointing to our port.
-  /// Returns true if at least one interface has our proxy set (macOS),
-  /// or the registry points to our port (Windows).
+  /// Returns true if HTTP/HTTPS proxy is enabled on the system and pointing
+  /// to 127.0.0.1:[mixedPort]. Cached for [_verifyCacheTtl] to keep
+  /// heartbeat overhead minimal.
   static Future<bool> verifySystemProxy(int mixedPort) async {
-    if (Platform.isMacOS) {
-      try {
-        final services = await _listNetworkServices();
-        final verified = <String>[];
-        final missing = <String>[];
-        for (final svc in services) {
-          final result =
-              await Process.run('networksetup', ['-getwebproxy', svc]);
-          final output = result.stdout as String;
-          if (output.contains('Enabled: Yes') &&
-              output.contains('Port: $mixedPort')) {
-            verified.add(svc);
-          } else {
-            missing.add(svc);
-          }
-        }
-        if (verified.isNotEmpty) {
-          debugPrint('[SystemProxy] Proxy active on: ${verified.join(', ')} '
-              '(port $mixedPort)');
-          if (missing.isNotEmpty) {
-            debugPrint('[SystemProxy] Not set on: ${missing.join(', ')} '
-                '(inactive interfaces)');
-          }
-          return true;
-        }
-        debugPrint('[SystemProxy] Verification failed: no service has '
-            'proxy set to port $mixedPort');
-        return false;
-      } catch (e) {
-        debugPrint('[SystemProxy] Verification error: $e');
-        return false;
-      }
-    } else if (Platform.isWindows) {
-      try {
-        const regKey =
-            r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings';
-        final r1 =
-            await Process.run('reg', ['query', regKey, '/v', 'ProxyEnable']);
-        final o1 = r1.stdout as String;
-        // Enabled value shows as "0x1" in reg query output
-        if (!o1.contains('0x1')) return false;
-        final r2 =
-            await Process.run('reg', ['query', regKey, '/v', 'ProxyServer']);
-        final o2 = r2.stdout as String;
-        if (!o2.contains('127.0.0.1:$mixedPort')) {
-          debugPrint('[SystemProxy] Windows proxy server changed, '
-              'no longer pointing to port $mixedPort');
-          return false;
-        }
-        return true;
-      } catch (e) {
-        debugPrint('[SystemProxy] Windows verification error: $e');
-        return false;
-      }
-    } else if (Platform.isLinux) {
-      try {
-        final r = await Process.run('gsettings', [
-          'get', 'org.gnome.system.proxy', 'mode',
-        ]);
-        final mode = (r.stdout as String).trim();
-        if (mode != "'manual'") return false;
-        final r2 = await Process.run('gsettings', [
-          'get', 'org.gnome.system.proxy.http', 'port',
-        ]);
-        final port = int.tryParse((r2.stdout as String).trim()) ?? 0;
-        return port == mixedPort;
-      } catch (_) {
-        // gsettings not available — can't verify
-        return true;
-      }
+    // Cache hit
+    if (_verifyCached != null &&
+        _verifyCachedPort == mixedPort &&
+        _verifyCachedAt != null &&
+        DateTime.now().difference(_verifyCachedAt!) < _verifyCacheTtl) {
+      return _verifyCached!;
     }
-    return true;
+
+    bool result;
+    if (Platform.isMacOS) {
+      result = await _verifyMacOSScutil(mixedPort);
+    } else if (Platform.isWindows) {
+      result = await _verifyWindowsRegistry(mixedPort);
+    } else if (Platform.isLinux) {
+      result = await _verifyLinuxGsettings(mixedPort);
+    } else {
+      result = true;
+    }
+
+    _verifyCached = result;
+    _verifyCachedAt = DateTime.now();
+    _verifyCachedPort = mixedPort;
+    return result;
+  }
+
+  /// macOS: parse `scutil --proxy` output for HTTP/HTTPS enable + port.
+  /// One subprocess instead of N+1 (where N = network services count).
+  static Future<bool> _verifyMacOSScutil(int mixedPort) async {
+    try {
+      final r = await Process.run('scutil', ['--proxy']);
+      final out = r.stdout as String;
+      // scutil --proxy output looks like:
+      //   <dictionary> {
+      //     HTTPEnable : 1
+      //     HTTPProxy : 127.0.0.1
+      //     HTTPPort : 7890
+      //     HTTPSEnable : 1
+      //     HTTPSProxy : 127.0.0.1
+      //     HTTPSPort : 7890
+      //     ...
+      //   }
+      final httpEnabled = RegExp(r'HTTPEnable\s*:\s*1').hasMatch(out);
+      final httpsEnabled = RegExp(r'HTTPSEnable\s*:\s*1').hasMatch(out);
+      if (!httpEnabled && !httpsEnabled) {
+        debugPrint('[SystemProxy] scutil: HTTP/HTTPS proxy not enabled');
+        return false;
+      }
+      final portMatch = RegExp(r'HTTPPort\s*:\s*(\d+)').firstMatch(out);
+      final port = portMatch != null ? int.tryParse(portMatch.group(1)!) : null;
+      if (port != mixedPort) {
+        debugPrint('[SystemProxy] scutil: port mismatch '
+            '(got $port, expected $mixedPort)');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[SystemProxy] scutil error: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> _verifyWindowsRegistry(int mixedPort) async {
+    try {
+      const regKey =
+          r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings';
+      final r1 =
+          await Process.run('reg', ['query', regKey, '/v', 'ProxyEnable']);
+      final o1 = r1.stdout as String;
+      if (!o1.contains('0x1')) return false;
+      final r2 =
+          await Process.run('reg', ['query', regKey, '/v', 'ProxyServer']);
+      final o2 = r2.stdout as String;
+      if (!o2.contains('127.0.0.1:$mixedPort')) {
+        debugPrint('[SystemProxy] Windows proxy changed, no longer '
+            'pointing to port $mixedPort');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[SystemProxy] Windows verify error: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> _verifyLinuxGsettings(int mixedPort) async {
+    try {
+      final r = await Process.run(
+        'gsettings',
+        ['get', 'org.gnome.system.proxy', 'mode'],
+      );
+      final mode = (r.stdout as String).trim();
+      if (mode != "'manual'") return false;
+      final r2 = await Process.run(
+        'gsettings',
+        ['get', 'org.gnome.system.proxy.http', 'port'],
+      );
+      final port = int.tryParse((r2.stdout as String).trim()) ?? 0;
+      return port == mixedPort;
+    } catch (_) {
+      return true; // gsettings not available — can't verify
+    }
   }
 
   // ------------------------------------------------------------------
@@ -701,17 +759,42 @@ class CoreActions {
     } catch (_) {}
   }
 
-  /// Enumerate all active network services on macOS.
+  // Network services list cache. The set of active interfaces almost
+  // never changes during a session — only on hardware add/remove or
+  // network config change. 5-minute TTL is well below human-perceptible
+  // staleness for proxy operations.
+  static List<String>? _cachedNetworkServices;
+  static DateTime? _networkServicesCachedAt;
+  static const _networkServicesCacheTtl = Duration(minutes: 5);
+
+  /// Drop the network services cache so the next call hits networksetup
+  /// again. Call this on resume from background or after the user
+  /// explicitly toggles a network service in System Settings.
+  static void invalidateNetworkServicesCache() {
+    _cachedNetworkServices = null;
+    _networkServicesCachedAt = null;
+  }
+
+  /// Enumerate all active network services on macOS, with a 5-minute cache.
   static Future<List<String>> _listNetworkServices() async {
+    if (_cachedNetworkServices != null &&
+        _networkServicesCachedAt != null &&
+        DateTime.now().difference(_networkServicesCachedAt!) <
+            _networkServicesCacheTtl) {
+      return _cachedNetworkServices!;
+    }
     try {
       final result =
           await Process.run('networksetup', ['-listallnetworkservices']);
-      return (result.stdout as String)
+      final services = (result.stdout as String)
           .split('\n')
           .skip(1) // First line is the header notice
           .map((l) => l.startsWith('*') ? l.substring(1).trim() : l.trim())
           .where((l) => l.isNotEmpty)
           .toList();
+      _cachedNetworkServices = services;
+      _networkServicesCachedAt = DateTime.now();
+      return services;
     } catch (_) {
       return ['Wi-Fi']; // Fallback
     }
@@ -766,12 +849,18 @@ final coreHeartbeatProvider = Provider<void>((ref) {
     if (apiOk && ffiRunning) {
       failures = 0;
 
-      // Proxy Guard: every 30s on desktop, check if system proxy was tampered.
-      // First attempt: silently restore. If restore also fails (another
-      // client actively fighting), then stop gracefully.
-      if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+      // Proxy Guard: passively verify the system proxy hasn't been
+      // overridden by another client. Heavy-handed (it spawns subprocesses
+      // to query the OS), so we run it sparingly:
+      //   - Every ~5 minutes in foreground (30 ticks × 10 s)
+      //   - Never in background (heartbeat already throttled to 60 s,
+      //     no point burning processes when the user can't see anything)
+      //   - Cached for 60 s on the verifySystemProxy side, so even
+      //     in-frequency calls hit the cache most of the time.
+      if (!inBackground &&
+          (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
         proxyCheckTick++;
-        if (proxyCheckTick >= 3) {
+        if (proxyCheckTick >= 30) {
           proxyCheckTick = 0;
           final connMode = ref.read(connectionModeProvider);
           if (connMode == 'systemProxy' &&

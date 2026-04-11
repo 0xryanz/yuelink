@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -21,6 +22,7 @@ enum _SortColumn { target, process, rule, download, upload, duration }
 
 class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   final _searchCtrl = TextEditingController();
+  Timer? _searchDebounce;
   _SortColumn _sortCol = _SortColumn.duration;
   bool _sortAsc = false;
 
@@ -63,14 +65,24 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   @override
   void initState() {
     super.initState();
+    // Debounce search input — typing fires onChanged on every keystroke,
+    // and pushing each one straight into connectionSearchProvider would
+    // re-run filteredConnectionsProvider on every character. 200 ms is
+    // below human-perceptible delay but enough to coalesce 5–6 keystrokes
+    // of a fast typist into one filter pass.
     _searchCtrl.addListener(() {
-      ref.read(connectionSearchProvider.notifier).state =
-          _searchCtrl.text;
+      _searchDebounce?.cancel();
+      _searchDebounce = Timer(const Duration(milliseconds: 200), () {
+        if (mounted) {
+          ref.read(connectionSearchProvider.notifier).state = _searchCtrl.text;
+        }
+      });
     });
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -117,7 +129,12 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
 
     ref.watch(connectionsStreamProvider);
 
-    final snapshot = ref.watch(connectionsSnapshotProvider);
+    // Don't watch the whole snapshot at the top level — it changes every
+    // 500 ms (per ConnectionRepository throttle) and would rebuild the
+    // entire page including the table. Instead use thin derived providers
+    // that only fire when the specific value the page header cares about
+    // actually flips.
+    final isEmpty = ref.watch(connectionsEmptyProvider);
     final filtered = ref.watch(filteredConnectionsProvider);
     final actions = ref.read(connectionActionsProvider);
 
@@ -139,15 +156,22 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
             ),
           ),
 
-          // Summary bar (Glassmorphism)
+          // Summary bar — isolated Consumer so the bar rebuilds on totals
+          // change without rebuilding the rest of the page.
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _SummaryBar(snapshot: snapshot),
+            child: Consumer(builder: (context, ref, _) {
+              final totals = ref.watch(connectionsTotalsProvider);
+              return _SummaryBar(
+                downloadTotal: totals.down,
+                uploadTotal: totals.up,
+              );
+            }),
           ),
           const SizedBox(height: 8),
 
-          // Proxy stats (collapsible)
-          if (snapshot.connections.isNotEmpty)
+          // Proxy stats (collapsible) — already in its own Consumer.
+          if (!isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Consumer(builder: (context, ref, _) {
@@ -180,6 +204,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                                 icon: Icon(Icons.cancel_rounded, size: 18, color: YLColors.zinc400),
                                 onPressed: () {
                                   _searchCtrl.clear();
+                                  _searchDebounce?.cancel();
                                   ref.read(connectionSearchProvider.notifier).state = '';
                                 },
                               )
@@ -191,16 +216,16 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                 const SizedBox(width: 12),
                 Container(
                   decoration: BoxDecoration(
-                    color: snapshot.connections.isEmpty
+                    color: isEmpty
                         ? Colors.transparent
-                        : YLColors.errorLight.withValues(alpha:isDark ? 0.1 : 0.5),
+                        : YLColors.errorLight.withValues(alpha: isDark ? 0.1 : 0.5),
                     borderRadius: BorderRadius.circular(YLRadius.lg),
                   ),
                   child: IconButton(
                     icon: Icon(Icons.delete_sweep_rounded,
-                        color: snapshot.connections.isEmpty ? YLColors.zinc500 : YLColors.error),
+                        color: isEmpty ? YLColors.zinc500 : YLColors.error),
                     tooltip: s.closeAll,
-                    onPressed: snapshot.connections.isEmpty
+                    onPressed: isEmpty
                         ? null
                         : () => _confirmCloseAll(context, actions),
                   ),
@@ -212,12 +237,17 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
           // Count badge
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-            child: Text(
-              filtered.length != snapshot.connections.length
-                  ? s.connectionsCountFiltered(filtered.length)
-                  : s.connectionsCount(filtered.length),
-              style: YLText.caption.copyWith(color: YLColors.zinc500, fontWeight: FontWeight.w600),
-            ),
+            child: Consumer(builder: (context, ref, _) {
+              final totalCount = ref.watch(connectionCountProvider);
+              final filteredCount = filtered.length;
+              return Text(
+                filteredCount != totalCount
+                    ? s.connectionsCountFiltered(filteredCount)
+                    : s.connectionsCount(filteredCount),
+                style: YLText.caption.copyWith(
+                    color: YLColors.zinc500, fontWeight: FontWeight.w600),
+              );
+            }),
           ),
 
           // Connections list
@@ -231,7 +261,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                             color: isDark ? YLColors.zinc700 : YLColors.zinc300),
                         const SizedBox(height: 16),
                         Text(
-                          snapshot.connections.isEmpty
+                          isEmpty
                               ? s.noActiveConnections
                               : s.noMatchingConnections,
                           style: YLText.body.copyWith(color: YLColors.zinc500),
@@ -298,14 +328,18 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
 
 // ── Summary bar ───────────────────────────────────────────────────────────────
 
-class _SummaryBar extends StatelessWidget {
-  final ConnectionsSnapshot snapshot;
-  const _SummaryBar({required this.snapshot});
+class _SummaryBar extends ConsumerWidget {
+  final int downloadTotal;
+  final int uploadTotal;
+  const _SummaryBar({required this.downloadTotal, required this.uploadTotal});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final s = S.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // The connection count is its own thin provider so the count digit
+    // and the totals can rebuild independently of each other.
+    final count = ref.watch(connectionCountProvider);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -324,21 +358,21 @@ class _SummaryBar extends StatelessWidget {
           _StatItem(
             icon: Icons.cable_rounded,
             label: s.statConnections,
-            value: '${snapshot.connections.length}',
+            value: '$count',
             color: isDark ? Colors.white : YLColors.primary,
           ),
           Container(width: 1, height: 32, color: isDark ? Colors.white.withValues(alpha:0.1) : Colors.black.withValues(alpha:0.05)),
           _StatItem(
             icon: Icons.arrow_downward_rounded,
             label: s.statTotalDownload,
-            value: _formatBytes(snapshot.downloadTotal),
+            value: _formatBytes(downloadTotal),
             color: YLColors.connected,
           ),
           Container(width: 1, height: 32, color: isDark ? Colors.white.withValues(alpha:0.1) : Colors.black.withValues(alpha:0.05)),
           _StatItem(
             icon: Icons.arrow_upward_rounded,
             label: s.statTotalUpload,
-            value: _formatBytes(snapshot.uploadTotal),
+            value: _formatBytes(uploadTotal),
             color: Colors.blue.shade500,
           ),
         ],
@@ -732,6 +766,28 @@ class _DetailRow extends StatelessWidget {
 
 // ── Desktop: Sortable DataTable ───────────────────────────────────────────────
 
+// Column definitions for the virtualized table. Fixed widths so the body
+// rows can be laid out without measuring siblings, and so we can use
+// `itemExtent` on ListView.builder for max scroll perf.
+class _Col {
+  final String label;
+  final _SortColumn? sortBy;
+  final double width;
+  final TextAlign align;
+  const _Col(this.label, this.sortBy, this.width, [this.align = TextAlign.left]);
+}
+
+/// Desktop connections table — replaces the previous Material `DataTable`
+/// which built every row up-front (`connections.map(...).toList()`). With
+/// 500+ connections that was 500+ widgets created on every 500ms tick.
+///
+/// This implementation:
+/// - Uses `ListView.builder` so only visible rows are realised.
+/// - Uses `itemExtent` so the list can short-circuit layout — every row is
+///   exactly 44px tall, no measurement pass needed.
+/// - Sticky header row outside the ListView.
+/// - Independent vertical / horizontal scrolling via a single horizontal
+///   `SingleChildScrollView` wrapping the whole table (~1000px wide).
 class _ConnectionsDataTable extends StatelessWidget {
   final List<ActiveConnection> connections;
   final _SortColumn sortColumn;
@@ -747,68 +803,165 @@ class _ConnectionsDataTable extends StatelessWidget {
     required this.onClose,
   });
 
-  DataColumn _col(String label, _SortColumn col) => DataColumn(
-        label: Text(label, style: YLText.label.copyWith(fontWeight: FontWeight.w700)),
-        numeric: col == _SortColumn.download || col == _SortColumn.upload,
-        onSort: (_, asc) => onSort(col, asc),
-      );
+  static const double _rowHeight = 44.0;
 
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    int sortIndex = _SortColumn.values.indexOf(sortColumn);
+    final cols = <_Col>[
+      _Col(s.detailTarget, _SortColumn.target, 240),
+      _Col(s.detailProcess, _SortColumn.process, 160),
+      _Col(s.detailRule, _SortColumn.rule, 140),
+      _Col(s.detailDownload, _SortColumn.download, 100, TextAlign.right),
+      _Col(s.detailUpload, _SortColumn.upload, 100, TextAlign.right),
+      _Col(s.detailDuration, _SortColumn.duration, 100, TextAlign.right),
+      const _Col('', null, 48),
+    ];
+    final tableWidth =
+        cols.fold<double>(0, (sum, c) => sum + c.width) + cols.length * 16;
+
     return SingleChildScrollView(
-      scrollDirection: Axis.vertical,
+      scrollDirection: Axis.horizontal,
       physics: const BouncingScrollPhysics(),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        child: DataTable(
-          sortColumnIndex: sortIndex,
-          sortAscending: ascending,
-          columnSpacing: 24,
-          headingRowHeight: 48,
-          dataRowMinHeight: 40,
-          dataRowMaxHeight: 48,
-          columns: [
-            _col(s.detailTarget, _SortColumn.target),
-            _col(s.detailProcess, _SortColumn.process),
-            _col(s.detailRule, _SortColumn.rule),
-            _col(s.detailDownload, _SortColumn.download),
-            _col(s.detailUpload, _SortColumn.upload),
-            _col(s.detailDuration, _SortColumn.duration),
-            const DataColumn(label: Text('')), // close button
-          ],
-          rows: connections.map((c) => DataRow(cells: [
-            DataCell(
-              SizedBox(
-                width: 220,
-                child: Text(c.target,
-                    overflow: TextOverflow.ellipsis,
-                    style: YLText.mono.copyWith(fontSize: 13)),
+      child: SizedBox(
+        width: tableWidth,
+        child: Column(
+          children: [
+            _HeaderRow(
+              cols: cols,
+              sortColumn: sortColumn,
+              ascending: ascending,
+              onSort: onSort,
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                physics: const BouncingScrollPhysics(),
+                itemCount: connections.length,
+                itemExtent: _rowHeight,
+                // Cache 10 viewports above/below for smoother fast scroll
+                cacheExtent: _rowHeight * 30,
+                itemBuilder: (ctx, i) => _ConnectionRow(
+                  conn: connections[i],
+                  cols: cols,
+                  onClose: onClose,
+                ),
               ),
             ),
-            DataCell(Text(c.processName, style: YLText.body)),
-            DataCell(Text(c.rule, style: YLText.body)),
-            DataCell(Text(_fmt(c.download), style: YLText.mono.copyWith(fontSize: 13))),
-            DataCell(Text(_fmt(c.upload), style: YLText.mono.copyWith(fontSize: 13))),
-            DataCell(Text(c.durationText, style: YLText.mono.copyWith(fontSize: 13))),
-            DataCell(IconButton(
-              icon: const Icon(Icons.close_rounded, size: 18),
-              color: YLColors.error,
-              padding: EdgeInsets.zero,
-              onPressed: () => onClose(c.id),
-            )),
-          ])).toList(),
+          ],
         ),
       ),
     );
   }
+}
+
+class _HeaderRow extends StatelessWidget {
+  final List<_Col> cols;
+  final _SortColumn sortColumn;
+  final bool ascending;
+  final void Function(_SortColumn col, bool asc) onSort;
+  const _HeaderRow({
+    required this.cols,
+    required this.sortColumn,
+    required this.ascending,
+    required this.onSort,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: Row(
+        children: cols.map((c) {
+          final headerStyle = YLText.label.copyWith(fontWeight: FontWeight.w700);
+          final isSorted = c.sortBy != null && c.sortBy == sortColumn;
+          final cell = Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              mainAxisAlignment: c.align == TextAlign.right
+                  ? MainAxisAlignment.end
+                  : MainAxisAlignment.start,
+              children: [
+                Text(c.label, style: headerStyle),
+                if (isSorted)
+                  Icon(
+                    ascending ? Icons.arrow_upward : Icons.arrow_downward,
+                    size: 14,
+                    color: YLColors.zinc500,
+                  ),
+              ],
+            ),
+          );
+          final boxed = SizedBox(width: c.width, child: cell);
+          if (c.sortBy == null) return boxed;
+          return InkWell(
+            onTap: () => onSort(
+              c.sortBy!,
+              isSorted ? !ascending : true,
+            ),
+            child: boxed,
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class _ConnectionRow extends StatelessWidget {
+  final ActiveConnection conn;
+  final List<_Col> cols;
+  final void Function(String id) onClose;
+  const _ConnectionRow({
+    required this.conn,
+    required this.cols,
+    required this.onClose,
+  });
 
   static String _fmt(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  Widget _textCell(String text, double width, TextAlign align,
+      {TextStyle? style}) {
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: align,
+          style: style ?? YLText.body,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mono = YLText.mono.copyWith(fontSize: 13);
+    return Row(
+      children: [
+        _textCell(conn.target, cols[0].width, TextAlign.left, style: mono),
+        _textCell(conn.processName, cols[1].width, TextAlign.left),
+        _textCell(conn.rule, cols[2].width, TextAlign.left),
+        _textCell(_fmt(conn.download), cols[3].width, TextAlign.right, style: mono),
+        _textCell(_fmt(conn.upload), cols[4].width, TextAlign.right, style: mono),
+        _textCell(conn.durationText, cols[5].width, TextAlign.right, style: mono),
+        SizedBox(
+          width: cols[6].width,
+          child: IconButton(
+            icon: const Icon(Icons.close_rounded, size: 18),
+            color: YLColors.error,
+            padding: EdgeInsets.zero,
+            onPressed: () => onClose(conn.id),
+          ),
+        ),
+      ],
+    );
   }
 }
 

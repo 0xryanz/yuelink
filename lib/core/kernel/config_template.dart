@@ -997,13 +997,21 @@ class ConfigTemplate {
     return _reSecret.firstMatch(config)?.group(1);
   }
 
+  /// Memoised fallback template — assets/default_config.yaml is read at
+  /// most ONCE per app lifetime. The previous implementation called
+  /// `rootBundle.loadString` on every profile add/update, including bulk
+  /// imports and the background subscription sync timer, which thrashed
+  /// the asset bundle reader for no reason (the file is a baked-in const).
+  static Future<String>? _fallbackTemplateFuture;
+
   /// Load the built-in fallback config.
   ///
   /// This is NOT the default config for normal usage. Subscriptions provide
   /// complete configs. This is only for the rare case where a subscription
   /// returns raw proxy nodes without any proxy-groups or rules.
-  static Future<String> loadFallbackTemplate() async {
-    return rootBundle.loadString('assets/default_config.yaml');
+  static Future<String> loadFallbackTemplate() {
+    return _fallbackTemplateFuture ??=
+        rootBundle.loadString('assets/default_config.yaml');
   }
 
   /// Ensure connectivity-check domains are routed DIRECT in rules.

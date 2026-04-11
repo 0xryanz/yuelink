@@ -68,7 +68,27 @@ final connectionsStreamProvider = Provider<void>((ref) {
 
 // Derived count — cheap int comparison avoids rebuilds on every connection update
 final connectionCountProvider = Provider<int>((ref) {
-  return ref.watch(connectionsSnapshotProvider).connections.length;
+  return ref.watch(
+    connectionsSnapshotProvider.select((s) => s.connections.length),
+  );
+});
+
+/// Cheap "is the connection list empty" — bool, only flips on transition.
+/// Lets the page hide/show the empty state without watching the whole list.
+final connectionsEmptyProvider = Provider<bool>((ref) {
+  return ref.watch(
+    connectionsSnapshotProvider.select((s) => s.connections.isEmpty),
+  );
+});
+
+/// Per-tick totals (down/up bytes) — used by the summary bar without
+/// needing to watch the whole connections list.
+final connectionsTotalsProvider = Provider<({int down, int up})>((ref) {
+  return ref.watch(
+    connectionsSnapshotProvider.select(
+      (s) => (down: s.downloadTotal, up: s.uploadTotal),
+    ),
+  );
 });
 
 // ------------------------------------------------------------------

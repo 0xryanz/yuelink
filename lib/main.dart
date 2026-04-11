@@ -103,8 +103,23 @@ void main() async {
   // ── Error logging (local crash.log + optional remote Sentry/Crashlytics) ──
   ErrorLogger.init();
 
-  // Restore persisted settings — single disk read, then all sync from cache.
-  await SettingsService.load();
+  // Restore persisted settings + auth state. Two slow disk reads run in
+  // parallel:
+  //   - SettingsService.load() reads settings.json (one shot, then all
+  //     getX() calls sync from in-memory cache)
+  //   - authService.getToken() walks the encrypted SecureStorage path,
+  //     which on macOS does ioreg → HKDF → AES-GCM decrypt (~65 ms cold)
+  //
+  // Previously they were serial. Parallelising saves ~30 ms on cold start.
+  // After the parallel section, all the SettingsService.getX() calls hit
+  // the populated cache and complete in microtasks.
+  final authService = AuthTokenService.instance;
+  final earlyResults = await Future.wait<Object?>([
+    SettingsService.load(),
+    authService.getToken(),
+  ]);
+  final savedToken = earlyResults[1] as String?;
+
   final savedTheme = await SettingsService.getThemeMode();
   final savedProfileId = await SettingsService.getActiveProfileId();
   final savedRoutingMode = await SettingsService.getRoutingMode();
@@ -122,11 +137,8 @@ void main() async {
   final savedBuiltTabs = await SettingsService.getBuiltTabs();
   final savedOnboarding = await SettingsService.getHasSeenOnboarding();
 
-  // Pre-load auth state to eliminate blank screen flash on Android resume.
-  // AuthNotifier._init() is async and shows AuthStatus.unknown (blank) until done.
-  // By pre-reading token + cached profile here, we can pass them as initial state.
-  final authService = AuthTokenService.instance;
-  final savedToken = await authService.getToken();
+  // Profile fetch is gated on token presence — only one secure-storage
+  // read here, and only if we actually need it.
   final savedProfile = (savedToken != null && savedToken.isNotEmpty)
       ? await authService.getCachedProfile()
       : null;
@@ -424,6 +436,15 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     // frequency when the app goes to background.
     ref.read(appInBackgroundProvider.notifier).state =
         state != AppLifecycleState.resumed;
+
+    // SettingsService now coalesces writes — flush any pending changes
+    // when the app goes inactive/background/detached so we don't lose
+    // them if the OS kills us.
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(SettingsService.flush());
+    }
 
     if (state == AppLifecycleState.resumed) {
       // On Android, the first resume after engine recreate is already handled
@@ -883,12 +904,14 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     final themeMode = ref.watch(themeProvider);
     final language = ref.watch(languageProvider);
 
-    // Activate heartbeat at root level so it runs regardless of active tab.
-    // The provider itself guards: only runs while CoreStatus.running.
-    ref.watch(coreHeartbeatProvider);
-
-    // Silently update stale subscriptions in the background (30min interval).
-    ref.watch(subscriptionSyncProvider);
+    // Side-effect-only providers — heartbeat and subscription sync. They
+    // exist to keep timers alive and don't emit a value the MaterialApp
+    // cares about. Use ref.listen instead of ref.watch so the intent is
+    // explicit: "subscribe to lifecycle, never rebuild me on emissions".
+    // (Both are Provider<void>; ref.watch happened to work because null
+    // == null, but ref.listen documents the contract clearly.)
+    ref.listen<void>(coreHeartbeatProvider, (_, __) {});
+    ref.listen<void>(subscriptionSyncProvider, (_, __) {});
 
     return MaterialApp(
       title: AppConstants.appName,

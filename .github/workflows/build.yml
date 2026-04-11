@@ -75,6 +75,20 @@ jobs:
           channel: stable
           cache: true
 
+      # Geodata files are declared as assets in pubspec.yaml but checked
+      # into .gitignore — flutter build fails with "No file or variants
+      # found for asset" without them. Every build job downloads them at
+      # CI time; the integration job needs the same step or `flutter test`
+      # can't even build the test binary.
+      - name: Download geodata files
+        run: |
+          mkdir -p assets/geodata
+          curl -fSL -o assets/geodata/GeoIP.dat    "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
+          curl -fSL -o assets/geodata/GeoSite.dat  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
+          curl -fSL -o assets/geodata/country.mmdb  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb"
+          curl -fSL -o assets/geodata/ASN.mmdb      "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/GeoLite2-ASN.mmdb"
+          ls -lh assets/geodata/
+
       - run: flutter config --enable-macos-desktop
       - run: flutter pub get
 

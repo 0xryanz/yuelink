@@ -29,6 +29,21 @@ from __future__ import annotations
 
 import os
 import sys
+
+# Force stdout/stderr to UTF-8 on Windows. The script prints `→` (U+2192)
+# inside section headers, but Windows defaults to cp1252 which can't encode
+# it — every CI run on the windows-latest runner blew up with
+# `UnicodeEncodeError: 'charmap' codec can't encode character '\u2192'`.
+# Setting PYTHONIOENCODING in the workflow would also work, but doing it at
+# the script level keeps the script self-contained for any caller.
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+        sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    except AttributeError:
+        # Python <3.7 on Windows — extremely unlikely on modern CI runners
+        pass
+
 from PIL import Image
 
 # Apple-style squircle: superellipse with exponent ≈ 5. Higher = closer to a

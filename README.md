@@ -17,11 +17,11 @@
 
 | 平台 | 文件 | 说明 |
 |------|------|------|
-| Android | `YueLink-Android.apk` | 通用包（arm64 / arm / x86_64） |
-| iOS | `YueLink-iOS.ipa` | TrollStore / AltStore / SideStore 侧载 |
-| macOS | `YueLink-macOS.dmg` | Intel + Apple Silicon 通用包 |
-| Windows | `YueLink-Windows-Setup.exe` | x64 安装程序 |
-| Linux | `YueLink-Linux-x86_64.AppImage` | x64 AppImage |
+| Android | `YueLink-<version>-android-universal.apk` | 通用包；另提供 `arm64-v8a` / `armeabi-v7a` / `x86_64` 分 ABI 安装包 |
+| iOS | `YueLink-<version>-ios.ipa` | TrollStore / AltStore / SideStore 侧载 |
+| macOS | `YueLink-<version>-macos-universal.dmg` | Intel + Apple Silicon 通用包 |
+| Windows | `YueLink-<version>-windows-amd64-setup.exe` | x64 安装程序；另提供 `portable.zip` 便携包 |
+| Linux | `YueLink-<version>-linux-amd64.AppImage` | x64 AppImage |
 
 ---
 
@@ -30,7 +30,7 @@
 ### Android
 
 1. 在手机"设置 → 安全"中开启"允许安装未知来源应用"
-2. 下载 `YueLink-Android.apk` 后直接安装
+2. 下载 `YueLink-<version>-android-universal.apk` 后直接安装
 3. 首次启动时会申请 VPN 权限，点击"确定"即可
 
 **系统要求：** Android 6.0 及以上
@@ -58,15 +58,15 @@
 
 ### Windows
 
-运行 `YueLink-Windows-Setup.exe` 安装即可。
+运行 `YueLink-<version>-windows-amd64-setup.exe` 安装即可。
 
 **系统要求：** Windows 10 1903 及以上（x64）
 
 ### Linux
 
 ```bash
-chmod +x YueLink-Linux-x86_64.AppImage
-./YueLink-Linux-x86_64.AppImage
+chmod +x YueLink-<version>-linux-amd64.AppImage
+./YueLink-<version>-linux-amd64.AppImage
 ```
 
 ---

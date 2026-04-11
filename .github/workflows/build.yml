@@ -573,27 +573,40 @@ jobs:
         run: |
           VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)
           TAG="${GITHUB_REF_NAME}"
+          NOTES_FILE=""
           if [ "$TAG" = "pre" ]; then
             VERSION="${VERSION}-pre"
             TITLE="YueLink v${VERSION} Pre-release"
+            [ -f docs/releases/pre.md ] && NOTES_FILE="docs/releases/pre.md"
           else
             TITLE="YueLink v${VERSION}"
+            [ -f "docs/releases/v${VERSION}.md" ] && NOTES_FILE="docs/releases/v${VERSION}.md"
           fi
-          PREV_TAG=$(git tag --sort=-creatordate | grep -E '^v[0-9]' | head -1)
-          if [ -n "$PREV_TAG" ]; then
-            CHANGES=$(git log --pretty=format:"- %s" "${PREV_TAG}..HEAD" -- | head -50)
+
+          if [ -n "$NOTES_FILE" ]; then
+            cp "$NOTES_FILE" release_notes.md
           else
-            CHANGES=$(git log --pretty=format:"- %s" -20)
+            PREV_TAG=$(git tag --sort=-creatordate | grep -E '^v[0-9]' | grep -Fxv "$TAG" | head -1)
+            if [ -n "$PREV_TAG" ]; then
+              CHANGES=$(git log --pretty=format:"- %s" "${PREV_TAG}..HEAD" -- | head -50)
+            else
+              CHANGES=$(git log --pretty=format:"- %s" -20)
+            fi
+            cat > release_notes.md << NOTES
+            ### Changes
+            ${CHANGES}
+
+            ### Artifacts
+            - \`YueLink-${VERSION}-android-universal.apk\`: Android 通用安装包；另附 3 个分 ABI APK。
+            - \`YueLink-${VERSION}-ios.ipa\`: iOS 侧载包（TrollStore / AltStore / SideStore）。
+            - \`YueLink-${VERSION}-macos-universal.dmg\`: macOS Intel + Apple Silicon 通用 DMG。
+            - \`YueLink-${VERSION}-windows-amd64-setup.exe\`: Windows 安装包。
+            - \`YueLink-${VERSION}-windows-amd64-portable.zip\`: Windows 免安装便携包。
+            - \`YueLink-${VERSION}-linux-amd64.AppImage\`: Linux x86_64 AppImage。
+            - 每个产物都附带同名 \`.sha256\` 校验文件。
+            NOTES
           fi
-          cat > release_notes.md << NOTES
-          ## ${TITLE}
-
-          ### Changes
-          ${CHANGES}
-
-          ---
-          *Build: ${TAG} | Version: ${VERSION}*
-          NOTES
+          printf '\n\n---\n*Build: %s | Version: %s*\n' "$TAG" "$VERSION" >> release_notes.md
           echo "RELEASE_TITLE=${TITLE}" >> $GITHUB_ENV
           echo "APP_VERSION=${VERSION}" >> $GITHUB_ENV
 

@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.0.14 (2026-04-12)
+
+### 新功能
+- 应用内更新支持稳定版 / 预发布双通道、manifest 多源拉取与 SHA-256 校验
+- 桌面端发布形态补齐：Windows 安装包 + 便携包、Linux AppImage、macOS 通用 DMG
+- 全平台桌面图标与安装体验升级：squircle 图标、Windows 安装向导图、macOS DMG 背景与修复脚本
+
+### 修复
+- 桌面 Service Mode 辅助进程鉴权边界加固：macOS / Linux 改为 Unix socket + peer credential + 路径白名单
+- macOS / Linux 原生二进制缺失时增加自愈式补齐，降低打包遗漏导致的启动失败
+- 修复 Linux Service Mode 与 CI 端到端发布链路
+- 优化连接列表热点路径，降低大量连接时的刷新开销
+- 修复 Windows CI UTF-8 输出与 Windows / Linux 核心打包架构问题
+
+### 架构 / 发布
+- 引入统一 `ClashCore` 接口，拆分 `CoreManager` 为多管理器，降低核心生命周期与数据访问耦合
+- XBoard API 重构为 5 文件模块，国际化迁移到 slang JSON 资源
+- GitHub Actions 发布流程重构为单矩阵全平台构建，正式版自动生成 Release 与 updater manifest
+
 ## v1.0.8 (2026-03-25)
 
 ### 新功能

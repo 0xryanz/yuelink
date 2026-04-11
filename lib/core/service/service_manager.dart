@@ -17,7 +17,7 @@ class ServiceManager {
 
   /// Expected service version — must match the Go binary's Version variable.
   /// Updated together with the Go build (set via -ldflags).
-  static const expectedVersion = '1.0.13';
+  static const expectedVersion = '1.0.14';
 
   static Future<DesktopServiceInfo> getInfo() async {
     if (!isSupported) {

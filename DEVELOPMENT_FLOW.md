@@ -115,8 +115,8 @@ git checkout next
 
 | 产物 | 平台 |
 |------|------|
-| `YueLink-Windows-Setup.exe` | Windows x64 |
-| `YueLink-macOS.dmg` | macOS Universal（arm64 + x86_64） |
-| `YueLink-Android.apk` | Android（arm64 / arm / x86_64） |
-| `YueLink-iOS.ipa` | iOS（无签名） |
-| `YueLink-Linux-x86_64.AppImage` | Linux x86_64 |
+| `YueLink-<version>-windows-amd64-setup.exe` / `YueLink-<version>-windows-amd64-portable.zip` | Windows x64 |
+| `YueLink-<version>-macos-universal.dmg` | macOS Universal（arm64 + x86_64） |
+| `YueLink-<version>-android-universal.apk` + 分 ABI APK | Android（arm64 / arm / x86_64） |
+| `YueLink-<version>-ios.ipa` | iOS（无签名） |
+| `YueLink-<version>-linux-amd64.AppImage` | Linux x86_64 |

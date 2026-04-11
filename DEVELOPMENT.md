@@ -144,7 +144,7 @@ Groups are ordered by the `GLOBAL` group's `all` field from the mihomo API (`/pr
 - **Tag strategy**: `alpha.N` tags trigger full builds (APK/IPA/DMG/EXE as artifacts, no GitHub Release) for testing. `v*` tags additionally create a GitHub Release. Use `alpha.*` during development, `v1.0.0` etc. for production releases.
 - **Release flow**: commit to `dev` → `git tag alpha.N && git push origin alpha.N` (test build) or `git tag vX.Y.Z && git push origin vX.Y.Z` (release). Never tag before pushing the commit.
 - **CI pipeline** (`.github/workflows/build.yml`): analyze+test → build Go cores (per-platform matrix) → Flutter builds (download core artifacts → install → build) → release (on `v*` tags only).
-- **Release artifacts**: `YueLink-Windows-Setup.exe` (Inno Setup), `YueLink-macOS.dmg` (create-dmg, universal binary), `YueLink-Android.apk` (fat universal), `YueLink-iOS.ipa` (no-codesign).
+- **Release artifacts**: `YueLink-<version>-android-{universal,arm64-v8a,armeabi-v7a,x86_64}.apk`, `YueLink-<version>-ios.ipa`, `YueLink-<version>-macos-universal.dmg`, `YueLink-<version>-windows-amd64-{setup.exe,portable.zip}`, `YueLink-<version>-linux-amd64.AppImage`。每个产物都会附带同名 `.sha256` 校验文件。
 - **Analyze in CI** uses `--no-fatal-infos --no-fatal-warnings` — only errors fail the build.
 - Submodules: `core/mihomo` is a git submodule. Clone with `--recursive` or run `git submodule update --init --recursive`.
 - **mihomo patches** (`core/patches/`): Applied during CI build. `0001-non-fatal-buildAndroidRules.patch` (PackageManager errors non-fatal), `0002-non-fatal-mmdb-and-iptables.patch` (MMDB/ASN `log.Fatalln` → `log.Errorln`, removes `os.Exit(2)` from iptables handler). These prevent the Go core from killing the entire Flutter process on non-critical failures.

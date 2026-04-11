@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../l10n/app_strings.dart';
-import '../shared/app_notifier.dart';
-import '../core/kernel/overwrite_service.dart';
+import '../../../l10n/app_strings.dart';
+import '../../../shared/app_notifier.dart';
+import '../../../core/kernel/overwrite_service.dart';
 
 // ── Internal data model ────────────────────────────────────────────────────────
 

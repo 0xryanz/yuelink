@@ -13,7 +13,7 @@ import '../../providers/core_provider.dart';
 import 'providers/profiles_providers.dart';
 import '../../shared/app_notifier.dart';
 import '../../infrastructure/repositories/profile_repository.dart';
-import '../../services/core_manager.dart';
+import '../../core/kernel/core_manager.dart';
 import '../../shared/formatters/subscription_parser.dart';
 import '../../theme.dart';
 import '../../widgets/loading_overlay.dart';

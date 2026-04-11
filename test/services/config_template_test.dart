@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:yuelink/services/config_template.dart';
+import 'package:yuelink/core/kernel/config_template.dart';
 
 void main() {
   group('ConfigTemplate.process', () {

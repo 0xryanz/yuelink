@@ -9,7 +9,7 @@ import '../../core/kernel/core_manager.dart';
 import '../../core/kernel/recovery_manager.dart';
 import '../../l10n/app_strings.dart';
 import '../../providers/core_provider.dart';
-import '../../providers/proxy_provider.dart';
+import '../../modules/nodes/providers/nodes_providers.dart';
 import '../../shared/app_notifier.dart';
 import 'system_proxy_manager.dart';
 

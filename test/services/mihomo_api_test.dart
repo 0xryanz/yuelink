@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:yuelink/services/mihomo_api.dart';
+import 'package:yuelink/infrastructure/datasources/mihomo_api.dart';
 
 void main() {
   group('MihomoApi', () {

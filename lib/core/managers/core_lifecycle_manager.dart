@@ -10,7 +10,7 @@ import '../../domain/models/traffic.dart';
 import '../../domain/models/traffic_history.dart';
 import '../../l10n/app_strings.dart';
 import '../../providers/core_provider.dart';
-import '../../providers/proxy_provider.dart';
+import '../../modules/nodes/providers/nodes_providers.dart';
 import '../../shared/app_notifier.dart';
 import '../../shared/event_log.dart';
 import 'system_proxy_manager.dart';

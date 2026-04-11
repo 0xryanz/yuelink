@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:yuelink/services/mihomo_stream.dart';
+import 'package:yuelink/infrastructure/datasources/mihomo_stream.dart';
 
 void main() {
   group('LogEntry', () {

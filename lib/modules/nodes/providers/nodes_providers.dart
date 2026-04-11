@@ -6,7 +6,7 @@ import 'package:yaml/yaml.dart';
 
 import '../../../core/storage/settings_service.dart';
 import '../../../domain/models/proxy.dart';
-import '../../../providers/profile_provider.dart';
+import '../../profiles/providers/profiles_providers.dart';
 import '../../../core/kernel/core_manager.dart';
 import '../../../infrastructure/repositories/profile_repository.dart';
 import '../../../infrastructure/repositories/proxy_repository.dart';

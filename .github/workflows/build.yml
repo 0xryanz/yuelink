@@ -136,10 +136,22 @@ jobs:
       - run: flutter pub get
 
       # ── Compile Go core (platform-aware) and copy into Flutter dirs ───────
+      # Windows + Linux: setup.dart's default builds BOTH amd64 + arm64, but
+      # the runners are x86_64 with no arm64 cross-toolchain, so the arm64
+      # half fails with `gcc_arm64.S: no such instruction`. Pin to amd64
+      # explicitly. Android / iOS / macOS handle their own arch matrices
+      # internally (NDK / lipo / static lib).
       - name: Build & install Go core
         shell: bash
         run: |
-          dart setup.dart build -p ${{ matrix.platform }}
+          case "${{ matrix.platform }}" in
+            windows|linux)
+              dart setup.dart build -p ${{ matrix.platform }} -a amd64
+              ;;
+            *)
+              dart setup.dart build -p ${{ matrix.platform }}
+              ;;
+          esac
           dart setup.dart install -p ${{ matrix.platform }}
 
       # ─────────────────────────────────────────────────────────────────────

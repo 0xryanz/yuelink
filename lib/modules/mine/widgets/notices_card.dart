@@ -57,16 +57,24 @@ class NoticesCard extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => const AnnouncementsPage()),
-                    ),
-                    child: Text(
-                      S.current.viewAll,
-                      style: YLText.caption.copyWith(
-                        color: YLColors.currentAccent,
-                        fontWeight: FontWeight.w500,
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(YLRadius.sm),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const AnnouncementsPage()),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 4),
+                        child: Text(
+                          S.current.viewAll,
+                          style: YLText.caption.copyWith(
+                            color: YLColors.currentAccent,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                       ),
                     ),
                   ),

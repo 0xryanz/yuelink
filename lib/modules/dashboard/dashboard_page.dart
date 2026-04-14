@@ -79,43 +79,64 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       ),
                       children: [
                         // ── 1. VPN 连接卡 ─────────────────────────────
-                        RepaintBoundary(
-                          child: HeroCard(
-                            status: status,
-                            onToggle: () => _toggle(context, ref),
+                        _StaggeredIn(
+                          index: 0,
+                          child: RepaintBoundary(
+                            child: HeroCard(
+                              status: status,
+                              onToggle: () => _toggle(context, ref),
+                            ),
                           ),
                         ),
 
                         const SizedBox(height: 12),
 
                         // ── 1.5 订阅过期提示 ─────────────────────────
-                        const RepaintBoundary(
-                            child: StaleSubscriptionBanner()),
+                        const _StaggeredIn(
+                          index: 1,
+                          child: RepaintBoundary(
+                              child: StaleSubscriptionBanner()),
+                        ),
 
                         const SizedBox(height: 12),
 
                         // ── 2. 快捷操作 ───────────────────────────────
-                        const RepaintBoundary(child: QuickActions()),
+                        const _StaggeredIn(
+                          index: 2,
+                          child: RepaintBoundary(child: QuickActions()),
+                        ),
 
                         const SizedBox(height: 12),
 
                         // ── 3. 公告（服务通知优先）──────────────────
-                        const RepaintBoundary(child: NoticesCard()),
+                        const _StaggeredIn(
+                          index: 3,
+                          child: RepaintBoundary(child: NoticesCard()),
+                        ),
 
                         const SizedBox(height: 12),
 
                         // ── 4. 悦视频推荐条 ───────────────────────────
-                        const RepaintBoundary(child: EmbyPreviewRow()),
+                        const _StaggeredIn(
+                          index: 4,
+                          child: RepaintBoundary(child: EmbyPreviewRow()),
+                        ),
 
                         const SizedBox(height: 12),
 
                         // ── 5. 签到 ─────────────────────────────────
-                        const RepaintBoundary(child: CheckinCard()),
+                        const _StaggeredIn(
+                          index: 5,
+                          child: RepaintBoundary(child: CheckinCard()),
+                        ),
 
                         const SizedBox(height: 12),
 
                         // ── 5. 数据监控（折叠）───────────────────────
-                        const RepaintBoundary(child: _TrafficSection()),
+                        const _StaggeredIn(
+                          index: 6,
+                          child: RepaintBoundary(child: _TrafficSection()),
+                        ),
 
                         const SizedBox(height: 16),
                       ],
@@ -338,5 +359,56 @@ class _TrafficSectionState extends ConsumerState<_TrafficSection> {
         ],
       ),
     );
+  }
+}
+
+// ── Staggered entrance animation wrapper ──────────────────────────────────────
+// Lightweight fade + slide-up entrance (20px, 400ms) with a short per-index
+// delay so dashboard cards cascade in on first paint. Uses TweenAnimationBuilder
+// only — no extra packages. Runs exactly once per mount (key-stable index).
+
+class _StaggeredIn extends StatelessWidget {
+  final int index;
+  final Widget child;
+
+  const _StaggeredIn({required this.index, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    // Total duration including per-index offset kept under ~600ms.
+    final delayMs = (index * 60).clamp(0, 360);
+    const animMs = 400;
+    final totalMs = delayMs + animMs;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0.0, end: 1.0),
+      duration: Duration(milliseconds: totalMs),
+      curve: _DelayedCurve(
+        delay: delayMs / totalMs,
+        inner: Curves.easeOutCubic,
+      ),
+      builder: (context, t, widget) {
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset(0, (1 - t) * 20),
+            child: widget,
+          ),
+        );
+      },
+      child: child,
+    );
+  }
+}
+
+class _DelayedCurve extends Curve {
+  final double delay; // 0..1 fraction of total duration
+  final Curve inner;
+  const _DelayedCurve({required this.delay, required this.inner});
+
+  @override
+  double transformInternal(double t) {
+    if (t < delay) return 0.0;
+    final remapped = (t - delay) / (1.0 - delay);
+    return inner.transform(remapped.clamp(0.0, 1.0));
   }
 }

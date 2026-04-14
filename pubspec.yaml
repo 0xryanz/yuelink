@@ -45,6 +45,7 @@ dependencies:
   volume_controller: ^3.0.0
   flutter_widget_from_html_core: ^0.15.2
   mobile_scanner: ^6.0.0
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:

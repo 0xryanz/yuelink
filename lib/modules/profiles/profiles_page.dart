@@ -18,6 +18,7 @@ import '../../infrastructure/repositories/profile_repository.dart';
 import '../../core/kernel/core_manager.dart';
 import '../../shared/formatters/subscription_parser.dart';
 import '../../theme.dart';
+import '../../shared/widgets/empty_state.dart';
 import '../../widgets/loading_overlay.dart';
 
 /// Strip "Exception: " prefix from error strings for user-facing display.
@@ -159,21 +160,26 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 constraints: const BoxConstraints(maxWidth: 720),
                 child: profilesAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => YLEmptyState(
-                icon: Icons.error_outline,
-                message: s.loadFailed(e.toString()),
-                action: FilledButton.icon(
-                  onPressed: () =>
-                      ref.read(profilesProvider.notifier).load(),
-                  icon: const Icon(Icons.refresh, size: 16),
-                  label: Text(s.retry),
+              error: (e, _) => Center(
+                child: YLEmptyState(
+                  icon: Icons.error_outline,
+                  title: s.loadFailed(e.toString()),
+                  action: FilledButton.icon(
+                    onPressed: () =>
+                        ref.read(profilesProvider.notifier).load(),
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: Text(s.retry),
+                  ),
                 ),
               ),
               data: (profiles) {
                 if (profiles.isEmpty) {
-                  return YLEmptyState(
-                    icon: Icons.description_outlined,
-                    message: '${s.noProfiles}\n${s.addSubscriptionHint}',
+                  return Center(
+                    child: YLEmptyState(
+                      icon: Icons.description_outlined,
+                      title: s.noProfiles,
+                      subtitle: s.addSubscriptionHint,
+                    ),
                   );
                 }
                 final sorted = List<Profile>.from(profiles)

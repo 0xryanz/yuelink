@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../domain/announcements/announcement_entity.dart';
 import '../../../i18n/app_strings.dart';
 import '../../../shared/rich_content.dart';
+import '../../../shared/widgets/empty_state.dart';
 import '../../../theme.dart';
 import '../providers/announcements_providers.dart';
 
@@ -44,50 +45,33 @@ class _AnnouncementsPageState extends ConsumerState<AnnouncementsPage> {
         error: (e, _) => Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.error_outline,
-                    size: 36, color: YLColors.zinc400),
-                const SizedBox(height: 8),
-                Text(
-                  e.toString(),
-                  style: YLText.body.copyWith(color: YLColors.zinc500),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                FilledButton.icon(
-                  onPressed: () {
-                    _markedRead = false;
-                    ref.invalidate(announcementsProvider);
-                  },
-                  icon: const Icon(Icons.refresh, size: 16),
-                  label: Text(s.retry),
-                ),
-              ],
+            child: YLEmptyState(
+              icon: Icons.error_outline,
+              title: e.toString(),
+              action: FilledButton.icon(
+                onPressed: () {
+                  _markedRead = false;
+                  ref.invalidate(announcementsProvider);
+                },
+                icon: const Icon(Icons.refresh, size: 16),
+                label: Text(s.retry),
+              ),
             ),
           ),
         ),
         data: (list) {
           if (list.isEmpty) {
             return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.campaign_outlined,
-                      size: 48, color: YLColors.zinc300),
-                  const SizedBox(height: 10),
-                  Text(s.dashNoAnnouncements,
-                      style: YLText.body.copyWith(color: YLColors.zinc400)),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: () {
-                      _markedRead = false;
-                      ref.invalidate(announcementsProvider);
-                    },
-                    child: Text(s.refresh),
-                  ),
-                ],
+              child: YLEmptyState(
+                icon: Icons.campaign_outlined,
+                title: s.dashNoAnnouncements,
+                action: TextButton(
+                  onPressed: () {
+                    _markedRead = false;
+                    ref.invalidate(announcementsProvider);
+                  },
+                  child: Text(s.refresh),
+                ),
               ),
             );
           }
@@ -156,26 +140,29 @@ class _AnnouncementTileState extends ConsumerState<_AnnouncementTile> {
           '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
     }
 
-    return GestureDetector(
-      onTap: () {
-        setState(() => _expanded = !_expanded);
-        if (item.id != null && !isRead) {
-          ref.read(readAnnouncementIdsProvider.notifier).markRead(item.id!);
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isDark ? YLColors.zinc800 : Colors.white,
-          borderRadius: BorderRadius.circular(YLRadius.lg),
-          border: Border.all(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.08)
-                : Colors.black.withValues(alpha: 0.08),
-            width: 0.5,
+    return Material(
+      color: isDark ? YLColors.zinc800 : Colors.white,
+      borderRadius: BorderRadius.circular(YLRadius.lg),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(YLRadius.lg),
+        onTap: () {
+          setState(() => _expanded = !_expanded);
+          if (item.id != null && !isRead) {
+            ref.read(readAnnouncementIdsProvider.notifier).markRead(item.id!);
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(YLRadius.lg),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.black.withValues(alpha: 0.08),
+              width: 0.5,
+            ),
           ),
-        ),
-        child: Column(
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -230,6 +217,7 @@ class _AnnouncementTileState extends ConsumerState<_AnnouncementTile> {
               RichContent(content: item.content),
             ],
           ],
+        ),
         ),
       ),
     );

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/proxy.dart';
 import '../../i18n/app_strings.dart';
 import '../../shared/app_notifier.dart';
+import '../../shared/widgets/empty_state.dart';
 import '../../theme.dart';
 import '../nodes/providers/nodes_providers.dart';
 import 'chain_proxy_provider.dart';
@@ -422,11 +423,12 @@ class _ChainPickerSheetState extends ConsumerState<_ChainPickerSheet> {
         Expanded(
           child: !hasResults
               ? Center(
-                  child: Text(
-                    _query.isEmpty ? '' : '无匹配结果',
-                    style:
-                        YLText.body.copyWith(color: YLColors.zinc400),
-                  ),
+                  child: _query.isEmpty
+                      ? const SizedBox.shrink()
+                      : const YLEmptyState(
+                          icon: Icons.search_off_rounded,
+                          title: '无匹配结果',
+                        ),
                 )
               : ListView(
                   padding: const EdgeInsets.only(

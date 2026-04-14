@@ -85,26 +85,34 @@ class HeroCard extends ConsumerWidget {
           // Row 1: Status dot + label ───────── Power button
           Row(
             children: [
-              YLStatusDot(
+              _PulsingStatusDot(
                 color: isRunning
                     ? YLColors.connected
                     : (isTransitioning ? YLColors.connecting : YLColors.zinc400),
-                glow: isRunning,
+                pulsing: status == CoreStatus.starting,
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  isRunning
-                      ? s.statusConnected
-                      : (isTransitioning
-                          ? s.statusProcessing
-                          : s.statusDisconnected),
-                  style: YLText.label.copyWith(
-                    color: isRunning ? YLColors.connected : YLColors.zinc500,
-                    fontWeight: FontWeight.w600,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  child: Text(
+                    isRunning
+                        ? s.statusConnected
+                        : (isTransitioning
+                            ? s.statusProcessing
+                            : s.statusDisconnected),
+                    key: ValueKey<String>(
+                      isRunning
+                          ? 'connected'
+                          : (isTransitioning ? 'processing' : 'disconnected'),
+                    ),
+                    style: YLText.label.copyWith(
+                      color: isRunning ? YLColors.connected : YLColors.zinc500,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 8),
@@ -225,6 +233,72 @@ class PowerButton extends StatelessWidget {
           color: isRunning ? Colors.white : YLColors.zinc400,
         ),
       ),
+    );
+  }
+}
+
+/// Status dot that pulses (scale + opacity) while [pulsing] is true.
+/// Falls back to a steady [YLStatusDot] otherwise.
+class _PulsingStatusDot extends StatefulWidget {
+  final Color color;
+  final bool pulsing;
+
+  const _PulsingStatusDot({
+    required this.color,
+    required this.pulsing,
+  });
+
+  @override
+  State<_PulsingStatusDot> createState() => _PulsingStatusDotState();
+}
+
+class _PulsingStatusDotState extends State<_PulsingStatusDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    if (widget.pulsing) _ctrl.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _PulsingStatusDot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.pulsing && !_ctrl.isAnimating) {
+      _ctrl.repeat(reverse: true);
+    } else if (!widget.pulsing && _ctrl.isAnimating) {
+      _ctrl.stop();
+      _ctrl.value = 0.0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dot = YLStatusDot(color: widget.color);
+    if (!widget.pulsing) return dot;
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        final t = _ctrl.value; // 0 → 1
+        final scale = 0.85 + 0.25 * t; // 0.85 → 1.10
+        final opacity = 0.55 + 0.45 * (1 - t); // 1.0 → 0.55
+        return Opacity(
+          opacity: opacity,
+          child: Transform.scale(scale: scale, child: child),
+        );
+      },
+      child: dot,
     );
   }
 }

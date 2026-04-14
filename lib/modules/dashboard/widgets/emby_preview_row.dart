@@ -12,6 +12,7 @@ import '../../../modules/emby/emby_web_page.dart';
 import '../../../core/providers/core_provider.dart';
 import '../../../shared/app_notifier.dart';
 import '../../../theme.dart';
+import '../../../shared/widgets/empty_state.dart';
 import '../providers/emby_preview_provider.dart';
 
 /// 悦视频推荐条 — 接入 Emby 真实数据。
@@ -317,12 +318,14 @@ class _PosterRow extends ConsumerWidget {
   Widget _buildEmpty(BuildContext context, bool isDark, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
-      child: SizedBox(
-        height: 80,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Center(
-          child: Text(
-            S.of(context).embyNoContent,
-            style: YLText.caption.copyWith(color: YLColors.zinc500),
+          child: YLEmptyState(
+            icon: Icons.movie_outlined,
+            title: S.of(context).embyNoContent,
+            size: 72,
           ),
         ),
       ),

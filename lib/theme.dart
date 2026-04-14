@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 // ── Semantic colour tokens (Vercel / Tailwind inspired) ──────────────────────
 
@@ -16,7 +17,9 @@ class YLColors {
   static const zinc500 = Color(0xFF71717A);
   static const zinc600 = Color(0xFF52525B);
   static const zinc700 = Color(0xFF3F3F46);
+  static const zinc750 = Color(0xFF333338); // Between zinc700 and zinc800
   static const zinc800 = Color(0xFF27272A);
+  static const zinc850 = Color(0xFF1F1F23); // Between zinc800 and zinc900
   static const zinc900 = Color(0xFF18181B);
   static const zinc950 = Color(0xFF09090B); // True dark for OLED/Premium feel
 
@@ -161,10 +164,22 @@ ThemeData buildTheme(Brightness brightness, {Color? accentColor}) {
   final colorScheme = seedScheme.copyWith(
     surface: surface,
     surfaceContainerLowest: bg,
+    surfaceContainerLow: isDark ? YLColors.zinc850 : YLColors.zinc50,
+    surfaceContainer: isDark ? YLColors.zinc800 : YLColors.zinc100,
+    surfaceContainerHigh: isDark ? YLColors.zinc750 : YLColors.zinc200,
+    surfaceContainerHighest: isDark ? YLColors.zinc700 : YLColors.zinc300,
     onSurface: isDark ? YLColors.zinc100 : YLColors.zinc900,
     onSurfaceVariant: isDark ? YLColors.zinc400 : YLColors.zinc500,
     outline: border,
     outlineVariant: isDark ? YLColors.zinc800 : YLColors.zinc200,
+  );
+
+  // Typography: Inter for Latin, Noto Sans SC / PingFang SC fallbacks for CJK.
+  final baseTextTheme = isDark
+      ? ThemeData.dark().textTheme
+      : ThemeData.light().textTheme;
+  final textTheme = GoogleFonts.interTextTheme(baseTextTheme).apply(
+    fontFamilyFallback: const ['PingFang SC', 'Noto Sans SC', 'Microsoft YaHei'],
   );
 
   return ThemeData(
@@ -179,7 +194,9 @@ ThemeData buildTheme(Brightness brightness, {Color? accentColor}) {
     hoverColor: isDark ? Colors.white.withValues(alpha: 0.04) : Colors.black.withValues(alpha: 0.03),
     // Linux: prefer Noto Sans for consistent CJK and Latin rendering.
     // Falls back to system default if Noto Sans is not installed.
+    // Kept as a fallback when Google Fonts cannot load (e.g. offline).
     fontFamily: Platform.isLinux ? 'Noto Sans' : null,
+    textTheme: textTheme,
 
     // Surfaces
     cardTheme: CardThemeData(
@@ -399,46 +416,6 @@ class YLDelayBadge extends StatelessWidget {
       ),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-    );
-  }
-}
-
-/// A centered empty state with icon, message, and optional action.
-class YLEmptyState extends StatelessWidget {
-  final IconData icon;
-  final String message;
-  final Widget? action;
-
-  const YLEmptyState({
-    super.key,
-    required this.icon,
-    required this.message,
-    this.action,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(YLSpacing.xxl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 48, color: isDark ? YLColors.zinc600 : YLColors.zinc300),
-            const SizedBox(height: YLSpacing.lg),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: YLText.body.copyWith(color: YLColors.zinc400),
-            ),
-            if (action != null) ...[
-              const SizedBox(height: YLSpacing.lg),
-              action!,
-            ],
-          ],
-        ),
-      ),
     );
   }
 }

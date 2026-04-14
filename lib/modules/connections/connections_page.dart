@@ -8,6 +8,7 @@ import '../../i18n/app_strings.dart';
 import '../../domain/models/connection.dart';
 import 'providers/connections_providers.dart';
 import '../../core/providers/core_provider.dart';
+import '../../shared/widgets/empty_state.dart';
 import '../../theme.dart';
 
 class ConnectionsPage extends ConsumerStatefulWidget {
@@ -254,19 +255,13 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
           Expanded(
             child: filtered.isEmpty
                 ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.search_off_rounded, size: 48,
-                            color: isDark ? YLColors.zinc700 : YLColors.zinc300),
-                        const SizedBox(height: 16),
-                        Text(
-                          isEmpty
-                              ? s.noActiveConnections
-                              : s.noMatchingConnections,
-                          style: YLText.body.copyWith(color: YLColors.zinc500),
-                        ),
-                      ],
+                    child: YLEmptyState(
+                      icon: isEmpty
+                          ? Icons.cable_rounded
+                          : Icons.search_off_rounded,
+                      title: isEmpty
+                          ? s.noActiveConnections
+                          : s.noMatchingConnections,
                     ),
                   )
                 : (Platform.isMacOS || Platform.isWindows || Platform.isLinux)

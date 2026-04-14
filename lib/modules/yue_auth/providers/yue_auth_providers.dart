@@ -67,13 +67,13 @@ class AuthState {
 // ------------------------------------------------------------------
 
 /// Default XBoard panel URL — override via AuthTokenService.saveApiHost().
-/// Uses yuetong.app (CloudFront CDN) as primary — clean domain, China-accessible.
-const _kDefaultApiHost = 'https://yuetong.app';
+/// Uses yue.yuebao.website (direct to 23.80.91.14) as primary — most reliable
+/// for API calls from China. CloudFront (yuetong.app) is better for web browsers
+/// but less stable for native app API calls in some Chinese ISPs.
+const _kDefaultApiHost = 'https://yue.yuebao.website';
 
-/// Direct origin fallback via the raw CloudFront distribution domain.
-/// Both endpoints hit the same CloudFront distribution (E1HUMZN8N2WASG),
-/// so this only helps if yuetong.app DNS is unreachable.
-const String? _kDirectOriginUrl = 'https://d7ccm19ki90mg.cloudfront.net';
+/// CloudFront CDN fallback — used when the direct origin is unreachable.
+const String? _kDirectOriginUrl = 'https://yuetong.app';
 
 /// Fallback hosts for subscription download when the original subscribe URL
 /// fails (404/502/timeout). The path is extracted from the original URL and

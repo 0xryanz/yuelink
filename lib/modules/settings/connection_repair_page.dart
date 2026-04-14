@@ -68,11 +68,11 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
           _Card(isDark: isDark, children: [
             _StatusRow(isDark: isDark),
           ]),
-          const SizedBox(height: 32),
+          const SizedBox(height: 8),
 
           // ── Repair actions ──
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 6),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
             child: Text(s.repairTools.toUpperCase(),
                 style: const TextStyle(
                   fontSize: 13,
@@ -148,11 +148,11 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
               }),
             ),
           ]),
-          const SizedBox(height: 32),
+          const SizedBox(height: 8),
 
           // ── Diagnostics (merged: network probes + startup report) ──
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 6),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
             child: Text(S.current.diagnosticsLabel.toUpperCase(),
                 style: const TextStyle(
                   fontSize: 13,
@@ -176,7 +176,7 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
                   MaterialPageRoute(builder: (_) => const StartupReportPage())),
             ),
           ]),
-          const SizedBox(height: 32),
+          const SizedBox(height: 8),
 
           // ── One-click full repair ──
           SizedBox(
@@ -220,7 +220,7 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
             style: YLText.caption.copyWith(color: YLColors.zinc400),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
         ],
       ),
     );

@@ -92,7 +92,7 @@ class _NoticeTile extends StatelessWidget {
       onTap: () => _showDetail(context),
       borderRadius: BorderRadius.circular(YLRadius.sm),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

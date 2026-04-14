@@ -306,6 +306,8 @@ class S {
   String get exportLogsCore => _t.exportLogsCore;
   String get exportLogsEmpty => _t.exportLogsEmpty;
   String get exportLogsCopied => _t.exportLogsCopied;
+  String get exportLogsSuccess => _t.exportLogsSuccess;
+  String get exportLogsFailed => _t.exportLogsFailed;
   String get sectionDesktop => _t.sectionDesktop;
   String get sectionNetwork => _t.sectionNetwork;
   String get closeWindowBehavior => _t.closeWindowBehavior;

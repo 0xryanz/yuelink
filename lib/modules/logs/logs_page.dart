@@ -43,7 +43,7 @@ class _LogPageState extends ConsumerState<LogPage>
   Future<void> _exportLogs(BuildContext context, WidgetRef ref) async {
     final logs = ref.read(logEntriesProvider);
     if (logs.isEmpty) {
-      AppNotifier.warning('没有可导出的日志');
+      AppNotifier.warning(S.current.exportLogsEmpty);
       return;
     }
 
@@ -72,9 +72,9 @@ class _LogPageState extends ConsumerState<LogPage>
       final file = File('${dir.path}/$fileName');
       await file.writeAsString(buffer.toString());
 
-      AppNotifier.success('日志已导出: $fileName');
+      AppNotifier.success('${S.current.exportLogsSuccess}: $fileName');
     } catch (e) {
-      AppNotifier.error('导出失败: $e');
+      AppNotifier.error('${S.current.exportLogsFailed}: $e');
     }
   }
 

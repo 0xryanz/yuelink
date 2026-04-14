@@ -239,7 +239,8 @@ class _GroupCardState extends ConsumerState<GroupCard>
             child: _expanded
                 ? Column(
                     children: [
-                      const Divider(height: 0.5),
+                      Divider(height: 1, thickness: 0.5, indent: 16, endIndent: 16,
+                        color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.06)),
                       Padding(
                         padding: const EdgeInsets.all(YLSpacing.sm),
                         child: LayoutBuilder(

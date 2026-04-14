@@ -259,6 +259,8 @@
   "exportLogsCore": "内核日志",
   "exportLogsEmpty": "暂无日志文件",
   "exportLogsCopied": "日志已复制到剪贴板",
+  "exportLogsSuccess": "日志已导出",
+  "exportLogsFailed": "导出失败",
   "sectionDesktop": "桌面端",
   "sectionNetwork": "网络",
   "closeWindowBehavior": "关闭窗口",

@@ -259,6 +259,8 @@
   "exportLogsCore": "Core Log",
   "exportLogsEmpty": "No log file found",
   "exportLogsCopied": "Log copied to clipboard",
+  "exportLogsSuccess": "Logs exported",
+  "exportLogsFailed": "Export failed",
   "sectionDesktop": "Desktop",
   "sectionNetwork": "Network",
   "closeWindowBehavior": "Close Window",

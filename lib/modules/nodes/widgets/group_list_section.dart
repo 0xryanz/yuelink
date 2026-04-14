@@ -182,7 +182,7 @@ class _Badge extends StatelessWidget {
         : (isDark ? YLColors.zinc700 : YLColors.zinc100);
     final fg = accent ? YLColors.connected : YLColors.zinc500;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(YLRadius.sm),

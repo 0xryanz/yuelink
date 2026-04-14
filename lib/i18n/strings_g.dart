@@ -4,9 +4,9 @@
 /// To regenerate, run: `dart run slang`
 ///
 /// Locales: 2
-/// Strings: 1312 (656 per locale)
+/// Strings: 1316 (658 per locale)
 ///
-/// Built on 2026-04-14 at 06:33 UTC
+/// Built on 2026-04-14 at 11:25 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -408,6 +408,8 @@ class Translations implements BaseTranslations<AppLocale, Translations> {
 	String get exportLogsCore => 'Core Log';
 	String get exportLogsEmpty => 'No log file found';
 	String get exportLogsCopied => 'Log copied to clipboard';
+	String get exportLogsSuccess => 'Logs exported';
+	String get exportLogsFailed => 'Export failed';
 	String get sectionDesktop => 'Desktop';
 	String get sectionNetwork => 'Network';
 	String get closeWindowBehavior => 'Close Window';
@@ -1092,6 +1094,8 @@ class _StringsGZhCn extends Translations {
 	@override String get exportLogsCore => '内核日志';
 	@override String get exportLogsEmpty => '暂无日志文件';
 	@override String get exportLogsCopied => '日志已复制到剪贴板';
+	@override String get exportLogsSuccess => '日志已导出';
+	@override String get exportLogsFailed => '导出失败';
 	@override String get sectionDesktop => '桌面端';
 	@override String get sectionNetwork => '网络';
 	@override String get closeWindowBehavior => '关闭窗口';
@@ -1756,6 +1760,8 @@ extension on Translations {
 			case 'exportLogsCore': return 'Core Log';
 			case 'exportLogsEmpty': return 'No log file found';
 			case 'exportLogsCopied': return 'Log copied to clipboard';
+			case 'exportLogsSuccess': return 'Logs exported';
+			case 'exportLogsFailed': return 'Export failed';
 			case 'sectionDesktop': return 'Desktop';
 			case 'sectionNetwork': return 'Network';
 			case 'closeWindowBehavior': return 'Close Window';
@@ -2420,6 +2426,8 @@ extension on _StringsGZhCn {
 			case 'exportLogsCore': return '内核日志';
 			case 'exportLogsEmpty': return '暂无日志文件';
 			case 'exportLogsCopied': return '日志已复制到剪贴板';
+			case 'exportLogsSuccess': return '日志已导出';
+			case 'exportLogsFailed': return '导出失败';
 			case 'sectionDesktop': return '桌面端';
 			case 'sectionNetwork': return '网络';
 			case 'closeWindowBehavior': return '关闭窗口';

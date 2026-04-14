@@ -77,12 +77,13 @@ const _kDefaultApiHost = 'https://yue.yuebao.website';
 const String? _kDirectOriginUrl = 'https://yuetong.app';
 
 /// Fallback hosts for subscription download when the original subscribe URL
-/// fails (404/502/timeout). The path is extracted from the original URL and
-/// retried against each host in order.
-const _kSubscribeFallbackHosts = [
-  'https://yuetong.app',
-  'https://d7ccm19ki90mg.cloudfront.net',
-];
+/// fails. Intentionally empty: the current subscribe path (/api/v2/avatar/)
+/// is served only by sso.yuetoto.com's nginx rewrite. Other hosts (yuetong.app,
+/// cloudfront) reach xboard directly and get rejected by the
+/// SubscriptionRiskControl plugin with a 403 HTML error page, which would
+/// be mis-parsed as a broken config. If the primary URL fails, show the real
+/// error instead of silently trying broken fallbacks.
+const _kSubscribeFallbackHosts = <String>[];
 
 /// Tracks the current API host — updated on login and restored from storage.
 final _apiHostProvider = StateProvider<String>((ref) => _kDefaultApiHost);

@@ -363,10 +363,9 @@ class _DiagEndpoint {
 }
 
 // User-facing labels abstract away internal endpoint URLs.
-// Each test probes a different layer: our servers, international reachability,
-// China-accessible connectivity, and DNS resolution.
+// Each test probes a standard reachability target — no internal server
+// URLs exposed to the user.
 const _kDiagEndpoints = [
-  _DiagEndpoint('悦通服务器', 'https://yuetong.app/api/v1/guest/comm/config'),
   _DiagEndpoint('国际网络', 'https://www.gstatic.com/generate_204'),
   _DiagEndpoint('Cloudflare', 'https://cp.cloudflare.com/generate_204'),
   _DiagEndpoint('国内网络', 'https://www.baidu.com'),

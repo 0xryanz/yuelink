@@ -172,7 +172,7 @@ class _FlutterEmbyViewState extends State<_FlutterEmbyView> {
                           style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.white70,
                               side: const BorderSide(color: Colors.white24)),
-                          child: const Text('重试'),
+                          child: Text(S.current.retry),
                         ),
                       ],
                     ),

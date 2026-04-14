@@ -59,7 +59,7 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
     return Scaffold(
       appBar: AppBar(
         leading: const BackButton(),
-        title: const Text('连接修复'),
+        title: Text(S.current.repairTitle),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -151,7 +151,7 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
           // ── Diagnostics ──
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-            child: Text('诊断',
+            child: Text(S.current.diagnosticsLabel,
                 style: YLText.caption.copyWith(
                     letterSpacing: 1.2,
                     fontWeight: FontWeight.w600,
@@ -161,7 +161,7 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
             _ActionRow(
               icon: Icons.bug_report_outlined,
               label: s.diagnostics,
-              subtitle: '查看最近一次连接的启动步骤和耗时',
+              subtitle: S.current.diagnosticsHint,
               isDark: isDark,
               busy: false,
               trailing: const Icon(Icons.chevron_right,
@@ -175,7 +175,7 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
           // ── Network diagnostics ──
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-            child: Text('网络诊断',
+            child: Text(S.current.networkDiagnostics,
                 style: YLText.caption.copyWith(
                     letterSpacing: 1.2,
                     fontWeight: FontWeight.w600,
@@ -468,7 +468,7 @@ class _NetworkDiagnosticsState extends State<_NetworkDiagnostics> {
                 color: isDark ? YLColors.zinc300 : YLColors.zinc600),
             const SizedBox(width: 12),
             Expanded(
-              child: Text('网络诊断',
+              child: Text(S.current.networkDiagnostics,
                   style: YLText.body.copyWith(
                       fontWeight: FontWeight.w500,
                       color: isDark ? YLColors.zinc200 : YLColors.zinc700)),

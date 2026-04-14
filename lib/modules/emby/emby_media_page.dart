@@ -550,7 +550,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
                     child: FilledButton.icon(
                       onPressed: () => _openItem(item),
                       icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                      label: const Text('播放'),
+                      label: Text(S.current.embyPlay),
                       style: FilledButton.styleFrom(
                         backgroundColor: Colors.white,
                         foregroundColor: Colors.black,
@@ -606,7 +606,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('查看全部',
+                      Text(S.current.viewAll,
                           style: TextStyle(
                               color: EmbyTheme.textSecondary(context),
                               fontSize: 13)),
@@ -801,7 +801,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
     }
     if (results.isEmpty) {
       return Center(
-        child: Text('无匹配结果',
+        child: Text(S.current.embyNoResults,
             style: TextStyle(color: EmbyTheme.textTertiary(context))),
       );
     }
@@ -836,7 +836,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
           Icon(Icons.inbox_outlined,
               color: EmbyTheme.textTertiary(context), size: 28),
           const SizedBox(height: 6),
-          Text('暂无内容',
+          Text(S.current.embyNoContent,
               style: TextStyle(
                   color: EmbyTheme.textTertiary(context), fontSize: 12)),
         ],
@@ -950,7 +950,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
                 foregroundColor: EmbyTheme.textSecondary(context),
                 side: BorderSide(color: EmbyTheme.textTertiary(context)),
               ),
-              child: const Text('重试'),
+              child: Text(S.current.retry),
             ),
           ],
         ),
@@ -1111,7 +1111,7 @@ class _LibraryGridPageState extends State<_LibraryGridPage> {
                 : _filtered.isEmpty
                     ? Center(
                         child: Text(
-                            _query.isNotEmpty ? '无匹配结果' : '暂无内容',
+                            _query.isNotEmpty ? S.current.embyNoResults : S.current.embyNoContent,
                             style: TextStyle(
                                 color: EmbyTheme.textTertiary(context))))
                     : GridView.builder(
@@ -1289,7 +1289,7 @@ class _BoxSetGridPageState extends State<_BoxSetGridPage> {
                   color: EmbyTheme.textSecondary(context)))
           : _items == null || _items!.isEmpty
               ? Center(
-                  child: Text('暂无内容',
+                  child: Text(S.current.embyNoContent,
                       style:
                           TextStyle(color: EmbyTheme.textTertiary(context))))
               : GridView.builder(

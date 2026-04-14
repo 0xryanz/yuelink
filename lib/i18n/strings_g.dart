@@ -4,9 +4,9 @@
 /// To regenerate, run: `dart run slang`
 ///
 /// Locales: 2
-/// Strings: 1344 (672 per locale)
+/// Strings: 1410 (705 per locale)
 ///
-/// Built on 2026-04-14 at 11:30 UTC
+/// Built on 2026-04-14 at 11:36 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -820,6 +820,39 @@ class Translations implements BaseTranslations<AppLocale, Translations> {
 	String get smartSelect => 'Smart Select';
 	String get embySearchHint => 'Search all libraries...';
 	String get refresh => 'Refresh';
+	String get otherSubscriptions => 'Other Subscriptions';
+	String get heroBannerEmby => '4K movies · J-Drama · Anime, watch anywhere anytime';
+	String get heroBannerAi => 'Dedicated line to ChatGPT / Gemini, low-latency stable access';
+	String get heroBannerUpgrade => 'Upgrade your plan for more nodes · more traffic · faster speed';
+	String get embyPlay => 'Play';
+	String get embyDirector => 'Director';
+	String get embyCast => 'Cast';
+	String get embySimilar => 'Similar';
+	String get embyNoResults => 'No results';
+	String get embyResumeTitle => 'Resume Playback';
+	String get embyRestartBtn => 'Restart';
+	String get embyContinueBtn => 'Continue';
+	String get embySpeedUp => '▶▶ 2x Speed';
+	String get embyPlayFailed => 'Playback failed';
+	String get embyNoAudioTrack => 'No audio tracks';
+	String get close => 'Close';
+	String get embySubtitleSize => 'Subtitle size';
+	String get feedbackEmpty => 'Please enter feedback content';
+	String get feedbackSuccess => 'Thanks for your feedback, we will handle it shortly';
+	String get feedbackFailed => 'Submit failed, please try again later';
+	String get feedbackNetError => 'Network error, please try again later';
+	String get feedbackTitle => 'Feedback';
+	String get feedbackHint => 'Please describe the issue or suggestion in detail…';
+	String get feedbackContactHint => 'Telegram / Email';
+	String get feedbackSubmit => 'Submit Feedback';
+	String get available => 'Available';
+	String get applyBestNode => 'Apply best: ';
+	String get repairTitle => 'Connection Repair';
+	String get diagnosticsLabel => 'Diagnostics';
+	String get diagnosticsHint => 'View steps and timing of last connection startup';
+	String get networkDiagnostics => 'Network Diagnostics';
+	String get trafficUsedTotal => 'Used / Total';
+	String get trafficRemaining => 'Remaining';
 }
 
 // Path: <root>
@@ -1520,6 +1553,39 @@ class _StringsGZhCn extends Translations {
 	@override String get smartSelect => '智能选线';
 	@override String get embySearchHint => '搜索所有媒体库...';
 	@override String get refresh => '刷新';
+	@override String get otherSubscriptions => '其他订阅';
+	@override String get heroBannerEmby => '4K 精选电影 · 日剧 · 动漫，随时随地畅看';
+	@override String get heroBannerAi => '专线直连 ChatGPT / Gemini，低延迟稳定访问';
+	@override String get heroBannerUpgrade => '升级套餐，享受更多节点 · 更高流量 · 更快速度';
+	@override String get embyPlay => '播放';
+	@override String get embyDirector => '导演';
+	@override String get embyCast => '演员';
+	@override String get embySimilar => '相似推荐';
+	@override String get embyNoResults => '无匹配结果';
+	@override String get embyResumeTitle => '继续上次播放';
+	@override String get embyRestartBtn => '重新开始';
+	@override String get embyContinueBtn => '继续';
+	@override String get embySpeedUp => '▶▶ 2x 加速中';
+	@override String get embyPlayFailed => '播放失败';
+	@override String get embyNoAudioTrack => '无可用音轨';
+	@override String get close => '关闭';
+	@override String get embySubtitleSize => '字幕大小';
+	@override String get feedbackEmpty => '请输入反馈内容';
+	@override String get feedbackSuccess => '感谢反馈，我们会尽快处理';
+	@override String get feedbackFailed => '提交失败，请稍后重试';
+	@override String get feedbackNetError => '网络错误，请稍后重试';
+	@override String get feedbackTitle => '意见反馈';
+	@override String get feedbackHint => '请详细描述问题或建议…';
+	@override String get feedbackContactHint => 'Telegram / 邮箱';
+	@override String get feedbackSubmit => '提交反馈';
+	@override String get available => '可用';
+	@override String get applyBestNode => '一键应用最优：';
+	@override String get repairTitle => '连接修复';
+	@override String get diagnosticsLabel => '诊断';
+	@override String get diagnosticsHint => '查看最近一次连接的启动步骤和耗时';
+	@override String get networkDiagnostics => '网络诊断';
+	@override String get trafficUsedTotal => '已用 / 总量';
+	@override String get trafficRemaining => '剩余';
 }
 
 /// Flat map(s) containing all translations.
@@ -2200,6 +2266,39 @@ extension on Translations {
 			case 'smartSelect': return 'Smart Select';
 			case 'embySearchHint': return 'Search all libraries...';
 			case 'refresh': return 'Refresh';
+			case 'otherSubscriptions': return 'Other Subscriptions';
+			case 'heroBannerEmby': return '4K movies · J-Drama · Anime, watch anywhere anytime';
+			case 'heroBannerAi': return 'Dedicated line to ChatGPT / Gemini, low-latency stable access';
+			case 'heroBannerUpgrade': return 'Upgrade your plan for more nodes · more traffic · faster speed';
+			case 'embyPlay': return 'Play';
+			case 'embyDirector': return 'Director';
+			case 'embyCast': return 'Cast';
+			case 'embySimilar': return 'Similar';
+			case 'embyNoResults': return 'No results';
+			case 'embyResumeTitle': return 'Resume Playback';
+			case 'embyRestartBtn': return 'Restart';
+			case 'embyContinueBtn': return 'Continue';
+			case 'embySpeedUp': return '▶▶ 2x Speed';
+			case 'embyPlayFailed': return 'Playback failed';
+			case 'embyNoAudioTrack': return 'No audio tracks';
+			case 'close': return 'Close';
+			case 'embySubtitleSize': return 'Subtitle size';
+			case 'feedbackEmpty': return 'Please enter feedback content';
+			case 'feedbackSuccess': return 'Thanks for your feedback, we will handle it shortly';
+			case 'feedbackFailed': return 'Submit failed, please try again later';
+			case 'feedbackNetError': return 'Network error, please try again later';
+			case 'feedbackTitle': return 'Feedback';
+			case 'feedbackHint': return 'Please describe the issue or suggestion in detail…';
+			case 'feedbackContactHint': return 'Telegram / Email';
+			case 'feedbackSubmit': return 'Submit Feedback';
+			case 'available': return 'Available';
+			case 'applyBestNode': return 'Apply best: ';
+			case 'repairTitle': return 'Connection Repair';
+			case 'diagnosticsLabel': return 'Diagnostics';
+			case 'diagnosticsHint': return 'View steps and timing of last connection startup';
+			case 'networkDiagnostics': return 'Network Diagnostics';
+			case 'trafficUsedTotal': return 'Used / Total';
+			case 'trafficRemaining': return 'Remaining';
 			default: return null;
 		}
 	}
@@ -2880,6 +2979,39 @@ extension on _StringsGZhCn {
 			case 'smartSelect': return '智能选线';
 			case 'embySearchHint': return '搜索所有媒体库...';
 			case 'refresh': return '刷新';
+			case 'otherSubscriptions': return '其他订阅';
+			case 'heroBannerEmby': return '4K 精选电影 · 日剧 · 动漫，随时随地畅看';
+			case 'heroBannerAi': return '专线直连 ChatGPT / Gemini，低延迟稳定访问';
+			case 'heroBannerUpgrade': return '升级套餐，享受更多节点 · 更高流量 · 更快速度';
+			case 'embyPlay': return '播放';
+			case 'embyDirector': return '导演';
+			case 'embyCast': return '演员';
+			case 'embySimilar': return '相似推荐';
+			case 'embyNoResults': return '无匹配结果';
+			case 'embyResumeTitle': return '继续上次播放';
+			case 'embyRestartBtn': return '重新开始';
+			case 'embyContinueBtn': return '继续';
+			case 'embySpeedUp': return '▶▶ 2x 加速中';
+			case 'embyPlayFailed': return '播放失败';
+			case 'embyNoAudioTrack': return '无可用音轨';
+			case 'close': return '关闭';
+			case 'embySubtitleSize': return '字幕大小';
+			case 'feedbackEmpty': return '请输入反馈内容';
+			case 'feedbackSuccess': return '感谢反馈，我们会尽快处理';
+			case 'feedbackFailed': return '提交失败，请稍后重试';
+			case 'feedbackNetError': return '网络错误，请稍后重试';
+			case 'feedbackTitle': return '意见反馈';
+			case 'feedbackHint': return '请详细描述问题或建议…';
+			case 'feedbackContactHint': return 'Telegram / 邮箱';
+			case 'feedbackSubmit': return '提交反馈';
+			case 'available': return '可用';
+			case 'applyBestNode': return '一键应用最优：';
+			case 'repairTitle': return '连接修复';
+			case 'diagnosticsLabel': return '诊断';
+			case 'diagnosticsHint': return '查看最近一次连接的启动步骤和耗时';
+			case 'networkDiagnostics': return '网络诊断';
+			case 'trafficUsedTotal': return '已用 / 总量';
+			case 'trafficRemaining': return '剩余';
 			default: return null;
 		}
 	}

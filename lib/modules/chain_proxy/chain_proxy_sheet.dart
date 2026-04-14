@@ -499,7 +499,7 @@ class _ChainPickerSheetState extends ConsumerState<_ChainPickerSheet> {
         if (entries.isEmpty) return [];
         final widgets = <Widget>[
           const SizedBox(height: 8),
-          _SectionHeader(label: '其他订阅'),
+          _SectionHeader(label: S.current.otherSubscriptions),
         ];
         for (final entry in entries) {
           final filtered = q.isEmpty

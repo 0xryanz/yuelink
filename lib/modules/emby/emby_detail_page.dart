@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../i18n/app_strings.dart';
 import 'emby_client.dart';
 import 'emby_player_page.dart';
 import 'emby_theme.dart';
@@ -441,7 +442,7 @@ class _EmbyDetailPageState extends State<EmbyDetailPage> {
                   ].join(' · '),
                 ),
                 icon: const Icon(Icons.play_arrow_rounded, size: 22),
-                label: const Text('播放'),
+                label: Text(S.current.embyPlay),
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.white,
                   foregroundColor: Colors.black,
@@ -483,12 +484,12 @@ class _EmbyDetailPageState extends State<EmbyDetailPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (directors.isNotEmpty) ...[
-            Text('导演: ${directors.join(', ')}',
+            Text('${S.current.embyDirector}: ${directors.join(', ')}',
                 style: const TextStyle(color: Colors.white38, fontSize: 12)),
             const SizedBox(height: 8),
           ],
           if (actors.isNotEmpty) ...[
-            const Text('演员',
+            Text(S.current.embyCast,
                 style: TextStyle(
                     color: Colors.white,
                     fontSize: 15,
@@ -556,9 +557,9 @@ class _EmbyDetailPageState extends State<EmbyDetailPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Text('相似推荐',
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(S.current.embySimilar,
                 style: TextStyle(
                     color: Colors.white,
                     fontSize: 15,

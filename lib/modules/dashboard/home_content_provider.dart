@@ -119,7 +119,7 @@ class HomeContent {
   });
 
   /// Local static config used in v1 and as a fallback in v2.
-  factory HomeContent.local() => const HomeContent(
+  factory HomeContent.local() => HomeContent(
         banners: kLocalHeroBanners,
       );
 

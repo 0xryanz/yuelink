@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../../i18n/app_strings.dart';
 import '../../../theme.dart';
 import '../../../shared/app_notifier.dart';
 
@@ -29,7 +30,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
   Future<void> _submit() async {
     final text = _ctrl.text.trim();
     if (text.isEmpty) {
-      AppNotifier.error('请输入反馈内容');
+      AppNotifier.error(S.current.feedbackEmpty);
       return;
     }
 
@@ -51,16 +52,16 @@ class _FeedbackPageState extends State<FeedbackPage> {
         if (!mounted) return;
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
-          AppNotifier.success('感谢反馈，我们会尽快处理');
+          AppNotifier.success(S.current.feedbackSuccess);
           Navigator.of(context).pop();
         } else {
-          AppNotifier.error('提交失败，请稍后重试');
+          AppNotifier.error(S.current.feedbackFailed);
         }
       } finally {
         client.close();
       }
     } catch (_) {
-      if (mounted) AppNotifier.error('网络错误，请稍后重试');
+      if (mounted) AppNotifier.error(S.current.feedbackNetError);
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -72,7 +73,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
     return Scaffold(
       appBar: AppBar(
         leading: const BackButton(),
-        title: const Text('意见反馈'),
+        title: Text(S.current.feedbackTitle),
         backgroundColor: isDark ? YLColors.zinc900 : Colors.white,
         foregroundColor: isDark ? Colors.white : YLColors.zinc900,
         elevation: 0,
@@ -107,7 +108,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                 color: isDark ? Colors.white : YLColors.zinc900,
               ),
               decoration: InputDecoration(
-                hintText: '请详细描述问题或建议…',
+                hintText: S.current.feedbackHint,
                 hintStyle: YLText.body.copyWith(color: YLColors.zinc400),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.all(14),
@@ -140,7 +141,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                 color: isDark ? Colors.white : YLColors.zinc900,
               ),
               decoration: InputDecoration(
-                hintText: 'Telegram / 邮箱',
+                hintText: S.current.feedbackContactHint,
                 hintStyle: YLText.body.copyWith(color: YLColors.zinc400),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.all(14),
@@ -167,7 +168,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('提交反馈', style: TextStyle(fontWeight: FontWeight.w600)),
+                  : Text(S.current.feedbackSubmit, style: const TextStyle(fontWeight: FontWeight.w600)),
             ),
           ),
         ],

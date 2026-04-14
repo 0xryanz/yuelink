@@ -546,7 +546,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           Divider(
                               height: 1, thickness: 0.5, color: dividerColor),
                           YLInfoRow(
-                            label: '连接修复',
+                            label: S.current.repairTitle,
                             trailing: const Icon(Icons.chevron_right,
                                 size: 18, color: YLColors.zinc400),
                             onTap: () => Navigator.of(context).push(
@@ -870,7 +870,7 @@ class _ProfileRow extends ConsumerWidget {
                 icon: Icon(Icons.lock_outline_rounded,
                     size: 18,
                     color: isDark ? YLColors.zinc400 : YLColors.zinc500),
-                tooltip: '修改密码',
+                tooltip: S.current.mineChangePassword,
                 onPressed: () {
                   final s = S.of(context);
                   final oldPwCtrl = TextEditingController();
@@ -928,7 +928,7 @@ class _ProfileRow extends ConsumerWidget {
               IconButton(
                 icon: Icon(Icons.logout_rounded,
                     size: 18, color: YLColors.error.withValues(alpha: 0.7)),
-                tooltip: '退出登录',
+                tooltip: S.current.authLogout,
                 onPressed: () {
                   final s = S.of(context);
                   showDialog(
@@ -998,7 +998,7 @@ class _MineTrafficSection extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Text('已用 / 总量',
+                Text(S.current.trafficUsedTotal,
                     style: YLText.caption.copyWith(color: YLColors.zinc500)),
                 const SizedBox(width: 8),
                 Expanded(
@@ -1031,7 +1031,7 @@ class _MineTrafficSection extends ConsumerWidget {
             Row(
               children: [
                 Expanded(
-                  child: Text('剩余 $remainStr',
+                  child: Text('${S.current.trafficRemaining} $remainStr',
                       style: YLText.caption.copyWith(color: YLColors.zinc500),
                       overflow: TextOverflow.ellipsis),
                 ),

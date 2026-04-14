@@ -297,7 +297,7 @@ class SmartSelectNotifier extends StateNotifier<SmartSelectState> {
         node.primarySelection,
       );
       if (!ok) {
-        AppNotifier.error('切换失败');
+        AppNotifier.error(S.current.switchFailed);
         return;
       }
 
@@ -309,9 +309,9 @@ class SmartSelectNotifier extends StateNotifier<SmartSelectState> {
         );
       }
 
-      AppNotifier.success('已切换到 ${node.name}');
+      AppNotifier.success(S.current.switchedTo(node.name));
     } catch (e) {
-      AppNotifier.error('切换失败: $e');
+      AppNotifier.error('${S.current.switchFailed}: $e');
     }
   }
 

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../i18n/app_strings.dart';
+
 // ── Action types ──────────────────────────────────────────────────────────────
 
 /// Supported action types for a [HeroBannerItem] tap.
@@ -131,31 +133,31 @@ class HeroBannerItem {
 ///
 /// Order matters: first item is shown on cold start.
 /// Keep to ≤ 4 items to avoid carousel fatigue.
-const kLocalHeroBanners = [
+List<HeroBannerItem> get kLocalHeroBanners => [
   HeroBannerItem(
     id: 'emby_promo',
-    title: '悦视频',
-    subtitle: '4K 精选电影 · 日剧 · 动漫，随时随地畅看',
-    gradientStart: Color(0xFF0f2027),
-    gradientEnd: Color(0xFF2c5364),
+    title: S.current.mineEmby,
+    subtitle: S.current.heroBannerEmby,
+    gradientStart: const Color(0xFF0f2027),
+    gradientEnd: const Color(0xFF2c5364),
     iconEmoji: '🎬',
     actionType: BannerActionType.openEmby,
   ),
   HeroBannerItem(
     id: 'ai_mode',
     title: 'AI 加速模式',
-    subtitle: '专线直连 ChatGPT / Gemini，低延迟稳定访问',
-    gradientStart: Color(0xFF1a1a2e),
-    gradientEnd: Color(0xFF533483),
+    subtitle: S.current.heroBannerAi,
+    gradientStart: const Color(0xFF1a1a2e),
+    gradientEnd: const Color(0xFF533483),
     iconEmoji: '🤖',
     actionType: BannerActionType.openAnnouncement,
   ),
   HeroBannerItem(
     id: 'upgrade',
     title: '解锁更多权益',
-    subtitle: '升级套餐，享受更多节点 · 更高流量 · 更快速度',
-    gradientStart: Color(0xFF1f4037),
-    gradientEnd: Color(0xFF2a6049),
+    subtitle: S.current.heroBannerUpgrade,
+    gradientStart: const Color(0xFF1f4037),
+    gradientEnd: const Color(0xFF2a6049),
     iconEmoji: '⚡',
     actionType: BannerActionType.openStore,
   ),

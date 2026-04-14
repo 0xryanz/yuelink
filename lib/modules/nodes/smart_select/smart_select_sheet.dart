@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../i18n/app_strings.dart';
 import '../../../shared/app_notifier.dart';
 import '../../../theme.dart';
 import 'smart_select_provider.dart';
@@ -326,7 +327,7 @@ class _SmartSelectSheetState extends ConsumerState<_SmartSelectSheet> {
             style: FilledButton.styleFrom(
               backgroundColor: isDark ? YLColors.zinc700 : YLColors.zinc800,
             ),
-            child: const Text('重试'),
+            child: Text(S.current.retry),
           ),
         ],
       ),
@@ -374,7 +375,7 @@ class _SmartSelectSheetState extends ConsumerState<_SmartSelectSheet> {
               ),
               const SizedBox(width: 20),
               _Stat(
-                label: '可用',
+                label: S.current.available,
                 value: '${result.totalAvailable}',
                 color: result.totalAvailable > 0
                     ? YLColors.connected
@@ -426,7 +427,7 @@ class _SmartSelectSheetState extends ConsumerState<_SmartSelectSheet> {
                     Navigator.of(context).pop();
                   },
                   icon: const Icon(Icons.auto_awesome_rounded, size: 16),
-                  label: Text('一键应用最优：${result.top.first.name}'),
+                  label: Text('${S.current.applyBestNode}${result.top.first.name}'),
                   style: FilledButton.styleFrom(
                     backgroundColor:
                         isDark ? YLColors.zinc700 : YLColors.zinc800,

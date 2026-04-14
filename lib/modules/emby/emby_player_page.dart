@@ -8,6 +8,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../core/kernel/core_manager.dart';
+import '../../i18n/app_strings.dart';
 import 'emby_client.dart';
 
 const _pipChannel = MethodChannel('com.yueto.yuelink/pip');
@@ -209,20 +210,20 @@ class _EmbyPlayerPageState extends State<EmbyPlayerPage> with WidgetsBindingObse
           backgroundColor: const Color(0xFF1C1C1E),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          title: const Text('继续上次播放',
+          title: Text(S.current.embyResumeTitle,
               style: TextStyle(color: Colors.white, fontSize: 16)),
           content: Text(_formatPosition(posSeconds),
               style: const TextStyle(color: Colors.white70)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('重新开始',
-                  style: TextStyle(color: Colors.white54)),
+              child: Text(S.current.embyRestartBtn,
+                  style: const TextStyle(color: Colors.white54)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
               child:
-                  const Text('继续', style: TextStyle(color: Colors.redAccent)),
+                  Text(S.current.embyContinueBtn, style: const TextStyle(color: Colors.redAccent)),
             ),
           ],
         ),
@@ -595,7 +596,7 @@ class _EmbyPlayerPageState extends State<EmbyPlayerPage> with WidgetsBindingObse
                         color: Colors.black54,
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text('▶▶ 2x 加速中',
+                      child: Text(S.current.embySpeedUp,
                           style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
                     ),
                   ),
@@ -627,7 +628,7 @@ class _EmbyPlayerPageState extends State<EmbyPlayerPage> with WidgetsBindingObse
             const Icon(Icons.error_outline_rounded,
                 color: Colors.white38, size: 48),
             const SizedBox(height: 16),
-            const Text('播放失败',
+            Text(S.current.embyPlayFailed,
                 style: TextStyle(
                     color: Colors.white,
                     fontSize: 18,
@@ -648,7 +649,7 @@ class _EmbyPlayerPageState extends State<EmbyPlayerPage> with WidgetsBindingObse
                 foregroundColor: Colors.white70,
                 side: const BorderSide(color: Colors.white24),
               ),
-              child: const Text('重试'),
+              child: Text(S.current.retry),
             ),
           ],
         ),
@@ -765,8 +766,8 @@ class _SettingsPanelState extends State<_SettingsPanel>
     final embedded = widget.player.state.tracks.audio;
     final real = embedded.length > 2 ? embedded.sublist(2) : <AudioTrack>[];
     if (real.isEmpty) {
-      return const Center(
-          child: Text('无可用音轨', style: TextStyle(color: Colors.white38)));
+      return Center(
+          child: Text(S.current.embyNoAudioTrack, style: const TextStyle(color: Colors.white38)));
     }
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -810,7 +811,7 @@ class _SettingsPanelState extends State<_SettingsPanel>
       children: [
         // Track selection.
         _OptionTile(
-          label: '关闭',
+          label: S.current.close,
           selected:
               widget.player.state.track.subtitle == SubtitleTrack.no(),
           onTap: () {
@@ -848,7 +849,7 @@ class _SettingsPanelState extends State<_SettingsPanel>
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 4),
           child: Row(
             children: [
-              const Text('字幕大小',
+              Text(S.current.embySubtitleSize,
                   style: TextStyle(color: Colors.white54, fontSize: 12)),
               const SizedBox(width: 16),
               ...sizes.entries.map((e) => Padding(

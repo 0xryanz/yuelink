@@ -162,7 +162,7 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
           _Card(isDark: isDark, children: [
             _ActionRow(
               icon: Icons.bug_report_outlined,
-              label: s.diagnostics,
+              label: s.viewStartupReport,
               subtitle: S.current.diagnosticsHint,
               isDark: isDark,
               busy: false,

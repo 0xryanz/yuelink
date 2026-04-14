@@ -27,6 +27,7 @@ import '../../modules/nodes/providers/nodes_providers.dart';
 import '../../core/env_config.dart';
 import '../updater/update_checker.dart';
 import '../../shared/rich_content.dart';
+import '../../shared/widgets/setting_icon.dart';
 import '../../theme.dart';
 import '../mine/providers/account_providers.dart';
 import '../surge_modules/pages/modules_page.dart';
@@ -439,6 +440,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                         children: [
                           YLInfoRow(
                             label: s.mineSubscriptionManage,
+                            leading: const YLSettingIcon(
+                                icon: Icons.cloud_outlined,
+                                color: Colors.blue),
                             trailing: const Icon(Icons.chevron_right,
                                 size: 18, color: YLColors.zinc400),
                             onTap: () => Navigator.of(context).push(
@@ -451,6 +455,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                                 height: 1, thickness: 0.5, color: dividerColor),
                             YLInfoRow(
                               label: s.mineRenew,
+                              leading: const YLSettingIcon(
+                                  icon: Icons.shopping_bag_outlined,
+                                  color: Colors.pink),
                               trailing: const Icon(Icons.chevron_right,
                                   size: 18, color: YLColors.zinc400),
                               onTap: () => Navigator.of(context).push(
@@ -462,6 +469,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                                 height: 1, thickness: 0.5, color: dividerColor),
                             YLInfoRow(
                               label: s.storeOrderHistory,
+                              leading: const YLSettingIcon(
+                                  icon: Icons.receipt_long_outlined,
+                                  color: Colors.orange),
                               trailing: const Icon(Icons.chevron_right,
                                   size: 18, color: YLColors.zinc400),
                               onTap: () => Navigator.of(context).push(
@@ -479,6 +489,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                     _SettingsCard(
                       child: YLInfoRow(
                         label: s.modulesLabel,
+                        leading: const YLSettingIcon(
+                            icon: Icons.extension_outlined,
+                            color: Colors.deepPurple),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -525,6 +538,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                         children: [
                           YLInfoRow(
                             label: s.preferencesLabel,
+                            leading: const YLSettingIcon(
+                                icon: Icons.settings_outlined,
+                                color: Colors.grey),
                             trailing: const Icon(Icons.chevron_right,
                                 size: 18, color: YLColors.zinc400),
                             onTap: () => Navigator.of(context).push(
@@ -536,6 +552,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                               height: 1, thickness: 0.5, color: dividerColor),
                           YLInfoRow(
                             label: s.overwriteTitle,
+                            leading: const YLSettingIcon(
+                                icon: Icons.code, color: Colors.grey),
                             trailing: const Icon(Icons.chevron_right,
                                 size: 18, color: YLColors.zinc400),
                             onTap: () => Navigator.of(context).push(
@@ -547,6 +565,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                               height: 1, thickness: 0.5, color: dividerColor),
                           YLInfoRow(
                             label: S.current.repairTitle,
+                            leading: const YLSettingIcon(
+                                icon: Icons.build_outlined,
+                                color: Colors.red),
                             trailing: const Icon(Icons.chevron_right,
                                 size: 18, color: YLColors.zinc400),
                             onTap: () => Navigator.of(context).push(
@@ -568,6 +589,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           if (EnvConfig.isStandalone) ...[
                             YLInfoRow(
                               label: s.checkUpdate,
+                              leading: const YLSettingIcon(
+                                  icon: Icons.system_update,
+                                  color: Colors.teal),
                               value:
                                   ref.watch(appVersionProvider).valueOrNull ??
                                       '',
@@ -616,6 +640,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           ],
                           YLInfoRow(
                             label: s.mineTelegramGroup,
+                            leading: const YLSettingIcon(
+                                icon: Icons.send,
+                                color: Color(0xFF229ED9)),
                             trailing: const Icon(Icons.chevron_right,
                                 size: 18, color: YLColors.zinc400),
                             onTap: () async {
@@ -635,6 +662,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                               height: 1, thickness: 0.5, color: dividerColor),
                           YLInfoRow(
                             label: s.minePrivacyPolicy,
+                            leading: const YLSettingIcon(
+                                icon: Icons.lock_outline,
+                                color: Colors.green),
                             trailing: const Icon(Icons.chevron_right,
                                 size: 18, color: YLColors.zinc400),
                             onTap: () {
@@ -651,6 +681,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                               height: 1, thickness: 0.5, color: dividerColor),
                           YLInfoRow(
                             label: s.openSourceLicense,
+                            leading: const YLSettingIcon(
+                                icon: Icons.info_outline,
+                                color: Colors.blue),
                             trailing: const Icon(Icons.chevron_right,
                                 size: 18, color: YLColors.zinc400),
                             onTap: () => showLicensePage(
@@ -1108,13 +1141,14 @@ class _SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 24, 4, 8),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 6),
       child: Text(
         text.toUpperCase(),
-        style: YLText.caption.copyWith(
-          letterSpacing: 1.5,
-          fontWeight: FontWeight.w600,
-          color: YLColors.zinc400,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w400,
+          color: YLColors.zinc500,
+          letterSpacing: -0.08,
         ),
       ),
     );
@@ -1154,6 +1188,7 @@ class YLInfoRow extends StatelessWidget {
   final String label;
   final String? value;
   final Widget? trailing;
+  final Widget? leading;
   final VoidCallback? onTap;
   final bool enabled;
   final TextStyle? labelStyle;
@@ -1163,6 +1198,7 @@ class YLInfoRow extends StatelessWidget {
     required this.label,
     this.value,
     this.trailing,
+    this.leading,
     this.onTap,
     this.enabled = true,
     this.labelStyle,
@@ -1182,6 +1218,10 @@ class YLInfoRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
+          if (leading != null) ...[
+            leading!,
+            const SizedBox(width: 12),
+          ],
           Expanded(
             child: Text(label,
                 style: labelStyle ?? YLText.body.copyWith(color: labelColor)),

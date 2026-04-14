@@ -166,6 +166,7 @@ class _ProfileContent extends ConsumerWidget {
                 style: YLText.caption.copyWith(
                   color: isDark ? YLColors.zinc300 : YLColors.zinc700,
                   fontWeight: FontWeight.w500,
+                  fontFeatures: YLText.tabularNums,
                 ),
               ),
             ],
@@ -202,6 +203,7 @@ class _ProfileContent extends ConsumerWidget {
                       style: YLText.label.copyWith(
                         fontWeight: FontWeight.w600,
                         color: isDark ? Colors.white : YLColors.zinc900,
+                        fontFeatures: YLText.tabularNums,
                       ),
                     ),
                   ],
@@ -222,6 +224,7 @@ class _ProfileContent extends ConsumerWidget {
                         style: YLText.label.copyWith(
                           fontWeight: FontWeight.w600,
                           color: _deviceColor(profile, isDark),
+                          fontFeatures: YLText.tabularNums,
                         ),
                       ),
                     ],

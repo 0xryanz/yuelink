@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../i18n/app_strings.dart';
 import '../../modules/yue_auth/providers/yue_auth_providers.dart';
 import '../../shared/widgets/empty_state.dart';
+import '../../shared/widgets/yl_loading.dart';
 import '../../theme.dart';
 import 'order_history_page.dart';
 import 'store_providers.dart';
@@ -108,7 +109,7 @@ class StorePage extends ConsumerWidget {
             // ── Plans list ────────────────────────────────────────
             plansAsync.when(
               loading: () => const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator()),
+                child: Center(child: YLLoading()),
               ),
               error: (err, _) => SliverFillRemaining(
                 child: _ErrorView(

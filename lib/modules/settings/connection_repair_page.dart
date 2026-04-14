@@ -68,16 +68,18 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
           _Card(isDark: isDark, children: [
             _StatusRow(isDark: isDark),
           ]),
-          const SizedBox(height: 20),
+          const SizedBox(height: 32),
 
           // ── Repair actions ──
           Padding(
-            padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-            child: Text(s.repairTools,
-                style: YLText.caption.copyWith(
-                    letterSpacing: 1.2,
-                    fontWeight: FontWeight.w600,
-                    color: YLColors.zinc400)),
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 6),
+            child: Text(s.repairTools.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w400,
+                  color: YLColors.zinc500,
+                  letterSpacing: -0.08,
+                )),
           ),
           _Card(isDark: isDark, children: [
             if (Platform.isIOS) ...[
@@ -146,16 +148,18 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
               }),
             ),
           ]),
-          const SizedBox(height: 20),
+          const SizedBox(height: 32),
 
           // ── Diagnostics (merged: network probes + startup report) ──
           Padding(
-            padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-            child: Text(S.current.diagnosticsLabel,
-                style: YLText.caption.copyWith(
-                    letterSpacing: 1.2,
-                    fontWeight: FontWeight.w600,
-                    color: YLColors.zinc400)),
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 6),
+            child: Text(S.current.diagnosticsLabel.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w400,
+                  color: YLColors.zinc500,
+                  letterSpacing: -0.08,
+                )),
           ),
           _NetworkDiagnostics(isDark: isDark),
           const SizedBox(height: 10),

@@ -736,15 +736,16 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                 const _SplitTunnelSection(),
               ],
               // ── Privacy ───────────────────────────────────────────
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
               Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 8),
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 6),
                 child: Text(
-                  s.privacy,
-                  style: YLText.caption.copyWith(
+                  s.privacy.toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w400,
                     color: YLColors.zinc500,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.4,
+                    letterSpacing: -0.08,
                   ),
                 ),
               ),

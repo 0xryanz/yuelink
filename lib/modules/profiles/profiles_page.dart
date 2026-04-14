@@ -19,6 +19,7 @@ import '../../core/kernel/core_manager.dart';
 import '../../shared/formatters/subscription_parser.dart';
 import '../../theme.dart';
 import '../../shared/widgets/empty_state.dart';
+import '../../shared/widgets/yl_loading.dart';
 import '../../widgets/loading_overlay.dart';
 
 /// Strip "Exception: " prefix from error strings for user-facing display.
@@ -159,7 +160,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 720),
                 child: profilesAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
+              loading: () => const Center(child: YLLoading()),
               error: (e, _) => Center(
                 child: YLEmptyState(
                   icon: Icons.error_outline,

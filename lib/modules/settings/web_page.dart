@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../i18n/app_strings.dart';
+import '../../shared/widgets/yl_loading.dart';
 import '../../theme.dart';
 
 /// Native in-app content page — fetches HTML from [url] and renders it as
@@ -66,7 +67,7 @@ class _InAppWebPageState extends State<InAppWebPage> {
         elevation: 0,
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: YLLoading())
           : _error != null
               ? Center(
                   child: Column(

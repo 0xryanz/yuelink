@@ -74,6 +74,10 @@ class YLText {
       fontSize: 13, fontWeight: FontWeight.w500,
       fontFamily: 'monospace',
       fontFeatures: [FontFeature.tabularFigures()]);
+
+  /// iOS-style tabular figures — numbers align in fixed-width columns
+  /// so digits don't shift when values update.
+  static const tabularNums = [FontFeature.tabularFigures()];
 }
 
 // ── Spacing scale ─────────────────────────────────────────────────────────────
@@ -178,9 +182,19 @@ ThemeData buildTheme(Brightness brightness, {Color? accentColor}) {
   final baseTextTheme = isDark
       ? ThemeData.dark().textTheme
       : ThemeData.light().textTheme;
-  final textTheme = GoogleFonts.interTextTheme(baseTextTheme).apply(
-    fontFamilyFallback: const ['PingFang SC', 'Noto Sans SC', 'Microsoft YaHei'],
-  );
+  // iOS uses system SF Pro (no fontFamily = system default).
+  // Other platforms use Inter via Google Fonts.
+  final textTheme = Platform.isIOS
+      ? baseTextTheme.apply(
+          fontFamilyFallback: const ['PingFang SC', 'Noto Sans SC'],
+        )
+      : GoogleFonts.interTextTheme(baseTextTheme).apply(
+          fontFamilyFallback: const [
+            'PingFang SC',
+            'Noto Sans SC',
+            'Microsoft YaHei',
+          ],
+        );
 
   return ThemeData(
     colorScheme: colorScheme,
@@ -190,7 +204,10 @@ ThemeData buildTheme(Brightness brightness, {Color? accentColor}) {
     scaffoldBackgroundColor: bg,
     splashFactory: NoSplash.splashFactory, // Remove Android ripples for premium feel
     splashColor: Colors.transparent,
-    highlightColor: Colors.transparent,
+    // iOS-style press feedback: subtle gray fade instead of Material ripple.
+    highlightColor: isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.black.withValues(alpha: 0.04),
     hoverColor: isDark ? Colors.white.withValues(alpha: 0.04) : Colors.black.withValues(alpha: 0.03),
     // Linux: prefer Noto Sans for consistent CJK and Latin rendering.
     // Falls back to system default if Noto Sans is not installed.
@@ -209,9 +226,14 @@ ThemeData buildTheme(Brightness brightness, {Color? accentColor}) {
       ),
     ),
 
-    // Dividers
+    // Dividers — iOS-style: hairline + indent to align with text after icon.
+    // Custom Divider() with explicit indent/thickness/space override these defaults.
     dividerTheme: DividerThemeData(
-      space: 1, thickness: 0.5, color: divider,
+      space: 0.33,
+      thickness: 0.33,
+      indent: 60,
+      endIndent: 0,
+      color: divider,
     ),
 
     // List tiles

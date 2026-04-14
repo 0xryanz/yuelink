@@ -1144,7 +1144,7 @@ class _SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 6),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
       child: Text(
         text.toUpperCase(),
         style: const TextStyle(

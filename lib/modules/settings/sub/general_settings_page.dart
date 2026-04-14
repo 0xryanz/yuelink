@@ -736,9 +736,9 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                 const _SplitTunnelSection(),
               ],
               // ── Privacy ───────────────────────────────────────────
-              const SizedBox(height: 32),
+              const SizedBox(height: 8),
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 6),
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
                 child: Text(
                   s.privacy.toUpperCase(),
                   style: const TextStyle(

@@ -650,5 +650,9 @@
   "mitmCertGuideTitle": "证书安装向导",
   "mitmHostnameCount": "MITM 域名",
   "importAllResultAllOk": "成功导入 {ok} 个订阅",
-  "importAllResultPartial": "成功 {ok} 个，失败 {failed} 个"
+  "importAllResultPartial": "成功 {ok} 个，失败 {failed} 个",
+  "scanQrImport": "扫码导入",
+  "scanQrTitle": "扫描二维码",
+  "scanQrInvalidUrl": "扫描内容不是有效的链接",
+  "scanQrPermissionDenied": "未获得相机权限"
 }

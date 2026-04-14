@@ -64,7 +64,7 @@ class NoticesCard extends ConsumerWidget {
                     child: Text(
                       '查看全部',
                       style: YLText.caption.copyWith(
-                        color: YLColors.accent,
+                        color: YLColors.currentAccent,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -101,7 +101,7 @@ class _NoticeTile extends StatelessWidget {
               height: 5,
               margin: const EdgeInsets.only(top: 6, right: 8),
               decoration: BoxDecoration(
-                color: YLColors.accent,
+                color: YLColors.currentAccent,
                 shape: BoxShape.circle,
               ),
             ),

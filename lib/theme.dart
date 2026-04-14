@@ -24,6 +24,9 @@ class YLColors {
   static const primary = Color(0xFF000000);     // Default to sleek black in light mode
   static const primaryDark = Color(0xFFFFFFFF); // White in dark mode
   static const accent = Color(0xFF3B82F6);      // Blue-500 for active states
+  // Dynamic accent — set by buildTheme(), read by widgets via YLColors.currentAccent
+  static Color _currentAccent = accent;
+  static Color get currentAccent => _currentAccent;
   static const primaryLight = Color(0xFFF5F5F5); // Light primary background
 
   // ── Status semantics (Clear, accessible) ──────────────────────────────────
@@ -134,7 +137,7 @@ class YLShadow {
 
 // ── Theme factory ─────────────────────────────────────────────────────────────
 
-ThemeData buildTheme(Brightness brightness) {
+ThemeData buildTheme(Brightness brightness, {Color? accentColor}) {
   final isDark = brightness == Brightness.dark;
 
   final bg      = isDark ? YLColors.zinc950  : YLColors.zinc100;
@@ -142,6 +145,8 @@ ThemeData buildTheme(Brightness brightness) {
   final border  = isDark ? YLColors.zinc800  : YLColors.zinc300;
   final primary = isDark ? YLColors.primaryDark : YLColors.primary;
   final divider = isDark ? const Color(0x1AFFFFFF) : const Color(0x14000000);
+  // Store the accent color in a static so widgets can read it without context.
+  YLColors._currentAccent = accentColor ?? YLColors.accent;
 
   final colorScheme = ColorScheme.fromSeed(
     seedColor: primary,

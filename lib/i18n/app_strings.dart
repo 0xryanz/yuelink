@@ -706,4 +706,10 @@ class S {
 
   /// Passthrough — file size already formatted by caller.
   String geoFileSize(String size) => size;
+
+  // ── QR scan ─────────────────────────────────────────────────
+  String get scanQrImport => _t.scanQrImport;
+  String get scanQrTitle => _t.scanQrTitle;
+  String get scanQrInvalidUrl => _t.scanQrInvalidUrl;
+  String get scanQrPermissionDenied => _t.scanQrPermissionDenied;
 }

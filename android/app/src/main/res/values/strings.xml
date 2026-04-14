@@ -3,4 +3,6 @@
     <string name="vpn_connected">Connected</string>
     <string name="vpn_whitelist">Proxy selected apps only</string>
     <string name="vpn_blacklist">Bypass selected apps</string>
+    <string name="tile_connected">Connected</string>
+    <string name="tile_disconnected">Disconnected</string>
 </resources>

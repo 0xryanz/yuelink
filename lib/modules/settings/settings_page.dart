@@ -14,6 +14,7 @@ import 'web_page.dart';
 import '../../i18n/app_strings.dart';
 import '../../modules/profiles/profiles_page.dart';
 import 'sub/general_settings_page.dart';
+import 'sub/overwrite_page.dart';
 import '../../modules/store/store_page.dart';
 import '../../modules/store/order_history_page.dart';
 import 'connection_repair_page.dart';
@@ -35,6 +36,12 @@ import '../surge_modules/providers/module_provider.dart';
 
 final themeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.system);
 final languageProvider = StateProvider<String>((ref) => 'zh');
+
+/// Accent color stored as hex string (without '#'), e.g. '3B82F6'.
+final accentColorProvider = StateProvider<String>((ref) => '3B82F6');
+
+/// Subscription sync interval in hours (0 = disabled).
+final subSyncIntervalProvider = StateProvider<int>((ref) => 6);
 
 /// Desktop: close window behavior. Values: 'tray' (default) | 'exit'.
 final closeBehaviorProvider = StateProvider<String>((ref) => 'tray');
@@ -523,6 +530,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                             onTap: () => Navigator.of(context).push(
                               MaterialPageRoute(
                                   builder: (_) => const GeneralSettingsPage()),
+                            ),
+                          ),
+                          Divider(
+                              height: 1, thickness: 0.5, color: dividerColor),
+                          YLInfoRow(
+                            label: s.overwriteTitle,
+                            trailing: const Icon(Icons.chevron_right,
+                                size: 18, color: YLColors.zinc400),
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => const OverwritePage()),
                             ),
                           ),
                           Divider(

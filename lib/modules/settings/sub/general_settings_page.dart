@@ -258,6 +258,8 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isEn = Localizations.localeOf(context).languageCode == 'en';
     final theme = ref.watch(themeProvider);
+    final accentHex = ref.watch(accentColorProvider);
+    final subSyncInterval = ref.watch(subSyncIntervalProvider);
     final language = ref.watch(languageProvider);
     final autoConnect = ref.watch(autoConnectProvider);
     final connectionMode = ref.watch(connectionModeProvider);
@@ -316,6 +318,16 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                           },
                         ),
                       ),
+                    ),
+                    Divider(height: 1, thickness: 0.5, color: dividerColor),
+                    // Accent color
+                    _AccentColorRow(
+                      currentHex: accentHex,
+                      onChanged: (hex) {
+                        ref.read(accentColorProvider.notifier).state = hex;
+                        SettingsService.setAccentColor(hex);
+                      },
+                      isEn: isEn,
                     ),
                     Divider(height: 1, thickness: 0.5, color: dividerColor),
                     // Language
@@ -437,6 +449,32 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                         onChanged: (v) async {
                           ref.read(autoConnectProvider.notifier).state = v;
                           await SettingsService.setAutoConnect(v);
+                        },
+                      ),
+                    ),
+                    Divider(height: 1, thickness: 0.5, color: dividerColor),
+                    // Subscription sync interval
+                    YLInfoRow(
+                      label: isEn ? 'Subscription update' : '订阅更新频率',
+                      trailing: DropdownButton<int>(
+                        value: subSyncInterval,
+                        underline: const SizedBox.shrink(),
+                        style: YLText.body.copyWith(
+                          color: isDark ? YLColors.zinc200 : YLColors.zinc700,
+                        ),
+                        dropdownColor: isDark ? YLColors.zinc800 : Colors.white,
+                        items: [
+                          DropdownMenuItem(value: 0, child: Text(isEn ? 'Manual' : '手动')),
+                          DropdownMenuItem(value: 1, child: Text(isEn ? 'Every hour' : '每小时')),
+                          DropdownMenuItem(value: 6, child: Text(isEn ? 'Every 6 hours' : '每6小时')),
+                          DropdownMenuItem(value: 12, child: Text(isEn ? 'Every 12 hours' : '每12小时')),
+                          DropdownMenuItem(value: 24, child: Text(isEn ? 'Every day' : '每天')),
+                          DropdownMenuItem(value: 48, child: Text(isEn ? 'Every 2 days' : '每2天')),
+                        ],
+                        onChanged: (v) async {
+                          if (v == null) return;
+                          ref.read(subSyncIntervalProvider.notifier).state = v;
+                          await SettingsService.setSubSyncInterval(v);
                         },
                       ),
                     ),
@@ -1129,6 +1167,79 @@ class _SplitTunnelSectionState extends ConsumerState<_SplitTunnelSection> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+// ── Accent Color Picker ─────────────────────────────────────────────────────
+
+class _AccentColorRow extends StatelessWidget {
+  final String currentHex;
+  final ValueChanged<String> onChanged;
+  final bool isEn;
+
+  const _AccentColorRow({
+    required this.currentHex,
+    required this.onChanged,
+    required this.isEn,
+  });
+
+  static const _presets = <String, String>{
+    '3B82F6': 'Blue',
+    '10B981': 'Green',
+    '8B5CF6': 'Purple',
+    'F97316': 'Orange',
+    'EF4444': 'Red',
+    'EC4899': 'Pink',
+    '14B8A6': 'Teal',
+    '6366F1': 'Indigo',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              isEn ? 'Accent color' : '强调色',
+              style: YLText.body.copyWith(
+                color: isDark ? YLColors.zinc200 : YLColors.zinc700,
+              ),
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: _presets.entries.map((e) {
+              final color = Color(int.parse('FF${e.key}', radix: 16));
+              final isSelected = currentHex.toUpperCase() == e.key;
+              return GestureDetector(
+                onTap: () => onChanged(e.key),
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: color,
+                    border: isSelected
+                        ? Border.all(
+                            color: isDark ? Colors.white : Colors.black,
+                            width: 2,
+                          )
+                        : null,
+                  ),
+                  child: isSelected
+                      ? const Icon(Icons.check, size: 14, color: Colors.white)
+                      : null,
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }

@@ -29,6 +29,7 @@ import 'modules/profiles/providers/profiles_providers.dart';
 import 'shared/app_notifier.dart';
 import 'core/kernel/core_manager.dart';
 import 'core/kernel/recovery_manager.dart';
+import 'core/platform/tile_service.dart';
 import 'core/platform/vpn_service.dart';
 import 'core/storage/auth_token_service.dart';
 import 'core/env_config.dart';
@@ -121,6 +122,8 @@ void main() async {
   ]);
   final savedToken = earlyResults[1] as String?;
 
+  final savedAccentColor = await SettingsService.getAccentColor();
+  final savedSubSyncInterval = await SettingsService.getSubSyncInterval();
   final savedTheme = await SettingsService.getThemeMode();
   final savedProfileId = await SettingsService.getActiveProfileId();
   final savedRoutingMode = await SettingsService.getRoutingMode();
@@ -202,6 +205,8 @@ void main() async {
     overrides: [
       themeProvider.overrideWith((ref) => savedTheme),
       languageProvider.overrideWith((ref) => savedLanguage),
+      accentColorProvider.overrideWith((ref) => savedAccentColor),
+      subSyncIntervalProvider.overrideWith((ref) => savedSubSyncInterval),
       preloadedProfileIdProvider.overrideWithValue(savedProfileId),
       routingModeProvider.overrideWith((ref) => savedRoutingMode),
       connectionModeProvider.overrideWith((ref) => savedConnectionMode),
@@ -272,6 +277,9 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     if (Platform.isAndroid || Platform.isIOS) {
       _setupVpnRevocationListener();
     }
+    if (Platform.isAndroid) {
+      _setupTileService();
+    }
     if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
       windowManager.addListener(this);
       windowManager.setPreventClose(true);
@@ -335,6 +343,10 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
         isRunning: next == CoreStatus.running,
         groups: ref.read(proxyGroupsProvider),
       );
+      // Update Android Quick Settings tile state
+      if (Platform.isAndroid) {
+        TileService.updateState(active: next == CoreStatus.running);
+      }
       if (prev == CoreStatus.running && next == CoreStatus.stopped) {
         // Only show "unexpected disconnect" if the user did NOT initiate stop
         // AND we're not in the middle of recovery (which temporarily resets state).
@@ -405,6 +417,51 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     });
   }
 
+  /// Set up Android Quick Settings tile integration.
+  ///
+  /// Initializes the MethodChannel listener for tile toggle requests
+  /// and sets the callback to toggle VPN via the existing core lifecycle.
+  void _setupTileService() {
+    TileService.init();
+    TileService.onToggleRequested = () async {
+      final status = ref.read(coreStatusProvider);
+      if (status == CoreStatus.starting || status == CoreStatus.stopping) {
+        debugPrint('[App] Tile toggle ignored — core is $status');
+        return;
+      }
+      debugPrint('[App] Tile toggle — current status: $status');
+      final actions = ref.read(coreActionsProvider);
+      if (status == CoreStatus.running) {
+        await actions.stop();
+      } else {
+        // Need a config to start — load the selected profile
+        final configYaml = await _loadSelectedProfileConfig();
+        if (configYaml != null) {
+          await actions.start(configYaml);
+        } else {
+          debugPrint('[App] Tile toggle: no profile selected, cannot start');
+        }
+      }
+    };
+    // Sync initial tile state — the tile may have been added while app was
+    // closed, and its SharedPreferences state could be stale.
+    final currentStatus = ref.read(coreStatusProvider);
+    TileService.updateState(active: currentStatus == CoreStatus.running);
+  }
+
+  /// Load the config YAML from the currently selected profile.
+  /// Returns null if no profile is selected or loading fails.
+  Future<String?> _loadSelectedProfileConfig() async {
+    try {
+      final activeId = await SettingsService.getActiveProfileId();
+      if (activeId == null) return null;
+      return await ProfileService.loadConfig(activeId);
+    } catch (e) {
+      debugPrint('[App] Failed to load profile config: $e');
+      return null;
+    }
+  }
+
   /// Detect carrier via YueOps after VPN connects.
   /// Fetches the user's real (direct) IP to determine ISP (CT/CU/CM).
   void _startCarrierDetection() {
@@ -421,6 +478,7 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     _profilesSub?.close();
     _hotkeySub?.close();
     _carrierSub?.close();
+    TileService.onToggleRequested = null;
     WidgetsBinding.instance.removeObserver(this);
     _appLinksSub?.cancel();
     if (_trayInitialized) trayManager.removeListener(this);
@@ -908,6 +966,10 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themeProvider);
     final language = ref.watch(languageProvider);
+    final accentHex = ref.watch(accentColorProvider);
+
+    // Parse accent color from hex string
+    final accentColor = Color(int.parse('FF$accentHex', radix: 16));
 
     // Side-effect-only providers — heartbeat and subscription sync. They
     // exist to keep timers alive and don't emit a value the MaterialApp
@@ -934,8 +996,8 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
       ],
 
       themeMode: themeMode,
-      theme: buildTheme(Brightness.light),
-      darkTheme: buildTheme(Brightness.dark),
+      theme: buildTheme(Brightness.light, accentColor: accentColor),
+      darkTheme: buildTheme(Brightness.dark, accentColor: accentColor),
       home: const _AuthGate(),
     );
   }

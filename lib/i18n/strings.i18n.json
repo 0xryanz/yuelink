@@ -650,5 +650,9 @@
   "mitmCertGuideTitle": "Certificate Installation",
   "mitmHostnameCount": "MITM Hostnames",
   "importAllResultAllOk": "Imported {ok} subscriptions",
-  "importAllResultPartial": "Imported {ok}, failed {failed}"
+  "importAllResultPartial": "Imported {ok}, failed {failed}",
+  "scanQrImport": "Scan QR",
+  "scanQrTitle": "Scan QR Code",
+  "scanQrInvalidUrl": "Scanned content is not a valid URL",
+  "scanQrPermissionDenied": "Camera permission denied"
 }

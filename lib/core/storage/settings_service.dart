@@ -132,6 +132,30 @@ class SettingsService {
     return settings[key] as T?;
   }
 
+  // ── Accent color ─────────────────────────────────────────────────────────
+
+  /// Default accent: Blue-500 (#3B82F6), stored as hex string without '#'.
+  static const _defaultAccentHex = '3B82F6';
+
+  static Future<String> getAccentColor() async {
+    return (await get<String>('accentColor')) ?? _defaultAccentHex;
+  }
+
+  static Future<void> setAccentColor(String hex) async {
+    await set('accentColor', hex);
+  }
+
+  // ── Subscription sync interval ──────────────────────────────────────────
+
+  /// Interval in hours: 0 = disabled, 1, 6, 12, 24, 48.
+  static Future<int> getSubSyncInterval() async {
+    return (await get<int>('subSyncInterval')) ?? 6;
+  }
+
+  static Future<void> setSubSyncInterval(int hours) async {
+    await set('subSyncInterval', hours);
+  }
+
   // ── Theme ────────────────────────────────────────────────────────────────
 
   static Future<ThemeMode> getThemeMode() async {

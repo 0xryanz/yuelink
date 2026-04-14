@@ -6,11 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../kernel/core_manager.dart';
 import '../../infrastructure/repositories/profile_repository.dart';
 import '../../modules/profiles/providers/profiles_providers.dart';
+import '../../modules/settings/settings_page.dart' show subSyncIntervalProvider;
 import '../../shared/event_log.dart';
 
 /// Silently updates stale subscriptions in the background.
 ///
-/// Checks all profiles every 30 minutes. A profile is "stale" when
+/// Checks all profiles at an interval configured by the user
+/// (default 6 hours). A profile is "stale" when
 /// `DateTime.now() - lastUpdated > updateInterval`. Stale profiles
 /// are re-downloaded and saved without user intervention.
 ///
@@ -19,8 +21,14 @@ import '../../shared/event_log.dart';
 /// When the app goes to background, the timer pauses automatically
 /// (Dart event loop is deprioritized by the OS).
 final subscriptionSyncProvider = Provider<void>((ref) {
-  // Check every 30 minutes
-  final timer = Timer.periodic(const Duration(minutes: 30), (_) {
+  final intervalHours = ref.watch(subSyncIntervalProvider);
+
+  // 0 = disabled
+  if (intervalHours <= 0) return;
+
+  final checkInterval = Duration(hours: intervalHours);
+
+  final timer = Timer.periodic(checkInterval, (_) {
     _syncStaleProfiles(ref);
   });
 

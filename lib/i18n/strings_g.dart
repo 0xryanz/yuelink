@@ -4,9 +4,9 @@
 /// To regenerate, run: `dart run slang`
 ///
 /// Locales: 2
-/// Strings: 1304 (652 per locale)
+/// Strings: 1312 (656 per locale)
 ///
-/// Built on 2026-04-11 at 16:30 UTC
+/// Built on 2026-04-14 at 06:33 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -800,6 +800,10 @@ class Translations implements BaseTranslations<AppLocale, Translations> {
 	String get mitmHostnameCount => 'MITM Hostnames';
 	String importAllResultAllOk({required Object ok}) => 'Imported ${ok} subscriptions';
 	String importAllResultPartial({required Object ok, required Object failed}) => 'Imported ${ok}, failed ${failed}';
+	String get scanQrImport => 'Scan QR';
+	String get scanQrTitle => 'Scan QR Code';
+	String get scanQrInvalidUrl => 'Scanned content is not a valid URL';
+	String get scanQrPermissionDenied => 'Camera permission denied';
 }
 
 // Path: <root>
@@ -1480,6 +1484,10 @@ class _StringsGZhCn extends Translations {
 	@override String get mitmHostnameCount => 'MITM 域名';
 	@override String importAllResultAllOk({required Object ok}) => '成功导入 ${ok} 个订阅';
 	@override String importAllResultPartial({required Object ok, required Object failed}) => '成功 ${ok} 个，失败 ${failed} 个';
+	@override String get scanQrImport => '扫码导入';
+	@override String get scanQrTitle => '扫描二维码';
+	@override String get scanQrInvalidUrl => '扫描内容不是有效的链接';
+	@override String get scanQrPermissionDenied => '未获得相机权限';
 }
 
 /// Flat map(s) containing all translations.
@@ -2140,6 +2148,10 @@ extension on Translations {
 			case 'mitmHostnameCount': return 'MITM Hostnames';
 			case 'importAllResultAllOk': return ({required Object ok}) => 'Imported ${ok} subscriptions';
 			case 'importAllResultPartial': return ({required Object ok, required Object failed}) => 'Imported ${ok}, failed ${failed}';
+			case 'scanQrImport': return 'Scan QR';
+			case 'scanQrTitle': return 'Scan QR Code';
+			case 'scanQrInvalidUrl': return 'Scanned content is not a valid URL';
+			case 'scanQrPermissionDenied': return 'Camera permission denied';
 			default: return null;
 		}
 	}
@@ -2800,6 +2812,10 @@ extension on _StringsGZhCn {
 			case 'mitmHostnameCount': return 'MITM 域名';
 			case 'importAllResultAllOk': return ({required Object ok}) => '成功导入 ${ok} 个订阅';
 			case 'importAllResultPartial': return ({required Object ok, required Object failed}) => '成功 ${ok} 个，失败 ${failed} 个';
+			case 'scanQrImport': return '扫码导入';
+			case 'scanQrTitle': return '扫描二维码';
+			case 'scanQrInvalidUrl': return '扫描内容不是有效的链接';
+			case 'scanQrPermissionDenied': return '未获得相机权限';
 			default: return null;
 		}
 	}

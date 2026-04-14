@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'qr_scan_page.dart';
+
 import '../../i18n/app_strings.dart';
 import '../../main.dart' show deepLinkUrlProvider;
 import '../../domain/models/profile.dart';
@@ -120,9 +122,16 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                         _exportAllProfiles(context, ref);
                       case 'import_files':
                         _importLocalFile(context, ref);
+                      case 'scan_qr':
+                        _scanQrAndAdd(context, ref);
                     }
                   },
                   itemBuilder: (_) => [
+                    if (Platform.isAndroid || Platform.isIOS)
+                      PopupMenuItem(
+                        value: 'scan_qr',
+                        child: _menuItem(Icons.qr_code_scanner, s.scanQrImport),
+                      ),
                     PopupMenuItem(
                       value: 'export_all',
                       child: _menuItem(Icons.upload_file_outlined, s.exportAllProfiles),
@@ -246,6 +255,21 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         autoFetchName: hasUrl,
       );
     }
+  }
+
+  /// Open QR scanner and pre-fill the add dialog with the scanned URL.
+  Future<void> _scanQrAndAdd(BuildContext context, WidgetRef ref) async {
+    final s = S.of(context);
+    final url = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const QrScanPage()),
+    );
+    if (url == null || !context.mounted) return;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      AppNotifier.error(s.scanQrInvalidUrl);
+      return;
+    }
+    _showAddDialog(context, ref, prefilledUrl: url, autoFetchName: true);
   }
 
   void _confirmSwitchProfile(
@@ -384,6 +408,27 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                     labelText: s.urlLabel,
                     hintText: 'https://...',
                     prefixIcon: const Icon(Icons.link),
+                    suffixIcon: (Platform.isAndroid || Platform.isIOS)
+                        ? IconButton(
+                            icon: const Icon(Icons.qr_code_scanner, size: 20),
+                            tooltip: s.scanQrImport,
+                            onPressed: () async {
+                              final url = await Navigator.push<String>(
+                                ctx,
+                                MaterialPageRoute(
+                                    builder: (_) => const QrScanPage()),
+                              );
+                              if (url != null && ctx.mounted) {
+                                if (url.startsWith('http://') ||
+                                    url.startsWith('https://')) {
+                                  urlCtrl.text = url;
+                                } else {
+                                  AppNotifier.error(s.scanQrInvalidUrl);
+                                }
+                              }
+                            },
+                          )
+                        : null,
                   ),
                   maxLines: 2,
                   textInputAction: TextInputAction.done,

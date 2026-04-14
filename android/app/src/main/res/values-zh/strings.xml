@@ -3,4 +3,6 @@
     <string name="vpn_connected">已连接</string>
     <string name="vpn_whitelist">仅代理选定应用</string>
     <string name="vpn_blacklist">跳过选定应用</string>
+    <string name="tile_connected">已连接</string>
+    <string name="tile_disconnected">未连接</string>
 </resources>

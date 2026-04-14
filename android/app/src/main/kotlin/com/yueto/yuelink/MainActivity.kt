@@ -12,6 +12,7 @@ import android.net.Uri
 import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
+import android.service.quicksettings.TileService
 import androidx.core.content.FileProvider
 import java.io.File
 import io.flutter.embedding.android.FlutterActivity
@@ -31,6 +32,7 @@ class MainActivity : FlutterActivity() {
         private const val VPN_CHANNEL  = "com.yueto.yuelink/vpn"
         private const val APPS_CHANNEL = "com.yueto.yuelink/apps"
         private const val PIP_CHANNEL  = "com.yueto.yuelink/pip"
+        private const val TILE_CHANNEL = "com.yueto.yuelink/tile"
         private const val VPN_REQUEST_CODE = 1001
         private const val NOTIFICATION_REQUEST_CODE = 1002
     }
@@ -40,6 +42,10 @@ class MainActivity : FlutterActivity() {
     private var pendingMixedPort: Int = 7890
     private var pendingSplitMode: String = "all"
     private var pendingSplitApps: List<String> = emptyList()
+
+    /** True when the Quick Settings tile triggered a toggle before Flutter engine was ready. */
+    private var pendingTileToggle = false
+    private var tileChannel: MethodChannel? = null
 
     private var vpnService: YueLinkVpnService? = null
     private var serviceBound = false
@@ -62,6 +68,33 @@ class MainActivity : FlutterActivity() {
         // notification is simply suppressed by the system. This avoids
         // confusing permission dialogs on first launch and makes the app
         // functional even when the user denies notification access.
+    }
+
+    /**
+     * Handle intents when activity is already running (singleTop).
+     * Used by ProxyTileService to send TOGGLE action.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleTileToggleIntent(intent)
+    }
+
+    /**
+     * Check if the intent is a tile toggle request and forward to Flutter.
+     * If Flutter engine is not ready yet, set a flag to deliver on configure.
+     */
+    private fun handleTileToggleIntent(intent: Intent?) {
+        if (intent?.action != ProxyTileService.ACTION_TOGGLE) return
+
+        val channel = tileChannel
+        if (channel != null) {
+            channel.invokeMethod("toggle", null)
+        } else {
+            // Flutter engine not configured yet — deliver when ready
+            pendingTileToggle = true
+        }
+        // Clear the action so it doesn't re-trigger on config changes
+        intent.action = null
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -144,6 +177,50 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        // ── Tile channel (Quick Settings ↔ Flutter) ─────────────────────────────
+        val tc = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, TILE_CHANNEL)
+        tc.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "updateTileState" -> {
+                    val isActive = call.argument<Boolean>("active") ?: false
+                    updateTilePrefs(isActive)
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
+        tileChannel = tc
+
+        // Deliver pending tile toggle if ProxyTileService launched us
+        if (pendingTileToggle) {
+            pendingTileToggle = false
+            tc.invokeMethod("toggle", null)
+        }
+
+        // Also check the initial launch intent (cold start from tile)
+        handleTileToggleIntent(intent)
+    }
+
+    // ── Tile helpers ─────────────────────────────────────────────────────────
+
+    /**
+     * Write VPN active state to SharedPreferences and request tile UI refresh.
+     * Called from Flutter via the tile MethodChannel when core status changes.
+     */
+    private fun updateTilePrefs(active: Boolean) {
+        getSharedPreferences(ProxyTileService.PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putBoolean(ProxyTileService.KEY_VPN_ACTIVE, active)
+            .apply()
+
+        // Request the system to refresh the tile — triggers onStartListening()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            TileService.requestListeningState(
+                this,
+                ComponentName(this, ProxyTileService::class.java)
+            )
+        }
     }
 
     // ── Installed apps ────────────────────────────────────────────────────────

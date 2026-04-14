@@ -44,6 +44,7 @@ dependencies:
   media_kit_libs_ios_video: ^1.0.5
   volume_controller: ^3.0.0
   flutter_widget_from_html_core: ^0.15.2
+  mobile_scanner: ^6.0.0
 
 dev_dependencies:
   flutter_test:

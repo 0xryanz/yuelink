@@ -93,7 +93,7 @@ class _LiveStatusCardState extends ConsumerState<LiveStatusCard> {
                   child: _SpeedChip(
                     arrow: '↓',
                     bps: traffic.down,
-                    color: YLColors.accent,
+                    color: YLColors.currentAccent,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -544,12 +544,12 @@ class _TrafficChart extends StatelessWidget {
             spots: toSpots(downHistory),
             isCurved: true,
             curveSmoothness: 0.25,
-            color: YLColors.accent,
+            color: YLColors.currentAccent,
             barWidth: 1.5,
             dotData: const FlDotData(show: false),
             belowBarData: BarAreaData(
               show: true,
-              color: YLColors.accent.withValues(alpha: 0.08),
+              color: YLColors.currentAccent.withValues(alpha: 0.08),
             ),
           ),
         ],

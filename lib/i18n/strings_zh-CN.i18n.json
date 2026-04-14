@@ -703,5 +703,8 @@
   "diagnosticsHint": "查看最近一次连接的启动步骤和耗时",
   "networkDiagnostics": "网络诊断",
   "trafficUsedTotal": "已用 / 总量",
-  "trafficRemaining": "剩余"
+  "trafficRemaining": "剩余",
+  "privacy": "隐私",
+  "telemetryTitle": "匿名使用统计",
+  "telemetrySubtitle": "帮助我们改进 YueLink，不包含个人信息"
 }

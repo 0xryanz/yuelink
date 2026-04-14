@@ -703,5 +703,8 @@
   "diagnosticsHint": "View steps and timing of last connection startup",
   "networkDiagnostics": "Network Diagnostics",
   "trafficUsedTotal": "Used / Total",
-  "trafficRemaining": "Remaining"
+  "trafficRemaining": "Remaining",
+  "privacy": "Privacy",
+  "telemetryTitle": "Anonymous usage stats",
+  "telemetrySubtitle": "Help improve YueLink, no PII"
 }

@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../i18n/app_strings.dart';
 import '../../shared/app_notifier.dart';
+import '../../shared/widgets/empty_state.dart';
 import '../../domain/models/rule.dart';
 import '../../core/providers/core_provider.dart';
 import 'providers/logs_providers.dart';
@@ -90,18 +91,9 @@ class _LogPageState extends ConsumerState<LogPage>
             ? AppBar(leading: const BackButton(), title: Text(s.tabLogs))
             : null,
         body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.list_alt_outlined,
-                  size: 64,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurfaceVariant),
-              const SizedBox(height: 16),
-              Text(s.notConnectedHintLog,
-                  style: Theme.of(context).textTheme.bodyLarge),
-            ],
+          child: YLEmptyState(
+            icon: Icons.list_alt_outlined,
+            title: s.notConnectedHintLog,
           ),
         ),
       );

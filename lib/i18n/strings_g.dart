@@ -853,6 +853,9 @@ class Translations implements BaseTranslations<AppLocale, Translations> {
 	String get networkDiagnostics => 'Network Diagnostics';
 	String get trafficUsedTotal => 'Used / Total';
 	String get trafficRemaining => 'Remaining';
+	String get privacy => 'Privacy';
+	String get telemetryTitle => 'Anonymous usage stats';
+	String get telemetrySubtitle => 'Help improve YueLink, no PII';
 }
 
 // Path: <root>
@@ -1586,6 +1589,9 @@ class _StringsGZhCn extends Translations {
 	@override String get networkDiagnostics => '网络诊断';
 	@override String get trafficUsedTotal => '已用 / 总量';
 	@override String get trafficRemaining => '剩余';
+	@override String get privacy => '隐私';
+	@override String get telemetryTitle => '匿名使用统计';
+	@override String get telemetrySubtitle => '帮助我们改进 YueLink，不包含个人信息';
 }
 
 /// Flat map(s) containing all translations.
@@ -2299,6 +2305,9 @@ extension on Translations {
 			case 'networkDiagnostics': return 'Network Diagnostics';
 			case 'trafficUsedTotal': return 'Used / Total';
 			case 'trafficRemaining': return 'Remaining';
+			case 'privacy': return 'Privacy';
+			case 'telemetryTitle': return 'Anonymous usage stats';
+			case 'telemetrySubtitle': return 'Help improve YueLink, no PII';
 			default: return null;
 		}
 	}
@@ -3012,6 +3021,9 @@ extension on _StringsGZhCn {
 			case 'networkDiagnostics': return '网络诊断';
 			case 'trafficUsedTotal': return '已用 / 总量';
 			case 'trafficRemaining': return '剩余';
+			case 'privacy': return '隐私';
+			case 'telemetryTitle': return '匿名使用统计';
+			case 'telemetrySubtitle': return '帮助我们改进 YueLink，不包含个人信息';
 			default: return null;
 		}
 	}

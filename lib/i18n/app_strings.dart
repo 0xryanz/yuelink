@@ -763,4 +763,7 @@ class S {
   String get networkDiagnostics => _t.networkDiagnostics;
   String get trafficUsedTotal => _t.trafficUsedTotal;
   String get trafficRemaining => _t.trafficRemaining;
+  String get privacy => _t.privacy;
+  String get telemetryTitle => _t.telemetryTitle;
+  String get telemetrySubtitle => _t.telemetrySubtitle;
 }

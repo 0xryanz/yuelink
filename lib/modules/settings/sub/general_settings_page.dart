@@ -18,6 +18,7 @@ import '../../../core/providers/core_provider.dart';
 import '../../updater/update_checker.dart';
 import '../providers/split_tunnel_provider.dart';
 import '../../../shared/app_notifier.dart';
+import '../../../shared/telemetry.dart';
 import '../../../theme.dart';
 import '../settings_page.dart';
 
@@ -38,6 +39,7 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
   String _updateChannel = 'stable';
   bool _autoCheckUpdates = true;
   DateTime? _lastUpdateCheck;
+  bool _telemetryEnabled = false;
 
   @override
   void initState() {
@@ -50,12 +52,14 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
     final channel = await UpdateChecker.getChannel();
     final autoCheck = await UpdateChecker.getAutoCheck();
     final lastCheck = await UpdateChecker.getLastCheck();
+    final telemetry = await SettingsService.getTelemetryEnabled();
     if (mounted) {
       setState(() {
         _launchAtStartup = startup;
         _updateChannel = channel;
         _autoCheckUpdates = autoCheck;
         _lastUpdateCheck = lastCheck;
+        _telemetryEnabled = telemetry;
       });
     }
   }
@@ -731,6 +735,33 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                 const SizedBox(height: 16),
                 const _SplitTunnelSection(),
               ],
+              // ── Privacy ───────────────────────────────────────────
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 8),
+                child: Text(
+                  s.privacy,
+                  style: YLText.caption.copyWith(
+                    color: YLColors.zinc500,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ),
+              _Card(
+                child: YLSettingsRow(
+                  title: s.telemetryTitle,
+                  description: s.telemetrySubtitle,
+                  trailing: CupertinoSwitch(
+                    value: _telemetryEnabled,
+                    activeTrackColor: YLColors.connected,
+                    onChanged: (v) {
+                      setState(() => _telemetryEnabled = v);
+                      Telemetry.setEnabled(v);
+                    },
+                  ),
+                ),
+              ),
             ],
           ),
         ),

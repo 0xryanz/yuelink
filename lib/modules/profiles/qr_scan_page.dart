@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../i18n/app_strings.dart';
+import '../../shared/telemetry.dart';
 import '../../theme.dart';
 
 /// Full-screen camera scanner that returns a URL [String] via [Navigator.pop].
@@ -32,6 +33,7 @@ class _QrScanPageState extends State<QrScanPage> {
       if (value == null) continue;
       if (value.startsWith('http://') || value.startsWith('https://')) {
         _hasResult = true;
+        Telemetry.event('qr_scan_success');
         Navigator.pop(context, value);
         return;
       }

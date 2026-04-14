@@ -13,6 +13,7 @@ import '../providers/core_provider.dart';
 import '../../modules/nodes/providers/nodes_providers.dart';
 import '../../shared/app_notifier.dart';
 import '../../shared/event_log.dart';
+import '../../shared/telemetry.dart';
 import 'system_proxy_manager.dart';
 
 /// Owns the connect / disconnect / hot-switch lifecycle.
@@ -31,6 +32,7 @@ class CoreLifecycleManager {
   Future<bool> start(String configYaml) async {
     debugPrint(
         '[CoreLifecycle] start() called, config length: ${configYaml.length}');
+    Telemetry.event('connect_start');
     ref.read(userStoppedProvider.notifier).state = false;
     ref.read(coreStatusProvider.notifier).state = CoreStatus.starting;
     ref.read(coreStartupErrorProvider.notifier).state = null;
@@ -55,6 +57,9 @@ class CoreLifecycleManager {
         ref.read(coreStartupErrorProvider.notifier).state = detail;
         EventLog.write(
             '[Core] connect_fail detail=${detail.split('\n').first}');
+        Telemetry.event('connect_failed', {
+          'step': report?.failedStep ?? 'unknown',
+        });
         AppNotifier.error(detail);
         return false;
       }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../i18n/app_strings.dart';
 import '../../modules/yue_auth/providers/yue_auth_providers.dart';
+import '../../shared/widgets/empty_state.dart';
 import '../../theme.dart';
 import 'order_history_page.dart';
 import 'store_providers.dart';
@@ -121,18 +122,9 @@ class StorePage extends ConsumerWidget {
                 if (plans.isEmpty) {
                   return SliverFillRemaining(
                     child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.storefront_outlined,
-                              size: 48, color: YLColors.zinc300),
-                          const SizedBox(height: YLSpacing.md),
-                          Text(
-                            isEn ? 'No plans available' : '暂无可购套餐',
-                            style: YLText.body
-                                .copyWith(color: YLColors.zinc500),
-                          ),
-                        ],
+                      child: YLEmptyState(
+                        icon: Icons.storefront_outlined,
+                        title: isEn ? 'No plans available' : '暂无可购套餐',
                       ),
                     ),
                   );

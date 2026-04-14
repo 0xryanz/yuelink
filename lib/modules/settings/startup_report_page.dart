@@ -5,6 +5,7 @@ import '../../core/kernel/core_manager.dart';
 import '../../domain/models/startup_report.dart';
 import '../../i18n/app_strings.dart';
 import '../../shared/app_notifier.dart';
+import '../../shared/widgets/empty_state.dart';
 import '../../theme.dart';
 
 class StartupReportPage extends StatefulWidget {
@@ -59,7 +60,12 @@ class _StartupReportPageState extends State<StartupReportPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _report == null
-              ? Center(child: Text(s.noData))
+              ? Center(
+                  child: YLEmptyState(
+                    icon: Icons.assignment_outlined,
+                    title: s.noData,
+                  ),
+                )
               : _buildBody(context, isDark, _report!),
     );
   }

@@ -35,6 +35,7 @@ import 'core/platform/vpn_service.dart';
 import 'core/storage/auth_token_service.dart';
 import 'core/env_config.dart';
 import 'shared/error_logger.dart';
+import 'shared/telemetry.dart';
 import 'core/profile/profile_service.dart';
 import 'core/profile/subscription_sync_service.dart';
 import 'modules/updater/update_checker.dart';
@@ -105,6 +106,9 @@ void main() async {
 
   // ── Error logging (local crash.log + optional remote Sentry/Crashlytics) ──
   ErrorLogger.init();
+
+  // ── Anonymous telemetry (opt-in, default OFF) ──
+  unawaited(Telemetry.init());
 
   // Restore persisted settings + auth state. Two slow disk reads run in
   // parallel:
@@ -498,6 +502,7 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       unawaited(SettingsService.flush());
+      unawaited(Telemetry.flush());
     }
 
     if (state == AppLifecycleState.resumed) {

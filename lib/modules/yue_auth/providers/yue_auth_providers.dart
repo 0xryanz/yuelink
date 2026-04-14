@@ -16,6 +16,7 @@ import '../../../core/kernel/recovery_manager.dart';
 import '../../../infrastructure/repositories/profile_repository.dart';
 import '../../../shared/app_notifier.dart';
 import '../../../shared/event_log.dart';
+import '../../../shared/telemetry.dart';
 
 // ------------------------------------------------------------------
 // Auth state
@@ -185,6 +186,7 @@ class AuthNotifier extends Notifier<AuthState> {
         token: token,
         userProfile: profile,
       );
+      Telemetry.event('login_success');
 
       // If profile fetch failed during login, retry in background so the
       // dashboard doesn't stay stuck on "暂无订阅".
@@ -195,6 +197,7 @@ class AuthNotifier extends Notifier<AuthState> {
       return true;
     } on XBoardApiException catch (e) {
       EventLog.write('[Auth] login_fail status=${e.statusCode}');
+      Telemetry.event('login_failed', {'status': e.statusCode});
       state = state.copyWith(
         isLoading: false,
         error: _friendlyLoginError(e),
@@ -202,6 +205,7 @@ class AuthNotifier extends Notifier<AuthState> {
       return false;
     } catch (e) {
       EventLog.write('[Auth] login_fail error=${e.runtimeType}');
+      Telemetry.event('login_failed', {'error': e.runtimeType.toString()});
       state = state.copyWith(
         isLoading: false,
         error: _friendlyNetworkError(e),
@@ -328,6 +332,7 @@ class AuthNotifier extends Notifier<AuthState> {
       await _authService.saveSubscribeUrl(sub.subscribeUrl);
       if (!_disposed) state = state.copyWith(userProfile: sub.profile);
       await _syncSubscription(sub.subscribeUrl);
+      Telemetry.event('subscription_sync');
     } catch (e) {
       debugPrint('[Auth] Failed to sync subscription: $e');
       if (e is XBoardApiException && (e.statusCode == 401 || e.statusCode == 403)) {

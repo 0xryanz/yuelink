@@ -510,4 +510,12 @@ class SettingsService {
   static Future<void> setHasSeenOnboarding(bool value) async {
     await set('hasSeenOnboarding', value);
   }
+
+  // ── Anonymous telemetry (opt-in, default OFF) ───────────────────────────
+
+  static Future<bool> getTelemetryEnabled() async =>
+      (await get<bool>('telemetryEnabled')) ?? false;
+
+  static Future<void> setTelemetryEnabled(bool v) =>
+      set('telemetryEnabled', v);
 }

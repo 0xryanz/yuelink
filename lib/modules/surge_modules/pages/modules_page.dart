@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../i18n/app_strings.dart';
+import '../../../shared/widgets/empty_state.dart';
 import '../../../theme.dart';
 import '../providers/mitm_provider.dart';
 import '../providers/module_provider.dart';
@@ -274,39 +275,19 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.extension_outlined,
-              size: 64,
-              color: isDark ? YLColors.zinc700 : YLColors.zinc300,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              s.modulesEmpty,
-              style: YLText.titleMedium.copyWith(
-                color: isDark ? YLColors.zinc400 : YLColors.zinc500,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Add a .sgmodule URL to inject rules\ninto your proxy config.',
-              textAlign: TextAlign.center,
-              style: YLText.caption.copyWith(color: YLColors.zinc400),
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: onAdd,
-              icon: const Icon(Icons.add),
-              label: Text(s.moduleAddUrl),
-            ),
-          ],
+        child: YLEmptyState(
+          icon: Icons.extension_outlined,
+          title: s.modulesEmpty,
+          subtitle: 'Add a .sgmodule URL to inject rules\ninto your proxy config.',
+          action: FilledButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add),
+            label: Text(s.moduleAddUrl),
+          ),
         ),
       ),
     );

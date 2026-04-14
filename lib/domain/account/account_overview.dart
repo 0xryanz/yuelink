@@ -44,7 +44,7 @@ class AccountOverview {
       transferRemainingBytes: remaining,
       expireAt: expireAt,
       daysRemaining: _toInt(json['days_remaining']),
-      renewalUrl: json['renewal_url'] as String? ?? 'https://yue.to/#/plan',
+      renewalUrl: json['renewal_url'] as String? ?? 'https://yuetong.app/#/plan',
     );
   }
 

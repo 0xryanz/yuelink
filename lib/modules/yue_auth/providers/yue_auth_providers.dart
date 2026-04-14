@@ -67,16 +67,13 @@ class AuthState {
 // ------------------------------------------------------------------
 
 /// Default XBoard panel URL — override via AuthTokenService.saveApiHost().
-/// Must match the CloudFront custom domain so TLS SNI handshake succeeds.
-const _kDefaultApiHost = 'https://yue.yuebao.website';
+/// Uses yuetong.app (CloudFront CDN) as primary — clean domain, China-accessible.
+const _kDefaultApiHost = 'https://yuetong.app';
 
-/// Direct origin fallback is intentionally disabled.
-/// The origin server (66.55.76.208:8001) only supports HTTP — falling back
-/// to it would send auth tokens and credentials in cleartext.
-/// XBoard nginx also blocks non-CloudFront traffic by UA, making HTTP
-/// fallback unreliable anyway. If CloudFront is down, users see an explicit
-/// error rather than silently leaking credentials.
-const String? _kDirectOriginUrl = null;
+/// Direct origin fallback via the raw CloudFront distribution domain.
+/// Both endpoints hit the same CloudFront distribution (E1HUMZN8N2WASG),
+/// so this only helps if yuetong.app DNS is unreachable.
+const String? _kDirectOriginUrl = 'https://d7ccm19ki90mg.cloudfront.net';
 
 /// Tracks the current API host — updated on login and restored from storage.
 final _apiHostProvider = StateProvider<String>((ref) => _kDefaultApiHost);

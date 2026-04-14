@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../emby/emby_client.dart';
@@ -103,8 +104,20 @@ final embyPreviewProvider =
       if (items.isNotEmpty) return items;
       // Featured empty → fall through to recent
     }
-    return await _fetchRecent(client, uid, limit: limit);
-  } catch (_) {
+    final items = await _fetchRecent(client, uid, limit: limit);
+    if (items.isNotEmpty) return items;
+
+    // Final fallback: fetch ALL items (no type/sort filter) — catches
+    // servers with non-standard library types.
+    final data = await client.get('/emby/Users/$uid/Items', {
+      'Limit': limit,
+      'Recursive': 'true',
+      'Fields': 'ImageTags',
+      'ExcludeItemTypes': 'Folder,CollectionFolder,UserView,Season',
+    });
+    return _parseItems(data);
+  } catch (e) {
+    debugPrint('[EmbyPreview] fetch failed: $e');
     return const [];
   }
 });

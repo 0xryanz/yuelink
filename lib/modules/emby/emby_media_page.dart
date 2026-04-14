@@ -377,9 +377,9 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
               ],
             ),
           ),
-          Container(height: 0.5, color: dividerColor),
-          // ── 搜索栏（仅内容加载后显示）──────────────────────────────
+          // ── 搜索栏（融入 header，无分隔线）──────────────────────────
           if (hasContent) _buildSearchBar(),
+          Container(height: 0.5, color: dividerColor),
           // ── 内容区 ─────────────────────────────────────────────────
           Expanded(child: _buildBody()),
         ],
@@ -757,7 +757,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
 
   Widget _buildSearchBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 2, 16, 2),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
       child: TextField(
         controller: _searchController,
         onChanged: (v) => setState(() => _query = v),

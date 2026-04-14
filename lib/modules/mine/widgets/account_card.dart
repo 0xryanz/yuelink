@@ -24,7 +24,7 @@ class AccountCard extends ConsumerWidget {
         // ── Main card ─────────────────────────────────────────────
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
           decoration: BoxDecoration(
             color: isDark ? YLColors.zinc800 : Colors.white,
             borderRadius: BorderRadius.circular(YLRadius.xl),

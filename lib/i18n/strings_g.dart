@@ -4,9 +4,9 @@
 /// To regenerate, run: `dart run slang`
 ///
 /// Locales: 2
-/// Strings: 1316 (658 per locale)
+/// Strings: 1344 (672 per locale)
 ///
-/// Built on 2026-04-14 at 11:25 UTC
+/// Built on 2026-04-14 at 11:30 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -806,6 +806,20 @@ class Translations implements BaseTranslations<AppLocale, Translations> {
 	String get scanQrTitle => 'Scan QR Code';
 	String get scanQrInvalidUrl => 'Scanned content is not a valid URL';
 	String get scanQrPermissionDenied => 'Camera permission denied';
+	String get webLoadFailed => 'Load failed';
+	String get hotkeyPrompt => 'Press shortcut keys...';
+	String get loadAppListFailed => 'Failed to load app list';
+	String get repairActionDone => 'Done';
+	String get repairActionFailed => 'Failed';
+	String get installIpaHint => 'Download the IPA from the opened page and install via TrollStore';
+	String get installIosManual => 'Auto-install not supported on iOS. Download from GitHub Releases';
+	String get installUnsupported => 'Auto-install not supported on this platform';
+	String get loading => 'Loading...';
+	String get latestAnnouncements => 'Announcements';
+	String get viewAll => 'View all';
+	String get smartSelect => 'Smart Select';
+	String get embySearchHint => 'Search all libraries...';
+	String get refresh => 'Refresh';
 }
 
 // Path: <root>
@@ -1492,6 +1506,20 @@ class _StringsGZhCn extends Translations {
 	@override String get scanQrTitle => '扫描二维码';
 	@override String get scanQrInvalidUrl => '扫描内容不是有效的链接';
 	@override String get scanQrPermissionDenied => '未获得相机权限';
+	@override String get webLoadFailed => '加载失败';
+	@override String get hotkeyPrompt => '请按下快捷键...';
+	@override String get loadAppListFailed => '加载应用列表失败';
+	@override String get repairActionDone => '完成';
+	@override String get repairActionFailed => '失败';
+	@override String get installIpaHint => '请在打开的页面中下载 IPA 并使用 TrollStore 安装';
+	@override String get installIosManual => 'iOS 暂不支持自动安装，请前往 GitHub Releases 手动下载';
+	@override String get installUnsupported => '当前平台不支持自动安装';
+	@override String get loading => '加载中...';
+	@override String get latestAnnouncements => '最新公告';
+	@override String get viewAll => '查看全部';
+	@override String get smartSelect => '智能选线';
+	@override String get embySearchHint => '搜索所有媒体库...';
+	@override String get refresh => '刷新';
 }
 
 /// Flat map(s) containing all translations.
@@ -2158,6 +2186,20 @@ extension on Translations {
 			case 'scanQrTitle': return 'Scan QR Code';
 			case 'scanQrInvalidUrl': return 'Scanned content is not a valid URL';
 			case 'scanQrPermissionDenied': return 'Camera permission denied';
+			case 'webLoadFailed': return 'Load failed';
+			case 'hotkeyPrompt': return 'Press shortcut keys...';
+			case 'loadAppListFailed': return 'Failed to load app list';
+			case 'repairActionDone': return 'Done';
+			case 'repairActionFailed': return 'Failed';
+			case 'installIpaHint': return 'Download the IPA from the opened page and install via TrollStore';
+			case 'installIosManual': return 'Auto-install not supported on iOS. Download from GitHub Releases';
+			case 'installUnsupported': return 'Auto-install not supported on this platform';
+			case 'loading': return 'Loading...';
+			case 'latestAnnouncements': return 'Announcements';
+			case 'viewAll': return 'View all';
+			case 'smartSelect': return 'Smart Select';
+			case 'embySearchHint': return 'Search all libraries...';
+			case 'refresh': return 'Refresh';
 			default: return null;
 		}
 	}
@@ -2824,6 +2866,20 @@ extension on _StringsGZhCn {
 			case 'scanQrTitle': return '扫描二维码';
 			case 'scanQrInvalidUrl': return '扫描内容不是有效的链接';
 			case 'scanQrPermissionDenied': return '未获得相机权限';
+			case 'webLoadFailed': return '加载失败';
+			case 'hotkeyPrompt': return '请按下快捷键...';
+			case 'loadAppListFailed': return '加载应用列表失败';
+			case 'repairActionDone': return '完成';
+			case 'repairActionFailed': return '失败';
+			case 'installIpaHint': return '请在打开的页面中下载 IPA 并使用 TrollStore 安装';
+			case 'installIosManual': return 'iOS 暂不支持自动安装，请前往 GitHub Releases 手动下载';
+			case 'installUnsupported': return '当前平台不支持自动安装';
+			case 'loading': return '加载中...';
+			case 'latestAnnouncements': return '最新公告';
+			case 'viewAll': return '查看全部';
+			case 'smartSelect': return '智能选线';
+			case 'embySearchHint': return '搜索所有媒体库...';
+			case 'refresh': return '刷新';
 			default: return null;
 		}
 	}

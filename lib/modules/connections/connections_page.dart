@@ -168,7 +168,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
               );
             }),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
 
           // Proxy stats (collapsible) — already in its own Consumer.
           if (!isEmpty)
@@ -180,7 +180,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                 return _ProxyStatsBar(stats: stats.take(5).toList());
               }),
             ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
 
           // Search + actions bar
           Padding(

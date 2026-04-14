@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../i18n/app_strings.dart';
 import '../../theme.dart';
 
 /// Native in-app content page — fetches HTML from [url] and renders it as
@@ -48,7 +49,7 @@ class _InAppWebPageState extends State<InAppWebPage> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = '加载失败: $e';
+        _error = '${S.current.webLoadFailed}: $e';
       });
     }
   }
@@ -76,7 +77,7 @@ class _InAppWebPageState extends State<InAppWebPage> {
                           textAlign: TextAlign.center),
                       const SizedBox(height: 16),
                       FilledButton.tonal(
-                          onPressed: _fetch, child: const Text('重试')),
+                          onPressed: _fetch, child: Text(S.current.retry)),
                     ],
                   ),
                 )

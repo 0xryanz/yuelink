@@ -115,7 +115,7 @@ class _LogPageState extends ConsumerState<LogPage>
                 actions: [
                   IconButton(
                     icon: const Icon(Icons.file_download_outlined, size: 20),
-                    tooltip: '导出日志',
+                    tooltip: s.exportLogs,
                     onPressed: () => _exportLogs(context, ref),
                   ),
                 ],

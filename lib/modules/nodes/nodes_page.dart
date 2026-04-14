@@ -254,7 +254,7 @@ class _NodesPageState extends ConsumerState<NodesPage> {
                   IconButton(
                     icon: const Icon(Icons.auto_awesome_rounded),
                     iconSize: 20,
-                    tooltip: '智能选线',
+                    tooltip: S.of(context).smartSelect,
                     onPressed: () => showSmartSelectSheet(context),
                   ),
                   // Chain proxy button

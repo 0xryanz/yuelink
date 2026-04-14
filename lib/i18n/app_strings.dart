@@ -714,4 +714,20 @@ class S {
   String get scanQrTitle => _t.scanQrTitle;
   String get scanQrInvalidUrl => _t.scanQrInvalidUrl;
   String get scanQrPermissionDenied => _t.scanQrPermissionDenied;
+
+  // ── UI polish i18n additions ───────────────────────────────
+  String get webLoadFailed => _t.webLoadFailed;
+  String get hotkeyPrompt => _t.hotkeyPrompt;
+  String get loadAppListFailed => _t.loadAppListFailed;
+  String get repairActionDone => _t.repairActionDone;
+  String get repairActionFailed => _t.repairActionFailed;
+  String get installIpaHint => _t.installIpaHint;
+  String get installIosManual => _t.installIosManual;
+  String get installUnsupported => _t.installUnsupported;
+  String get loading => _t.loading;
+  String get latestAnnouncements => _t.latestAnnouncements;
+  String get viewAll => _t.viewAll;
+  String get smartSelect => _t.smartSelect;
+  String get embySearchHint => _t.embySearchHint;
+  String get refresh => _t.refresh;
 }

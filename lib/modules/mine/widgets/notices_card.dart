@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../domain/account/notice.dart';
+import '../../../i18n/app_strings.dart';
 import '../../../shared/rich_content.dart';
 import '../../../theme.dart';
 import '../../announcements/presentation/announcements_page.dart';
@@ -49,7 +50,7 @@ class NoticesCard extends ConsumerWidget {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      '最新公告',
+                      S.current.latestAnnouncements,
                       style: YLText.caption.copyWith(
                         color: YLColors.zinc500,
                         fontWeight: FontWeight.w600,
@@ -62,7 +63,7 @@ class NoticesCard extends ConsumerWidget {
                           builder: (_) => const AnnouncementsPage()),
                     ),
                     child: Text(
-                      '查看全部',
+                      S.current.viewAll,
                       style: YLText.caption.copyWith(
                         color: YLColors.currentAccent,
                         fontWeight: FontWeight.w500,

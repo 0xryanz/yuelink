@@ -878,7 +878,7 @@ class _HotkeyRowState extends ConsumerState<_HotkeyRow> {
             height: 60,
             child: Center(
               child: Text(
-                s.isEn ? 'Press your shortcut...' : '请按下快捷键...',
+                s.hotkeyPrompt,
                 style: YLText.body.copyWith(color: YLColors.zinc500),
               ),
             ),
@@ -958,7 +958,7 @@ class _SplitTunnelSectionState extends ConsumerState<_SplitTunnelSection> {
           _apps = [];
           _loading = false;
           _loadError =
-              S.of(context).isEn ? 'Failed to load apps: $e' : '加载应用列表失败: $e';
+              '${S.of(context).loadAppListFailed}: $e';
         });
       }
     }

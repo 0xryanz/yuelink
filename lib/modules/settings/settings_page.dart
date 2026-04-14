@@ -364,13 +364,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
             Uri.parse(pending.releaseUrl),
             mode: LaunchMode.externalApplication,
           );
-          AppNotifier.info('请在打开的页面中下载 IPA 并使用 TrollStore 安装');
+          AppNotifier.info(S.current.installIpaHint);
           return;
         }
-        AppNotifier.error('iOS 暂不支持自动安装，请前往 GitHub Releases 手动下载');
+        AppNotifier.error(S.current.installIosManual);
         return;
       }
-      AppNotifier.error('当前平台不支持自动安装');
+      AppNotifier.error(S.current.installUnsupported);
     } catch (e) {
       AppNotifier.error('${s.updateDownloadFailed}: $e');
     }
@@ -809,7 +809,7 @@ class _ProfileRow extends ConsumerWidget {
     final overview = overviewAsync.valueOrNull;
 
     // 始终显示，loading/error 时用占位数据
-    final email = overview?.email ?? '加载中...';
+    final email = overview?.email ?? S.current.loading;
     final plan = overview?.planName ?? '--';
 
     return _SettingsCard(
@@ -826,7 +826,7 @@ class _ProfileRow extends ConsumerWidget {
                 ),
                 child: Center(
                   child: Text(
-                    email.isNotEmpty && email != '加载中...'
+                    email.isNotEmpty && email != S.current.loading
                         ? email[0].toUpperCase()
                         : '?',
                     style: TextStyle(

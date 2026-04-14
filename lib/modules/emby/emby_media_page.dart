@@ -764,7 +764,7 @@ class _EmbyMediaPageState extends State<EmbyMediaPage> {
         style:
             TextStyle(color: EmbyTheme.textPrimary(context), fontSize: 13),
         decoration: InputDecoration(
-          hintText: '搜索所有媒体库...',
+          hintText: S.current.embySearchHint,
           hintStyle: TextStyle(
               color: EmbyTheme.textSecondary(context), fontSize: 13),
           prefixIcon: Icon(Icons.search_rounded,

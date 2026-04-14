@@ -36,13 +36,13 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
       final ok = await action();
       if (mounted) {
         if (ok) {
-          AppNotifier.success('$label 完成');
+          AppNotifier.success('$label ${S.current.repairActionDone}');
         } else {
-          AppNotifier.error('$label 失败');
+          AppNotifier.error('$label ${S.current.repairActionFailed}');
         }
       }
     } catch (e) {
-      if (mounted) AppNotifier.error('$label 失败: $e');
+      if (mounted) AppNotifier.error('$label ${S.current.repairActionFailed}: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }

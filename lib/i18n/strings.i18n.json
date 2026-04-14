@@ -656,5 +656,19 @@
   "scanQrImport": "Scan QR",
   "scanQrTitle": "Scan QR Code",
   "scanQrInvalidUrl": "Scanned content is not a valid URL",
-  "scanQrPermissionDenied": "Camera permission denied"
+  "scanQrPermissionDenied": "Camera permission denied",
+  "webLoadFailed": "Load failed",
+  "hotkeyPrompt": "Press shortcut keys...",
+  "loadAppListFailed": "Failed to load app list",
+  "repairActionDone": "Done",
+  "repairActionFailed": "Failed",
+  "installIpaHint": "Download the IPA from the opened page and install via TrollStore",
+  "installIosManual": "Auto-install not supported on iOS. Download from GitHub Releases",
+  "installUnsupported": "Auto-install not supported on this platform",
+  "loading": "Loading...",
+  "latestAnnouncements": "Announcements",
+  "viewAll": "View all",
+  "smartSelect": "Smart Select",
+  "embySearchHint": "Search all libraries...",
+  "refresh": "Refresh"
 }

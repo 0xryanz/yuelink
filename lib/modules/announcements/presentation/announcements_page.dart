@@ -79,6 +79,14 @@ class _AnnouncementsPageState extends ConsumerState<AnnouncementsPage> {
                   const SizedBox(height: 10),
                   Text(s.dashNoAnnouncements,
                       style: YLText.body.copyWith(color: YLColors.zinc400)),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () {
+                      _markedRead = false;
+                      ref.invalidate(announcementsProvider);
+                    },
+                    child: Text(s.refresh),
+                  ),
                 ],
               ),
             );

@@ -656,5 +656,19 @@
   "scanQrImport": "扫码导入",
   "scanQrTitle": "扫描二维码",
   "scanQrInvalidUrl": "扫描内容不是有效的链接",
-  "scanQrPermissionDenied": "未获得相机权限"
+  "scanQrPermissionDenied": "未获得相机权限",
+  "webLoadFailed": "加载失败",
+  "hotkeyPrompt": "请按下快捷键...",
+  "loadAppListFailed": "加载应用列表失败",
+  "repairActionDone": "完成",
+  "repairActionFailed": "失败",
+  "installIpaHint": "请在打开的页面中下载 IPA 并使用 TrollStore 安装",
+  "installIosManual": "iOS 暂不支持自动安装，请前往 GitHub Releases 手动下载",
+  "installUnsupported": "当前平台不支持自动安装",
+  "loading": "加载中...",
+  "latestAnnouncements": "最新公告",
+  "viewAll": "查看全部",
+  "smartSelect": "智能选线",
+  "embySearchHint": "搜索所有媒体库...",
+  "refresh": "刷新"
 }

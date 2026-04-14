@@ -7,8 +7,7 @@ import '../yue_auth/providers/yue_auth_providers.dart';
 // ── DI: Infrastructure instance ─────────────────────────────────────────────
 
 final embyRepositoryProvider = Provider<EmbyRepository>((ref) {
-  final api = ref.watch(xboardApiProvider);
-  return EmbyRepository(api: api);
+  return EmbyRepository();
 });
 
 // ── Data provider ───────────────────────────────────────────────────────────
@@ -20,13 +19,5 @@ final embyProvider = FutureProvider<EmbyInfo?>((ref) async {
   if (token == null) return null;
 
   final repo = ref.watch(embyRepositoryProvider);
-  try {
-    return await repo.getEmby(token);
-  } on XBoardApiException catch (e) {
-    if (e.statusCode == 401 || e.statusCode == 403) {
-      ref.read(authProvider.notifier).handleUnauthenticated();
-      return null;
-    }
-    rethrow;
-  }
+  return await repo.getEmby(token);
 });

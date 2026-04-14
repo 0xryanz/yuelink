@@ -75,6 +75,14 @@ const _kDefaultApiHost = 'https://yuetong.app';
 /// so this only helps if yuetong.app DNS is unreachable.
 const String? _kDirectOriginUrl = 'https://d7ccm19ki90mg.cloudfront.net';
 
+/// Fallback hosts for subscription download when the original subscribe URL
+/// fails (404/502/timeout). The path is extracted from the original URL and
+/// retried against each host in order.
+const _kSubscribeFallbackHosts = [
+  'https://yuetong.app',
+  'https://d7ccm19ki90mg.cloudfront.net',
+];
+
 /// Tracks the current API host — updated on login and restored from storage.
 final _apiHostProvider = StateProvider<String>((ref) => _kDefaultApiHost);
 
@@ -331,6 +339,7 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   /// Internal: download and save subscription config.
+  /// If the primary subscribe URL fails, retries with fallback hosts.
   Future<void> _syncSubscription(String subscribeUrl) async {
     assert(() { debugPrint('[Auth] Syncing subscription from: ${subscribeUrl.substring(0, subscribeUrl.length.clamp(0, 50))}...'); return true; }());
 
@@ -345,26 +354,63 @@ class AuthNotifier extends Notifier<AuthState> {
         ? CoreManager.instance.mixedPort
         : null;
 
-    if (existing.isNotEmpty) {
-      // Update existing profile and tag it as account-managed so logout
-      // knows it's safe to delete (it'll be recreated on next login).
-      final profile = existing.first;
-      profile.url = subscribeUrl;
-      profile.source = ProfileSource.account;
-      await repo.updateProfile(profile, proxyPort: proxyPort);
-      debugPrint('[Auth] Updated existing 悦通 profile: ${profile.id}');
-    } else {
-      // Create new profile, marked as account-managed.
-      final profile = await repo.addProfile(
-        name: '悦通',
-        url: subscribeUrl,
-        proxyPort: proxyPort,
-        source: ProfileSource.account,
-      );
-      debugPrint('[Auth] Created new 悦通 profile: ${profile.id}');
+    // Try original URL first, then fallback hosts on failure.
+    final urlsToTry = <String>[subscribeUrl];
+    final originalUri = Uri.tryParse(subscribeUrl);
+    if (originalUri != null) {
+      final pathAndQuery = originalUri.path +
+          (originalUri.query.isNotEmpty ? '?${originalUri.query}' : '');
+      for (final host in _kSubscribeFallbackHosts) {
+        final fallbackUrl = '$host$pathAndQuery';
+        // Avoid duplicating the original URL
+        if (fallbackUrl != subscribeUrl) {
+          urlsToTry.add(fallbackUrl);
+        }
+      }
+    }
 
-      // Auto-select the new profile
-      ref.read(activeProfileIdProvider.notifier).select(profile.id);
+    Object lastError = '';
+    bool succeeded = false;
+    for (var i = 0; i < urlsToTry.length; i++) {
+      final url = urlsToTry[i];
+      try {
+        if (existing.isNotEmpty) {
+          // Update existing profile and tag it as account-managed so logout
+          // knows it's safe to delete (it'll be recreated on next login).
+          final profile = existing.first;
+          profile.url = url;
+          profile.source = ProfileSource.account;
+          await repo.updateProfile(profile, proxyPort: proxyPort);
+          debugPrint('[Auth] Updated existing 悦通 profile: ${profile.id}');
+        } else {
+          // Create new profile, marked as account-managed.
+          final profile = await repo.addProfile(
+            name: '悦通',
+            url: url,
+            proxyPort: proxyPort,
+            source: ProfileSource.account,
+          );
+          debugPrint('[Auth] Created new 悦通 profile: ${profile.id}');
+
+          // Auto-select the new profile
+          ref.read(activeProfileIdProvider.notifier).select(profile.id);
+        }
+
+        // Success — break out of retry loop
+        succeeded = true;
+        break;
+      } catch (e) {
+        lastError = e;
+        final isLast = i == urlsToTry.length - 1;
+        debugPrint('[Auth] Subscribe download failed (attempt ${i + 1}/${urlsToTry.length}): $e');
+        if (!isLast) {
+          debugPrint('[Auth] Retrying with fallback: ${urlsToTry[i + 1].substring(0, urlsToTry[i + 1].length.clamp(0, 60))}...');
+        }
+      }
+    }
+
+    if (!succeeded) {
+      throw lastError;
     }
 
     // Refresh profiles list in UI

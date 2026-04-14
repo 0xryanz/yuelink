@@ -170,6 +170,18 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
                   MaterialPageRoute(builder: (_) => const StartupReportPage())),
             ),
           ]),
+          const SizedBox(height: 20),
+
+          // ── Network diagnostics ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+            child: Text('网络诊断',
+                style: YLText.caption.copyWith(
+                    letterSpacing: 1.2,
+                    fontWeight: FontWeight.w600,
+                    color: YLColors.zinc400)),
+          ),
+          _NetworkDiagnostics(isDark: isDark),
           const SizedBox(height: 32),
 
           // ── One-click full repair ──
@@ -349,5 +361,196 @@ class _ActionRow extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ── Network diagnostics widget ─────────────────────────────────────────────
+
+class _DiagEndpoint {
+  final String label;
+  final String url;
+  const _DiagEndpoint(this.label, this.url);
+}
+
+const _kDiagEndpoints = [
+  _DiagEndpoint('面板 API', 'https://yuetong.app/api/v1/guest/comm/config'),
+  _DiagEndpoint('CDN 备用', 'https://d7ccm19ki90mg.cloudfront.net/api/v1/guest/comm/config'),
+  _DiagEndpoint('YueOps API', 'https://yue.yuebao.website/api/client/home'),
+  _DiagEndpoint('Google 连通性', 'https://www.gstatic.com/generate_204'),
+];
+
+enum _DiagStatus { idle, testing, success, failed }
+
+class _DiagResult {
+  final _DiagStatus status;
+  final int? latencyMs;
+  final String? error;
+  const _DiagResult({this.status = _DiagStatus.idle, this.latencyMs, this.error});
+}
+
+class _NetworkDiagnostics extends StatefulWidget {
+  final bool isDark;
+  const _NetworkDiagnostics({required this.isDark});
+
+  @override
+  State<_NetworkDiagnostics> createState() => _NetworkDiagnosticsState();
+}
+
+class _NetworkDiagnosticsState extends State<_NetworkDiagnostics> {
+  List<_DiagResult> _results = List.filled(_kDiagEndpoints.length, const _DiagResult());
+  bool _testing = false;
+
+  Future<void> _runDiagnostics() async {
+    if (_testing) return;
+    setState(() {
+      _testing = true;
+      _results = List.generate(
+        _kDiagEndpoints.length,
+        (_) => const _DiagResult(status: _DiagStatus.testing),
+      );
+    });
+
+    final futures = <Future<_DiagResult>>[];
+    for (final endpoint in _kDiagEndpoints) {
+      futures.add(_testEndpoint(endpoint.url));
+    }
+
+    final results = await Future.wait(futures);
+    if (mounted) {
+      setState(() {
+        _results = results;
+        _testing = false;
+      });
+    }
+  }
+
+  Future<_DiagResult> _testEndpoint(String url) async {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 5);
+    try {
+      final sw = Stopwatch()..start();
+      final request = await client.getUrl(Uri.parse(url));
+      final response = await request.close().timeout(const Duration(seconds: 5));
+      sw.stop();
+      // Drain the response body
+      await response.drain<void>();
+      final ms = sw.elapsedMilliseconds;
+      // Accept any non-server-error response as reachable
+      if (response.statusCode < 500) {
+        return _DiagResult(status: _DiagStatus.success, latencyMs: ms);
+      }
+      return _DiagResult(
+        status: _DiagStatus.failed,
+        latencyMs: ms,
+        error: 'HTTP ${response.statusCode}',
+      );
+    } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('TimeoutException')) {
+        return const _DiagResult(status: _DiagStatus.failed, error: '超时');
+      }
+      return _DiagResult(status: _DiagStatus.failed, error: msg.length > 40 ? '${msg.substring(0, 40)}...' : msg);
+    } finally {
+      client.close();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = widget.isDark;
+    return _Card(isDark: isDark, children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Row(
+          children: [
+            Icon(Icons.network_check_outlined,
+                size: 20,
+                color: isDark ? YLColors.zinc300 : YLColors.zinc600),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('网络诊断',
+                  style: YLText.body.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: isDark ? YLColors.zinc200 : YLColors.zinc700)),
+            ),
+            TextButton(
+              onPressed: _testing ? null : _runDiagnostics,
+              child: Text(
+                _testing ? '检测中...' : '开始检测',
+                style: YLText.caption.copyWith(
+                    color: _testing ? YLColors.zinc400 : YLColors.zinc600,
+                    fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+      ),
+      for (var i = 0; i < _kDiagEndpoints.length; i++) ...[
+        Divider(
+          height: 1,
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.black.withValues(alpha: 0.06),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              _diagIcon(_results[i].status),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_kDiagEndpoints[i].label,
+                        style: YLText.caption.copyWith(
+                            fontWeight: FontWeight.w500,
+                            color: isDark ? YLColors.zinc200 : YLColors.zinc700)),
+                    Text(
+                      _diagSubtitle(_results[i], _kDiagEndpoints[i].url),
+                      style: YLText.caption.copyWith(
+                          color: YLColors.zinc400, fontSize: 11),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (_results[i].latencyMs != null)
+                Text('${_results[i].latencyMs}ms',
+                    style: YLText.caption.copyWith(
+                        color: _results[i].status == _DiagStatus.success
+                            ? YLColors.connected
+                            : Colors.red,
+                        fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ],
+    ]);
+  }
+
+  Widget _diagIcon(_DiagStatus status) {
+    switch (status) {
+      case _DiagStatus.idle:
+        return const Icon(Icons.circle_outlined, size: 16, color: YLColors.zinc400);
+      case _DiagStatus.testing:
+        return const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2, color: YLColors.zinc400),
+        );
+      case _DiagStatus.success:
+        return const Icon(Icons.check_circle_rounded, size: 16, color: YLColors.connected);
+      case _DiagStatus.failed:
+        return const Icon(Icons.cancel_rounded, size: 16, color: Colors.red);
+    }
+  }
+
+  String _diagSubtitle(_DiagResult result, String url) {
+    if (result.status == _DiagStatus.idle) return Uri.parse(url).host;
+    if (result.status == _DiagStatus.testing) return '正在检测...';
+    if (result.status == _DiagStatus.success) return Uri.parse(url).host;
+    return result.error ?? '未知错误';
   }
 }

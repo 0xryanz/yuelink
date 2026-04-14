@@ -846,7 +846,9 @@ class _ProfileRow extends ConsumerWidget {
     final plan = overview?.planName ?? '--';
 
     return _SettingsCard(
-      child: Column(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+        child: Column(
         children: [
           Row(
             children: [
@@ -991,6 +993,7 @@ class _ProfileRow extends ConsumerWidget {
           ),
         ],
       ),
+      ),
     );
   }
 }
@@ -1026,7 +1029,7 @@ class _MineTrafficSection extends ConsumerWidget {
 
     return _SettingsCard(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
         child: Column(
           children: [
             Row(

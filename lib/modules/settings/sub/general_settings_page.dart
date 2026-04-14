@@ -1179,6 +1179,22 @@ class _AccentColorRow extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final bool isEn;
 
+  // Cache: ColorScheme.fromSeed is expensive — precompute for all presets.
+  static final _lightSchemes = {
+    for (final p in _presets)
+      p.$1: ColorScheme.fromSeed(
+        seedColor: Color(int.parse('FF${p.$1}', radix: 16)),
+        brightness: Brightness.light,
+      ),
+  };
+  static final _darkSchemes = {
+    for (final p in _presets)
+      p.$1: ColorScheme.fromSeed(
+        seedColor: Color(int.parse('FF${p.$1}', radix: 16)),
+        brightness: Brightness.dark,
+      ),
+  };
+
   const _AccentColorRow({
     required this.currentHex,
     required this.onChanged,
@@ -1227,14 +1243,10 @@ class _AccentColorRow extends StatelessWidget {
               runSpacing: spacing,
               children: _presets.map((preset) {
                 final hex = preset.$1;
-                final seed = Color(int.parse('FF$hex', radix: 16));
                 final isSelected =
                     currentHex.toUpperCase() == hex.toUpperCase();
-                // Generate Material 3 tonal palette from seed
-                final scheme = ColorScheme.fromSeed(
-                  seedColor: seed,
-                  brightness: isDark ? Brightness.dark : Brightness.light,
-                );
+                // Use precomputed scheme — avoids 10x fromSeed per build.
+                final scheme = (isDark ? _darkSchemes : _lightSchemes)[hex]!;
                 return GestureDetector(
                   onTap: () => onChanged(hex),
                   child: AnimatedContainer(

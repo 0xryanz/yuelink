@@ -158,7 +158,7 @@ class SubscriptionInfo {
       total: json['total'] as int?,
       expire: json['expire'] != null
           ? DateTime.fromMillisecondsSinceEpoch(
-              (json['expire'] as int) * 1000)
+              ((json['expire'] as num).toInt()) * 1000)
           : null,
       updateInterval: json['updateInterval'] as int?,
       profileTitle: json['profileTitle'] as String?,

@@ -165,8 +165,11 @@ class SettingsService {
         return ThemeMode.light;
       case 'dark':
         return ThemeMode.dark;
+      case 'system':
+        return ThemeMode.system;
       default:
-        return ThemeMode.dark;
+        // First launch — default to following the OS setting.
+        return ThemeMode.system;
     }
   }
 

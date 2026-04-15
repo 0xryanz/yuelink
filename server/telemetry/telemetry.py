@@ -4,12 +4,25 @@ YueLink telemetry — ingest + stats + feature flags + NPS + dashboard.
 Drop-in FastAPI APIRouter mounted alongside the existing checkin-api
 service on 23.80.91.14.
 
-Under /api/client/telemetry:
+Storage: **PostgreSQL 16** on the shared yueops database
+(66.55.76.208:5432/yueops, schema `telemetry`). The `TELEMETRY_DATABASE_URL`
+env var is a standard libpq DSN — defaults to the same DSN yueops uses.
+Tables live in the `telemetry` schema so they don't collide with yueops'
+own models.
+
+Why PG instead of the earlier sqlite build:
+- MVCC: concurrent writers don't block each other while prune runs.
+- GIN indexes on JSONB props: O(log n) instead of table-scan json_extract.
+- Same cluster yueops already uses → zero extra ops surface.
+- Quality-plane bridge (see ROADMAP.md) needs to JOIN node_events with
+  yueops.server_nodes — same-DB joins are O(index) instead of cross-process.
+
+Routes (all under /api/client/telemetry):
 
     POST /                         ingest a batch (what the app sends)
     GET  /flags                    feature flag evaluation for a client_id
     POST /nps                      NPS score + comment submission
-    GET  /stats/summary            top events + counts, last N days  (BasicAuth)
+    GET  /stats/summary            top events + counts               (BasicAuth)
     GET  /stats/dau                daily active clients              (BasicAuth)
     GET  /stats/crash_free         crash-free session rate           (BasicAuth)
     GET  /stats/startup_funnel     8-step funnel ok vs fail          (BasicAuth)
@@ -20,9 +33,6 @@ Under /api/client/telemetry:
     GET  /admin/flags              admin JSON view of current flags  (BasicAuth)
     POST /admin/flags              write a flag value                (BasicAuth)
     GET  /dashboard                single-page HTML dashboard        (BasicAuth)
-
-Store: SQLite at /var/lib/yuelink-telemetry/events.db. Auto-prune events
-older than 90 days on a sampled basis.
 """
 
 from __future__ import annotations
@@ -31,21 +41,27 @@ import hashlib
 import json
 import os
 import secrets
-import sqlite3
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Iterator, Optional
 
+import psycopg2
+import psycopg2.extras
+import psycopg2.pool
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 # ── Configuration ───────────────────────────────────────────────────────
 
-DB_PATH = os.environ.get(
-    "TELEMETRY_DB_PATH", "/var/lib/yuelink-telemetry/events.db"
+# Default matches yueops own DATABASE_URL (same cluster, same DB, different schema).
+DEFAULT_DSN = (
+    "host=66.55.76.208 port=5432 user=root password=jim@8858 dbname=yueops"
 )
+DSN = os.environ.get("TELEMETRY_DATABASE_DSN", DEFAULT_DSN)
+SCHEMA = os.environ.get("TELEMETRY_SCHEMA", "telemetry")
+
 DASHBOARD_USER = os.environ.get("TELEMETRY_DASHBOARD_USER", "")
 DASHBOARD_PASSWORD = os.environ.get("TELEMETRY_DASHBOARD_PASSWORD", "")
 RETENTION_DAYS = int(os.environ.get("TELEMETRY_RETENTION_DAYS", "90"))
@@ -61,125 +77,153 @@ security = HTTPBasic()
 
 # ── DB plumbing ─────────────────────────────────────────────────────────
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS events (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts          INTEGER NOT NULL,
-    server_ts   INTEGER NOT NULL,
-    day         TEXT NOT NULL,
+_SCHEMA_SQL = f"""
+CREATE SCHEMA IF NOT EXISTS {SCHEMA};
+SET LOCAL search_path TO {SCHEMA}, public;
+
+CREATE TABLE IF NOT EXISTS {SCHEMA}.events (
+    id          BIGSERIAL PRIMARY KEY,
+    ts          BIGINT NOT NULL,
+    server_ts   BIGINT NOT NULL,
+    day         DATE NOT NULL,
     event       TEXT NOT NULL,
     client_id   TEXT,
     session_id  TEXT,
     platform    TEXT,
     version     TEXT,
-    props       TEXT
+    props       JSONB
 );
-CREATE INDEX IF NOT EXISTS idx_events_day       ON events(day);
-CREATE INDEX IF NOT EXISTS idx_events_event     ON events(event);
-CREATE INDEX IF NOT EXISTS idx_events_client    ON events(client_id);
-CREATE INDEX IF NOT EXISTS idx_events_session   ON events(session_id);
-CREATE INDEX IF NOT EXISTS idx_events_day_event ON events(day, event);
+CREATE INDEX IF NOT EXISTS idx_events_day       ON {SCHEMA}.events(day);
+CREATE INDEX IF NOT EXISTS idx_events_event     ON {SCHEMA}.events(event);
+CREATE INDEX IF NOT EXISTS idx_events_client    ON {SCHEMA}.events(client_id);
+CREATE INDEX IF NOT EXISTS idx_events_session   ON {SCHEMA}.events(session_id);
+CREATE INDEX IF NOT EXISTS idx_events_day_event ON {SCHEMA}.events(day, event);
+CREATE INDEX IF NOT EXISTS idx_events_props     ON {SCHEMA}.events USING GIN(props);
 
--- node_events: flat per-node rows extracted from node_* telemetry events
--- so queries can scan a narrow table instead of parsing JSON props.
-CREATE TABLE IF NOT EXISTS node_events (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts          INTEGER NOT NULL,
-    day         TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS {SCHEMA}.node_events (
+    id          BIGSERIAL PRIMARY KEY,
+    ts          BIGINT NOT NULL,
+    day         DATE NOT NULL,
     client_id   TEXT,
     platform    TEXT,
     version     TEXT,
-    event       TEXT NOT NULL,   -- urltest | connect | select | inventory_item
+    event       TEXT NOT NULL,
     fp          TEXT,
     type        TEXT,
     region      TEXT,
     delay_ms    INTEGER,
-    ok          INTEGER,          -- 0 / 1, null for inventory_item
+    ok          SMALLINT,
     reason      TEXT,
     group_name  TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_node_events_fp_day ON node_events(fp, day);
-CREATE INDEX IF NOT EXISTS idx_node_events_day    ON node_events(day);
-CREATE INDEX IF NOT EXISTS idx_node_events_event  ON node_events(event);
+CREATE INDEX IF NOT EXISTS idx_node_events_fp_day ON {SCHEMA}.node_events(fp, day);
+CREATE INDEX IF NOT EXISTS idx_node_events_day    ON {SCHEMA}.node_events(day);
+CREATE INDEX IF NOT EXISTS idx_node_events_event  ON {SCHEMA}.node_events(event);
 
--- node_identity: stable identifier per node, rebindable across fp changes
--- (ops bind manually via /admin/node/bind when the panel rotates IPs).
-CREATE TABLE IF NOT EXISTS node_identity (
-    identity_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+CREATE TABLE IF NOT EXISTS {SCHEMA}.node_identity (
+    identity_id  BIGSERIAL PRIMARY KEY,
     current_fp   TEXT UNIQUE,
     label        TEXT,
     protocol     TEXT,
     region       TEXT,
     sid          TEXT,
     xb_server_id INTEGER,
-    first_seen   INTEGER NOT NULL,
-    last_seen    INTEGER NOT NULL,
-    retired_at   INTEGER
+    first_seen   BIGINT NOT NULL,
+    last_seen    BIGINT NOT NULL,
+    retired_at   BIGINT
 );
-CREATE TABLE IF NOT EXISTS node_fp_history (
+
+CREATE TABLE IF NOT EXISTS {SCHEMA}.node_fp_history (
     fp          TEXT PRIMARY KEY,
-    identity_id INTEGER NOT NULL,
-    bound_at    INTEGER NOT NULL,
-    retired_at  INTEGER,
-    FOREIGN KEY (identity_id) REFERENCES node_identity(identity_id)
+    identity_id BIGINT NOT NULL REFERENCES {SCHEMA}.node_identity(identity_id),
+    bound_at    BIGINT NOT NULL,
+    retired_at  BIGINT
 );
 
--- feature_flags: admin-controlled flags returned to clients
-CREATE TABLE IF NOT EXISTS feature_flags (
+CREATE TABLE IF NOT EXISTS {SCHEMA}.feature_flags (
     key         TEXT PRIMARY KEY,
-    value_json  TEXT NOT NULL,         -- JSON-encoded: bool / num / string
-    rollout_pct INTEGER DEFAULT 100,   -- 0-100; 100 = all clients
-    updated_at  INTEGER NOT NULL
+    value_json  TEXT NOT NULL,
+    rollout_pct INTEGER DEFAULT 100,
+    updated_at  BIGINT NOT NULL
 );
 
--- nps_responses: separate table so comments never live in generic events
-CREATE TABLE IF NOT EXISTS nps_responses (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts          INTEGER NOT NULL,
-    day         TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS {SCHEMA}.nps_responses (
+    id          BIGSERIAL PRIMARY KEY,
+    ts          BIGINT NOT NULL,
+    day         DATE NOT NULL,
     client_id   TEXT,
     platform    TEXT,
     version     TEXT,
-    score       INTEGER NOT NULL,
+    score       SMALLINT NOT NULL,
     comment     TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_nps_day ON nps_responses(day);
+CREATE INDEX IF NOT EXISTS idx_nps_day ON {SCHEMA}.nps_responses(day);
 """
 
 
-def _ensure_db() -> None:
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    with sqlite3.connect(DB_PATH) as c:
-        c.executescript(_SCHEMA)
+_pool: Optional[psycopg2.pool.ThreadedConnectionPool] = None
 
 
-_ensure_db()
+def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
+    global _pool
+    if _pool is None:
+        _pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=1,
+            maxconn=10,
+            dsn=DSN,
+        )
+    return _pool
+
+
+def _ensure_schema() -> None:
+    conn = psycopg2.connect(DSN)
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            for stmt in _SCHEMA_SQL.strip().split(";\n"):
+                stmt = stmt.strip()
+                if stmt:
+                    cur.execute(stmt)
+    finally:
+        conn.close()
+
+
+try:
+    _ensure_schema()
+except Exception as e:  # pragma: no cover — startup-time, log and continue
+    print(f"[telemetry] schema init failed: {e}")
 
 
 @contextmanager
-def db() -> Iterator[sqlite3.Connection]:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+def db() -> Iterator[psycopg2.extensions.connection]:
+    """Borrow a connection from the pool. Auto-commit on success, rollback on err."""
+    pool = _get_pool()
+    conn = pool.getconn()
     try:
         yield conn
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
-        conn.close()
+        pool.putconn(conn)
+
+
+def _dict_cursor(conn):
+    return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
 
 def _maybe_prune() -> None:
     if secrets.randbelow(1000) != 0:
         return
-    cutoff_day = (
-        datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
-    ).strftime("%Y-%m-%d")
-    with db() as c:
-        c.execute("DELETE FROM events WHERE day < ?", (cutoff_day,))
-        c.execute("DELETE FROM node_events WHERE day < ?", (cutoff_day,))
-        c.execute("DELETE FROM nps_responses WHERE day < ?", (cutoff_day,))
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).date()
+    with db() as c, c.cursor() as cur:
+        cur.execute(f"DELETE FROM {SCHEMA}.events WHERE day < %s", (cutoff,))
+        cur.execute(f"DELETE FROM {SCHEMA}.node_events WHERE day < %s", (cutoff,))
+        cur.execute(f"DELETE FROM {SCHEMA}.nps_responses WHERE day < %s", (cutoff,))
 
 
-# ── Auth for admin/stats endpoints ──────────────────────────────────────
+# ── Auth ────────────────────────────────────────────────────────────────
 
 
 def require_dashboard_auth(
@@ -218,31 +262,33 @@ def _is_simple_scalar(v) -> bool:
     return v is None or isinstance(v, (str, int, float, bool))
 
 
-def _truncate(v: Optional[object], limit: int = MAX_PROP_VALUE_LEN) -> Optional[str]:
+def _truncate_str(v: Optional[object], limit: int = MAX_PROP_VALUE_LEN) -> Optional[str]:
     if v is None:
         return None
     s = str(v)
     return s[:limit] if len(s) > limit else s
 
 
-def _extract_node_rows(event_name: str, body: dict, day: str) -> list[tuple]:
-    """Fan-out node_* events into flat node_events rows."""
+def _extract_node_rows(event_name: str, body: dict, day) -> list[tuple]:
+    """Fan-out node_* events into flat node_events rows. Receives the RAW
+    event dict so numeric/bool types are intact."""
     rows: list[tuple] = []
-    ts = int(body.get("ts") or 0)
-    cid = _truncate(body.get("client_id"))
-    platform = _truncate(body.get("platform"))
-    version = _truncate(body.get("version"))
+    ts_raw = body.get("ts")
+    ts = int(ts_raw) if isinstance(ts_raw, (int, float)) else 0
+    cid = _truncate_str(body.get("client_id"))
+    platform = _truncate_str(body.get("platform"))
+    version = _truncate_str(body.get("version"))
 
-    def row(ev: str, fp, typ, region=None, delay_ms=None, ok=None, reason=None, group=None):
+    def row(ev, fp, typ, region=None, delay_ms=None, ok=None, reason=None, group=None):
         return (
             ts, day, cid, platform, version, ev,
-            _truncate(fp, 32),
-            _truncate(typ, 24),
-            _truncate(region, 16),
+            _truncate_str(fp, 32),
+            _truncate_str(typ, 24),
+            _truncate_str(region, 16),
             int(delay_ms) if isinstance(delay_ms, (int, float)) else None,
             (1 if ok is True else (0 if ok is False else None)),
-            _truncate(reason, 80),
-            _truncate(group, 64),
+            _truncate_str(reason, 80),
+            _truncate_str(group, 64),
         )
 
     if event_name == "node_inventory":
@@ -295,7 +341,7 @@ async def ingest(request: Request) -> JSONResponse:
     events = events[:MAX_EVENTS_PER_REQUEST]
 
     server_ts = int(time.time() * 1000)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).date()
 
     event_rows: list[tuple] = []
     node_rows: list[tuple] = []
@@ -310,21 +356,25 @@ async def ingest(request: Request) -> JSONResponse:
         if not isinstance(ts, (int, float)):
             ts = server_ts
 
-        # Build props bag (scalars only; list-of-scalars/dicts stored in JSON).
+        # Props stay JSON — Postgres JSONB preserves types, unlike our
+        # earlier stringify-everything sqlite path.
         props: dict = {}
         for k, v in e.items():
             if k in _RESERVED_KEYS:
                 continue
             if _is_simple_scalar(v):
-                props[k] = _truncate(v)
+                # Clamp string length, keep numeric/bool/null as-is.
+                props[k] = _truncate_str(v) if isinstance(v, str) else v
             elif isinstance(v, list):
                 cleaned = []
                 for item in v[:MAX_INVENTORY_NODES]:
                     if isinstance(item, dict):
-                        inner = {
-                            ik: _truncate(iv) for ik, iv in item.items()
-                            if isinstance(ik, str) and _is_simple_scalar(iv)
-                        }
+                        inner = {}
+                        for ik, iv in item.items():
+                            if not isinstance(ik, str):
+                                continue
+                            if _is_simple_scalar(iv):
+                                inner[ik] = _truncate_str(iv) if isinstance(iv, str) else iv
                         if inner:
                             cleaned.append(inner)
                 if cleaned:
@@ -335,55 +385,50 @@ async def ingest(request: Request) -> JSONResponse:
             server_ts,
             today,
             name,
-            _truncate(e.get("client_id")),
-            _truncate(e.get("session_id")),
-            _truncate(e.get("platform")),
-            _truncate(e.get("version")),
+            _truncate_str(e.get("client_id")),
+            _truncate_str(e.get("session_id")),
+            _truncate_str(e.get("platform")),
+            _truncate_str(e.get("version")),
             json.dumps(props, ensure_ascii=False) if props else None,
         ))
 
-        # Fan out node_* into flat rows. Pass the RAW event `e` (not merged
-        # with the stringified `props`) so numeric/bool fields keep their
-        # original types — the extractor casts them explicitly.
         if name.startswith("node_"):
             node_rows.extend(_extract_node_rows(name, e, today))
 
     if not event_rows:
         return JSONResponse({"ok": True, "count": 0})
 
-    with db() as c:
-        c.executemany(
-            "INSERT INTO events(ts, server_ts, day, event, client_id, "
-            "session_id, platform, version, props) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    with db() as c, c.cursor() as cur:
+        psycopg2.extras.execute_values(
+            cur,
+            f"INSERT INTO {SCHEMA}.events(ts, server_ts, day, event, client_id, "
+            f"session_id, platform, version, props) VALUES %s",
             event_rows,
         )
         if node_rows:
-            c.executemany(
-                "INSERT INTO node_events(ts, day, client_id, platform, version, "
-                "event, fp, type, region, delay_ms, ok, reason, group_name) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            psycopg2.extras.execute_values(
+                cur,
+                f"INSERT INTO {SCHEMA}.node_events(ts, day, client_id, platform, version, "
+                f"event, fp, type, region, delay_ms, ok, reason, group_name) VALUES %s",
                 node_rows,
             )
-            # Upsert node_identity — last_seen keeps moving forward.
-            # Region/protocol only update when the incoming row has a non-null
-            # value; otherwise a later urltest/connect row (which carries no
-            # region) would clobber the good data from an earlier inventory row.
+            # node_identity upsert — region/protocol only update when incoming
+            # value is non-null (urltest/connect rows carry no region).
             for r in node_rows:
-                fp = r[6]
-                typ = r[7]
-                region = r[8]
-                now_ts = server_ts
+                fp, typ, region = r[6], r[7], r[8]
                 if not fp:
                     continue
-                c.execute(
-                    "INSERT INTO node_identity(current_fp, protocol, region, "
-                    "first_seen, last_seen) VALUES (?, ?, ?, ?, ?) "
-                    "ON CONFLICT(current_fp) DO UPDATE SET "
-                    "  last_seen=excluded.last_seen, "
-                    "  protocol=COALESCE(excluded.protocol, node_identity.protocol), "
-                    "  region=COALESCE(excluded.region, node_identity.region)",
-                    (fp, typ, region, now_ts, now_ts),
+                cur.execute(
+                    f"""
+                    INSERT INTO {SCHEMA}.node_identity(current_fp, protocol, region,
+                                                       first_seen, last_seen)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (current_fp) DO UPDATE SET
+                      last_seen = EXCLUDED.last_seen,
+                      protocol  = COALESCE(EXCLUDED.protocol, {SCHEMA}.node_identity.protocol),
+                      region    = COALESCE(EXCLUDED.region,   {SCHEMA}.node_identity.region)
+                    """,
+                    (fp, typ, region, server_ts, server_ts),
                 )
 
     _maybe_prune()
@@ -394,22 +439,11 @@ async def ingest(request: Request) -> JSONResponse:
 
 
 @router.get("/flags")
-def get_flags(
-    client_id: str = "",
-    platform: str = "",
-    version: str = "",
-):
-    """Return the effective flags for [client_id].
-
-    `rollout_pct` controls the rollout: for each flag we hash
-    sha1(key + client_id) to a 0-99 integer and compare with `rollout_pct`.
-    This is stable per client, so a user never sees a flag flip just
-    because they restarted the app.
-    """
-    with db() as c:
-        rows = c.execute(
-            "SELECT key, value_json, rollout_pct FROM feature_flags"
-        ).fetchall()
+def get_flags(client_id: str = "", platform: str = "", version: str = ""):
+    """Return the effective flags for [client_id]."""
+    with db() as c, _dict_cursor(c) as cur:
+        cur.execute(f"SELECT key, value_json, rollout_pct FROM {SCHEMA}.feature_flags")
+        rows = cur.fetchall()
     out: dict[str, object] = {}
     for r in rows:
         pct = int(r["rollout_pct"] or 0)
@@ -429,12 +463,12 @@ def _bucket(client_id: str, key: str) -> int:
 
 @router.get("/admin/flags")
 def admin_list_flags(_user: str = Depends(require_dashboard_auth)):
-    with db() as c:
-        rows = c.execute(
-            "SELECT key, value_json, rollout_pct, updated_at "
-            "FROM feature_flags ORDER BY key"
-        ).fetchall()
-    return {"flags": [dict(r) for r in rows]}
+    with db() as c, _dict_cursor(c) as cur:
+        cur.execute(
+            f"SELECT key, value_json, rollout_pct, updated_at "
+            f"FROM {SCHEMA}.feature_flags ORDER BY key"
+        )
+        return {"flags": cur.fetchall()}
 
 
 @router.post("/admin/flags")
@@ -449,12 +483,16 @@ async def admin_set_flag(
     value = body.get("value")
     rollout_pct = int(body.get("rollout_pct", 100))
     rollout_pct = max(0, min(100, rollout_pct))
-    with db() as c:
-        c.execute(
-            "INSERT INTO feature_flags(key, value_json, rollout_pct, updated_at) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json, "
-            "rollout_pct=excluded.rollout_pct, updated_at=excluded.updated_at",
+    with db() as c, c.cursor() as cur:
+        cur.execute(
+            f"""
+            INSERT INTO {SCHEMA}.feature_flags(key, value_json, rollout_pct, updated_at)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (key) DO UPDATE SET
+              value_json = EXCLUDED.value_json,
+              rollout_pct = EXCLUDED.rollout_pct,
+              updated_at = EXCLUDED.updated_at
+            """,
             (key, json.dumps(value), rollout_pct, int(time.time())),
         )
     return {"ok": True, "key": key}
@@ -469,19 +507,22 @@ async def nps_submit(request: Request) -> JSONResponse:
     score = body.get("score")
     if not isinstance(score, (int, float)) or score < 0 or score > 10:
         raise HTTPException(status_code=400, detail="score must be 0-10")
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    with db() as c:
-        c.execute(
-            "INSERT INTO nps_responses(ts, day, client_id, platform, version, "
-            "score, comment) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    today = datetime.now(timezone.utc).date()
+    with db() as c, c.cursor() as cur:
+        cur.execute(
+            f"""
+            INSERT INTO {SCHEMA}.nps_responses(ts, day, client_id, platform, version,
+                                               score, comment)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
             (
                 int(body.get("ts") or time.time() * 1000),
                 today,
-                _truncate(body.get("client_id")),
-                _truncate(body.get("platform")),
-                _truncate(body.get("version")),
+                _truncate_str(body.get("client_id")),
+                _truncate_str(body.get("platform")),
+                _truncate_str(body.get("version")),
                 int(score),
-                _truncate(body.get("comment"), 500),
+                _truncate_str(body.get("comment"), 500),
             ),
         )
     return JSONResponse({"ok": True})
@@ -490,84 +531,90 @@ async def nps_submit(request: Request) -> JSONResponse:
 # ── Stats ───────────────────────────────────────────────────────────────
 
 
-def _day_window(days: int) -> tuple[str, str]:
+def _day_window(days: int):
     end = datetime.now(timezone.utc).date()
     start = end - timedelta(days=max(1, days) - 1)
-    return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+    return start, end
 
 
 @router.get("/stats/summary")
 def stats_summary(days: int = 7, _user: str = Depends(require_dashboard_auth)):
     start, end = _day_window(days)
-    with db() as c:
-        top = c.execute(
-            "SELECT event, COUNT(*) AS n FROM events "
-            "WHERE day BETWEEN ? AND ? GROUP BY event ORDER BY n DESC LIMIT 30",
+    with db() as c, _dict_cursor(c) as cur:
+        cur.execute(
+            f"""SELECT event, COUNT(*)::int AS n FROM {SCHEMA}.events
+                WHERE day BETWEEN %s AND %s
+                GROUP BY event ORDER BY n DESC LIMIT 30""",
             (start, end),
-        ).fetchall()
-        total = c.execute(
-            "SELECT COUNT(*) AS n FROM events WHERE day BETWEEN ? AND ?",
+        )
+        top = cur.fetchall()
+        cur.execute(
+            f"SELECT COUNT(*)::int AS n FROM {SCHEMA}.events WHERE day BETWEEN %s AND %s",
             (start, end),
-        ).fetchone()["n"]
-        clients = c.execute(
-            "SELECT COUNT(DISTINCT client_id) AS n FROM events "
-            "WHERE day BETWEEN ? AND ? AND client_id IS NOT NULL",
+        )
+        total = cur.fetchone()["n"]
+        cur.execute(
+            f"""SELECT COUNT(DISTINCT client_id)::int AS n FROM {SCHEMA}.events
+                WHERE day BETWEEN %s AND %s AND client_id IS NOT NULL""",
             (start, end),
-        ).fetchone()["n"]
+        )
+        clients = cur.fetchone()["n"]
     return {
         "window_days": days,
         "total_events": total,
         "unique_clients": clients,
-        "top_events": [dict(r) for r in top],
+        "top_events": top,
     }
 
 
 @router.get("/stats/dau")
 def stats_dau(days: int = 30, _user: str = Depends(require_dashboard_auth)):
     start, end = _day_window(days)
-    with db() as c:
-        rows = c.execute(
-            "SELECT day, COUNT(DISTINCT client_id) AS dau FROM events "
-            "WHERE day BETWEEN ? AND ? AND client_id IS NOT NULL "
-            "GROUP BY day ORDER BY day",
+    with db() as c, _dict_cursor(c) as cur:
+        cur.execute(
+            f"""SELECT to_char(day, 'YYYY-MM-DD') AS day,
+                       COUNT(DISTINCT client_id)::int AS dau
+                FROM {SCHEMA}.events
+                WHERE day BETWEEN %s AND %s AND client_id IS NOT NULL
+                GROUP BY day ORDER BY day""",
             (start, end),
-        ).fetchall()
-    return {"series": [dict(r) for r in rows]}
+        )
+        return {"series": cur.fetchall()}
 
 
 @router.get("/stats/crash_free")
-def stats_crash_free(
-    days: int = 7,
-    _user: str = Depends(require_dashboard_auth),
-):
-    """Crash-free session rate — 2026 standard mobile quality metric.
-
-    `1 - (distinct sessions with crash) / (distinct sessions)`.
-    """
+def stats_crash_free(days: int = 7, _user: str = Depends(require_dashboard_auth)):
+    """1 - (sessions with ≥1 crash) / (total sessions). 2026 mobile baseline."""
     start, end = _day_window(days)
-    with db() as c:
-        total = c.execute(
-            "SELECT COUNT(DISTINCT session_id) AS n FROM events "
-            "WHERE day BETWEEN ? AND ? AND session_id IS NOT NULL",
+    with db() as c, _dict_cursor(c) as cur:
+        cur.execute(
+            f"""SELECT COUNT(DISTINCT session_id)::int AS n
+                FROM {SCHEMA}.events
+                WHERE day BETWEEN %s AND %s AND session_id IS NOT NULL""",
             (start, end),
-        ).fetchone()["n"]
-        crashed = c.execute(
-            "SELECT COUNT(DISTINCT session_id) AS n FROM events "
-            "WHERE day BETWEEN ? AND ? AND session_id IS NOT NULL "
-            "AND event='crash'",
+        )
+        total = cur.fetchone()["n"]
+        cur.execute(
+            f"""SELECT COUNT(DISTINCT session_id)::int AS n
+                FROM {SCHEMA}.events
+                WHERE day BETWEEN %s AND %s AND session_id IS NOT NULL
+                AND event='crash'""",
             (start, end),
-        ).fetchone()["n"]
-        # Daily series for trending
-        daily = c.execute(
-            "SELECT e.day, "
-            "COUNT(DISTINCT e.session_id) AS sessions, "
-            "COUNT(DISTINCT CASE WHEN c.session_id IS NOT NULL THEN e.session_id END) AS crashed "
-            "FROM events e LEFT JOIN events c "
-            "  ON c.session_id = e.session_id AND c.event='crash' "
-            "WHERE e.day BETWEEN ? AND ? AND e.session_id IS NOT NULL "
-            "GROUP BY e.day ORDER BY e.day",
+        )
+        crashed = cur.fetchone()["n"]
+        cur.execute(
+            f"""SELECT to_char(e.day, 'YYYY-MM-DD') AS day,
+                       COUNT(DISTINCT e.session_id)::int AS sessions,
+                       COUNT(DISTINCT CASE WHEN c.session_id IS NOT NULL
+                                           THEN e.session_id END)::int AS crashed
+                FROM {SCHEMA}.events e
+                LEFT JOIN {SCHEMA}.events c
+                  ON c.session_id = e.session_id AND c.event='crash'
+                WHERE e.day BETWEEN %s AND %s AND e.session_id IS NOT NULL
+                GROUP BY e.day ORDER BY e.day""",
             (start, end),
-        ).fetchall()
+        )
+        daily = cur.fetchall()
     return {
         "sessions": total,
         "crashed_sessions": crashed,
@@ -585,30 +632,31 @@ def stats_crash_free(
 
 
 @router.get("/stats/startup_funnel")
-def stats_startup_funnel(
-    days: int = 7,
-    _user: str = Depends(require_dashboard_auth),
-):
+def stats_startup_funnel(days: int = 7, _user: str = Depends(require_dashboard_auth)):
     start, end = _day_window(days)
-    with db() as c:
-        ok = c.execute(
-            "SELECT COUNT(*) AS n FROM events "
-            "WHERE event='startup_ok' AND day BETWEEN ? AND ?",
+    with db() as c, _dict_cursor(c) as cur:
+        cur.execute(
+            f"""SELECT COUNT(*)::int AS n FROM {SCHEMA}.events
+                WHERE event='startup_ok' AND day BETWEEN %s AND %s""",
             (start, end),
-        ).fetchone()["n"]
-        fails = c.execute(
-            "SELECT json_extract(props, '$.step') AS step, "
-            "json_extract(props, '$.code') AS code, COUNT(*) AS n "
-            "FROM events WHERE event='startup_fail' AND day BETWEEN ? AND ? "
-            "GROUP BY step, code ORDER BY n DESC",
+        )
+        ok = cur.fetchone()["n"]
+        cur.execute(
+            f"""SELECT props->>'step' AS step,
+                       props->>'code' AS code,
+                       COUNT(*)::int AS n
+                FROM {SCHEMA}.events
+                WHERE event='startup_fail' AND day BETWEEN %s AND %s
+                GROUP BY step, code ORDER BY n DESC""",
             (start, end),
-        ).fetchall()
+        )
+        fails = cur.fetchall()
     total = ok + sum(r["n"] for r in fails)
     return {
         "window_days": days,
         "total": total,
         "ok": ok,
-        "failures": [dict(r) for r in fails],
+        "failures": fails,
         "ok_rate": (ok / total) if total else None,
     }
 
@@ -616,77 +664,68 @@ def stats_startup_funnel(
 @router.get("/stats/errors")
 def stats_errors(days: int = 7, _user: str = Depends(require_dashboard_auth)):
     start, end = _day_window(days)
-    with db() as c:
-        rows = c.execute(
-            "SELECT json_extract(props, '$.type') AS type, "
-            "json_extract(props, '$.src') AS src, COUNT(*) AS n "
-            "FROM events WHERE event='crash' AND day BETWEEN ? AND ? "
-            "GROUP BY type, src ORDER BY n DESC LIMIT 30",
+    with db() as c, _dict_cursor(c) as cur:
+        cur.execute(
+            f"""SELECT props->>'type' AS type,
+                       props->>'src' AS src,
+                       COUNT(*)::int AS n
+                FROM {SCHEMA}.events
+                WHERE event='crash' AND day BETWEEN %s AND %s
+                GROUP BY type, src ORDER BY n DESC LIMIT 30""",
             (start, end),
-        ).fetchall()
-    return {"top_errors": [dict(r) for r in rows]}
+        )
+        return {"top_errors": cur.fetchall()}
 
 
 @router.get("/stats/versions")
 def stats_versions(days: int = 7, _user: str = Depends(require_dashboard_auth)):
     start, end = _day_window(days)
-    with db() as c:
-        rows = c.execute(
-            "SELECT platform, version, COUNT(DISTINCT client_id) AS clients "
-            "FROM events WHERE day BETWEEN ? AND ? AND client_id IS NOT NULL "
-            "GROUP BY platform, version ORDER BY platform, clients DESC",
+    with db() as c, _dict_cursor(c) as cur:
+        cur.execute(
+            f"""SELECT platform, version, COUNT(DISTINCT client_id)::int AS clients
+                FROM {SCHEMA}.events
+                WHERE day BETWEEN %s AND %s AND client_id IS NOT NULL
+                GROUP BY platform, version ORDER BY platform, clients DESC""",
             (start, end),
-        ).fetchall()
-    return {"distribution": [dict(r) for r in rows]}
+        )
+        return {"distribution": cur.fetchall()}
 
 
 @router.get("/stats/nodes")
 def stats_nodes(
-    days: int = 7,
-    limit: int = 50,
+    days: int = 7, limit: int = 50,
     _user: str = Depends(require_dashboard_auth),
 ):
-    """Per-node health score from real-user telemetry.
-
-    Scoring formula:
-        latency_score   = max(0, 1 - p95_delay_ms / 2000)    # 2s = 0
-        success_score   = urltest_ok_rate
-        connect_score   = connect_ok_rate  (if any connects, else 1)
-        usage_weight    = log(users + 1) / log(50)
-        score = 0.45 * success + 0.35 * latency + 0.20 * connect_score
-
-    Returns 0-100 integer, with insufficient_data flag when `users` < 5
-    or `tests` < 10.
-    """
+    """Per-node health score from real-user telemetry. Region sourced from
+    node_identity (only inventory rows carry it)."""
     start, end = _day_window(days)
-    with db() as c:
-        # Pull region from node_identity — urltest/connect rows don't carry
-        # it, only inventory_item rows do, and identity upsert propagates
-        # the best-known value via COALESCE.
-        urltest = c.execute(
-            "SELECT ne.fp AS fp, "
-            "       COALESCE(ni.protocol, ne.type) AS type, "
-            "       ni.region AS region, "
-            "       COUNT(*) AS tests, "
-            "       SUM(ne.ok) AS ok_count, "
-            "       COUNT(DISTINCT ne.client_id) AS users, "
-            "       AVG(ne.delay_ms) AS avg_delay, "
-            "       MAX(ne.delay_ms) AS max_delay "
-            "FROM node_events ne "
-            "LEFT JOIN node_identity ni ON ni.current_fp = ne.fp "
-            "WHERE ne.event='urltest' AND ne.day BETWEEN ? AND ? "
-            "AND ne.fp IS NOT NULL "
-            "GROUP BY ne.fp",
+    with db() as c, _dict_cursor(c) as cur:
+        cur.execute(
+            f"""SELECT ne.fp AS fp,
+                       COALESCE(ni.protocol, ne.type) AS type,
+                       ni.region AS region,
+                       COUNT(*)::int AS tests,
+                       COALESCE(SUM(ne.ok), 0)::int AS ok_count,
+                       COUNT(DISTINCT ne.client_id)::int AS users,
+                       AVG(ne.delay_ms) AS avg_delay,
+                       percentile_cont(0.95) WITHIN GROUP (ORDER BY ne.delay_ms) AS p95_delay
+                FROM {SCHEMA}.node_events ne
+                LEFT JOIN {SCHEMA}.node_identity ni ON ni.current_fp = ne.fp
+                WHERE ne.event='urltest' AND ne.day BETWEEN %s AND %s
+                  AND ne.fp IS NOT NULL
+                GROUP BY ne.fp, COALESCE(ni.protocol, ne.type), ni.region""",
             (start, end),
-        ).fetchall()
-        connect = c.execute(
-            "SELECT fp, COUNT(*) AS attempts, SUM(ok) AS ok_count "
-            "FROM node_events WHERE event='connect' AND day BETWEEN ? AND ? "
-            "AND fp IS NOT NULL GROUP BY fp",
+        )
+        urltest = cur.fetchall()
+        cur.execute(
+            f"""SELECT fp, COUNT(*)::int AS attempts, COALESCE(SUM(ok),0)::int AS ok_count
+                FROM {SCHEMA}.node_events
+                WHERE event='connect' AND day BETWEEN %s AND %s AND fp IS NOT NULL
+                GROUP BY fp""",
             (start, end),
-        ).fetchall()
-
-    connect_map = {r["fp"]: (r["attempts"], r["ok_count"]) for r in connect}
+        )
+        connect = cur.fetchall()
+    cmap = {r["fp"]: (r["attempts"], r["ok_count"]) for r in connect}
 
     out = []
     for r in urltest:
@@ -695,10 +734,9 @@ def stats_nodes(
         users = r["users"] or 0
         success = (oks / tests) if tests else 0
         avg_delay = r["avg_delay"] or 0
-        # p95 approx — use max_delay unless we have enough samples for real p95
-        p95_delay = r["max_delay"] or 0
+        p95_delay = r["p95_delay"] or 0
         latency = max(0, 1 - (p95_delay / 2000))
-        c_attempts, c_oks = connect_map.get(r["fp"], (0, 0))
+        c_attempts, c_oks = cmap.get(r["fp"], (0, 0))
         connect_rate = (c_oks / c_attempts) if c_attempts else 1.0
         score = 0.45 * success + 0.35 * latency + 0.20 * connect_rate
         insufficient = users < 5 or tests < 10
@@ -709,8 +747,8 @@ def stats_nodes(
             "users": users,
             "tests": tests,
             "success_rate": round(success, 3),
-            "avg_delay_ms": round(avg_delay, 0),
-            "p95_delay_ms": round(p95_delay, 0),
+            "avg_delay_ms": round(float(avg_delay), 0),
+            "p95_delay_ms": round(float(p95_delay), 0),
             "connect_attempts": c_attempts,
             "connect_ok_rate": round(connect_rate, 3),
             "score": int(round(score * 100)),
@@ -723,22 +761,25 @@ def stats_nodes(
 
 @router.get("/stats/nps")
 def stats_nps(days: int = 30, _user: str = Depends(require_dashboard_auth)):
-    """Aggregate NPS + latest comments (most-recent 20)."""
     start, end = _day_window(days)
-    with db() as c:
-        agg = c.execute(
-            "SELECT COUNT(*) AS total, "
-            "SUM(CASE WHEN score >= 9 THEN 1 ELSE 0 END) AS promoters, "
-            "SUM(CASE WHEN score <= 6 THEN 1 ELSE 0 END) AS detractors "
-            "FROM nps_responses WHERE day BETWEEN ? AND ?",
+    with db() as c, _dict_cursor(c) as cur:
+        cur.execute(
+            f"""SELECT COUNT(*)::int AS total,
+                       COALESCE(SUM(CASE WHEN score >= 9 THEN 1 ELSE 0 END),0)::int AS promoters,
+                       COALESCE(SUM(CASE WHEN score <= 6 THEN 1 ELSE 0 END),0)::int AS detractors
+                FROM {SCHEMA}.nps_responses WHERE day BETWEEN %s AND %s""",
             (start, end),
-        ).fetchone()
-        comments = c.execute(
-            "SELECT ts, score, comment, platform, version FROM nps_responses "
-            "WHERE day BETWEEN ? AND ? AND comment IS NOT NULL AND comment != '' "
-            "ORDER BY ts DESC LIMIT 20",
+        )
+        agg = cur.fetchone()
+        cur.execute(
+            f"""SELECT ts, score, comment, platform, version
+                FROM {SCHEMA}.nps_responses
+                WHERE day BETWEEN %s AND %s
+                  AND comment IS NOT NULL AND comment <> ''
+                ORDER BY ts DESC LIMIT 20""",
             (start, end),
-        ).fetchall()
+        )
+        comments = cur.fetchall()
     total = agg["total"] or 0
     if total:
         nps = ((agg["promoters"] / total) - (agg["detractors"] / total)) * 100
@@ -749,7 +790,7 @@ def stats_nps(days: int = 30, _user: str = Depends(require_dashboard_auth)):
         "promoters": agg["promoters"] or 0,
         "detractors": agg["detractors"] or 0,
         "nps": round(nps, 1) if nps is not None else None,
-        "recent_comments": [dict(r) for r in comments],
+        "recent_comments": comments,
     }
 
 

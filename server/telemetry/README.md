@@ -1,45 +1,55 @@
 # YueLink Telemetry Server
 
-Drop-in FastAPI module that lives alongside the existing `checkin-api`
-service on `23.80.91.14`. Handles:
+FastAPI module mounted inside the existing `checkin-api` service on
+`23.80.91.14`. Handles ingest, feature flags, NPS, per-node stats, and
+a single-page dashboard.
 
-- **Ingest** — accepts the same POST body the client already sends to
-  `https://yue.yuebao.website/api/client/telemetry`.
-- **Storage** — SQLite at `/var/lib/yuelink-telemetry/events.db`.
-- **Stats** — REST endpoints + an HTML dashboard (Basic Auth).
+**Storage**: PostgreSQL 16 on the shared yueops cluster
+(`66.55.76.208:5432/yueops`, schema `telemetry`). Same DB yueops uses —
+cross-schema joins against `server_nodes` / `v2_server` are O(index)
+instead of cross-process, which Phase-2 of the
+[ROADMAP](./ROADMAP.md) depends on.
+
+Previous sqlite build (`/var/lib/yuelink-telemetry/events.db`) has
+been migrated and archived; see `migrate_sqlite_to_pg.py`.
 
 ## Files
 
-- `telemetry.py` — FastAPI `APIRouter`. Include it in the existing app.
-- `dashboard.html` — single-page dashboard served at
-  `/api/client/telemetry/dashboard`.
+- `telemetry.py` — FastAPI `APIRouter`. Schema auto-created on first import.
+- `dashboard.html` — single-page dashboard served at `/api/client/telemetry/dashboard`.
+- `migrate_sqlite_to_pg.py` — one-shot migration (already run on 2026-04-15).
 
 ## Deploy
 
 ```bash
-# 1. Copy files to server
-scp server/telemetry/telemetry.py root@23.80.91.14:/opt/checkin-api/telemetry.py
-scp server/telemetry/dashboard.html root@23.80.91.14:/opt/checkin-api/dashboard.html
+# 1. Copy files
+scp server/telemetry/telemetry.py        root@23.80.91.14:/opt/checkin-api/
+scp server/telemetry/dashboard.html      root@23.80.91.14:/opt/checkin-api/
+scp server/telemetry/migrate_sqlite_to_pg.py root@23.80.91.14:/opt/checkin-api/
 
-# 2. Wire into the existing FastAPI app in /opt/checkin-api/main.py. Add
-#    these two lines near the top-level `app = FastAPI(...)` block:
-#
-#        from telemetry import router as telemetry_router
-#        app.include_router(telemetry_router)
-#
-#    If the existing main.py already has a POST /api/client/telemetry
-#    handler, remove it — telemetry.py replaces it.
+# 2. Wire into /opt/checkin-api/main.py near the `app = FastAPI(...)` block:
+#       from telemetry import router as telemetry_router
+#       app.include_router(telemetry_router)
+#    (If main.py already has an inline POST /api/client/telemetry
+#    handler, remove it — telemetry.py replaces it.)
 
-# 3. Set dashboard credentials (required — dashboard fails closed if unset)
-ssh root@23.80.91.14 "systemctl edit --full checkin-api"
-# Add under [Service]:
-#   Environment=TELEMETRY_DASHBOARD_USER=yuelink
-#   Environment=TELEMETRY_DASHBOARD_PASSWORD=<generate with: openssl rand -hex 16>
+# 3. Set env vars in systemctl drop-in. IMPORTANT: the DSN contains
+#    spaces, so the systemd Environment= line MUST be quoted, otherwise
+#    systemd splits on whitespace and libpq sees a half-DSN and prompts
+#    for a password.
+ssh root@23.80.91.14 'cat > /etc/systemd/system/checkin-api.service.d/telemetry-env.conf <<EOF
+[Service]
+Environment=TELEMETRY_DASHBOARD_USER=yuelink
+Environment=TELEMETRY_DASHBOARD_PASSWORD=<openssl rand -hex 16>
+Environment="TELEMETRY_DATABASE_DSN=host=66.55.76.208 port=5432 user=root password=jim@8858 dbname=yueops"
+Environment=TELEMETRY_SCHEMA=telemetry
+EOF'
 
-# 4. Create SQLite dir + restart
-ssh root@23.80.91.14 "mkdir -p /var/lib/yuelink-telemetry && \
-    chown checkin-api:checkin-api /var/lib/yuelink-telemetry && \
-    systemctl restart checkin-api"
+ssh root@23.80.91.14 'systemctl daemon-reload && systemctl restart checkin-api'
+
+# 4. (first deploy only) Migrate from sqlite
+ssh root@23.80.91.14 'cd /opt/checkin-api && venv/bin/python migrate_sqlite_to_pg.py'
+ssh root@23.80.91.14 'mv /var/lib/yuelink-telemetry/events.db /var/lib/yuelink-telemetry/events.db.presync.$(date +%Y%m%d)'
 ```
 
 ## Endpoints
@@ -47,37 +57,68 @@ ssh root@23.80.91.14 "mkdir -p /var/lib/yuelink-telemetry && \
 | Route | Auth | Purpose |
 |---|---|---|
 | `POST /api/client/telemetry` | none | Ingest (what the client sends) |
+| `GET  /api/client/telemetry/flags` | none | Evaluated flags for client_id |
+| `POST /api/client/telemetry/nps` | none | NPS score submission |
 | `GET  /api/client/telemetry/stats/summary?days=7` | basic | Top events + totals |
 | `GET  /api/client/telemetry/stats/dau?days=30` | basic | Daily active clients |
-| `GET  /api/client/telemetry/stats/startup_funnel?days=7` | basic | `startup_ok` vs `startup_fail` by step |
+| `GET  /api/client/telemetry/stats/crash_free?days=7` | basic | Crash-free session rate |
+| `GET  /api/client/telemetry/stats/startup_funnel?days=7` | basic | 8-step funnel, ok vs fail |
 | `GET  /api/client/telemetry/stats/errors?days=7` | basic | Top crash types |
-| `GET  /api/client/telemetry/stats/versions?days=7` | basic | Platform × version client counts |
+| `GET  /api/client/telemetry/stats/versions?days=7` | basic | Platform × version clients |
+| `GET  /api/client/telemetry/stats/nodes?days=7` | basic | Per-fp health scores |
+| `GET  /api/client/telemetry/stats/nps?days=30` | basic | NPS aggregate + comments |
+| `GET  /api/client/telemetry/admin/flags` | basic | List all flags |
+| `POST /api/client/telemetry/admin/flags` | basic | Set a flag value / rollout_pct |
 | `GET  /api/client/telemetry/dashboard` | basic | HTML dashboard |
 
-Open `https://yue.yuebao.website/api/client/telemetry/dashboard` in a
-browser. It refreshes automatically every minute.
+## Config (env vars)
 
-## Config
+| Var | Default |
+|---|---|
+| `TELEMETRY_DATABASE_DSN` | `host=66.55.76.208 port=5432 user=root password=jim@8858 dbname=yueops` |
+| `TELEMETRY_SCHEMA` | `telemetry` |
+| `TELEMETRY_RETENTION_DAYS` | `90` (sampled prune, 1/1000 requests) |
+| `TELEMETRY_DASHBOARD_USER` | *(required for stats/admin)* |
+| `TELEMETRY_DASHBOARD_PASSWORD` | *(required for stats/admin)* |
 
-Environment variables:
-
-- `TELEMETRY_DB_PATH` — default `/var/lib/yuelink-telemetry/events.db`
-- `TELEMETRY_RETENTION_DAYS` — default `90`. Events older than this are
-  pruned on a 1/1000 sampled basis.
-- `TELEMETRY_DASHBOARD_USER` / `TELEMETRY_DASHBOARD_PASSWORD` — required
-  for stats/dashboard. Stats endpoints return 503 if unset.
+Stats endpoints fail closed (503) if the dashboard creds aren't set.
 
 ## Privacy
 
-The ingest handler:
+Ingest hard-caps:
+- ≤200 events per POST
+- event name ≤64 chars
+- every string prop truncated to 200 chars
+- nested objects / arrays: only simple scalar leaves survive
+- node event payloads: fingerprint-only (sha1-16 over type+server+port+protocol-extras).
+  Server IP / port / SNI / WS path / pubkey never leave the device in plain text.
+- request bodies are never logged
 
-- Hard-caps event count to 200 per request.
-- Rejects event names > 64 chars.
-- Truncates every string prop to 120 chars.
-- Only persists simple scalars (`str`/`int`/`float`/`bool`/`null`);
-  nested objects/arrays are silently dropped.
-- Never logs request bodies — only parsed rows.
+Client (`lib/shared/telemetry.dart`) is opt-in (OFF by default), sends
+an anonymous per-install UUID as `client_id`, and offers Settings →
+Privacy → "View sent events" so users can see exactly what has been
+recorded.
 
-The client (`lib/shared/telemetry.dart`) is opt-in (OFF by default) and
-sends an anonymous per-install UUID as `client_id`. No email, token,
-subscription URL, or node information is ever sent.
+## Schema summary (PG)
+
+```
+telemetry.events(id, ts, server_ts, day, event, client_id, session_id,
+                 platform, version, props JSONB)
+   indexes: day, event, client_id, session_id, (day,event), GIN(props)
+
+telemetry.node_events(id, ts, day, client_id, platform, version, event,
+                      fp, type, region, delay_ms INT, ok SMALLINT,
+                      reason, group_name)
+   indexes: (fp,day), day, event
+
+telemetry.node_identity(identity_id, current_fp UNIQUE, label, protocol,
+                        region, sid, xb_server_id, first_seen, last_seen,
+                        retired_at)
+
+telemetry.node_fp_history(fp PK, identity_id FK, bound_at, retired_at)
+
+telemetry.feature_flags(key PK, value_json, rollout_pct, updated_at)
+
+telemetry.nps_responses(id, ts, day, client_id, platform, version,
+                        score SMALLINT, comment)
+```

@@ -53,6 +53,7 @@ N = 5.0
 ICONSET = "macos/Runner/Assets.xcassets/AppIcon.appiconset"
 LINUX_PNG = "assets/icon_desktop.png"
 WINDOWS_ICO = "windows/runner/resources/app_icon.ico"
+TRAY_ICO = "assets/app_icon_tray.ico"  # Windows system tray (uses brand icon, not white)
 SOURCE_PNG = "assets/icon.png"  # v1.0.13 full-bleed indigo gradient + glyph
 WINDOWS_ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
 
@@ -346,6 +347,29 @@ def make_dmg_background() -> int:
     return 1
 
 
+def round_tray_ico() -> int:
+    """Build assets/app_icon_tray.ico for the Windows system tray. Same
+    squircle-masked brand icon as the launcher, multi-size. Replaces the
+    previous white-on-transparent variant which was invisible against a
+    light tray background."""
+    if not os.path.exists(SOURCE_PNG):
+        print(f"  ! {SOURCE_PNG} not found, skipping tray")
+        return 0
+    img = Image.open(SOURCE_PNG).convert("RGBA")
+    masked = apply_squircle_mask(img)
+    masked.save(
+        TRAY_ICO,
+        format="ICO",
+        sizes=[(s, s) for s in WINDOWS_ICO_SIZES],
+    )
+    verify = Image.open(TRAY_ICO).convert("RGBA")
+    print(
+        f"  ✓ {TRAY_ICO}  frames={len(WINDOWS_ICO_SIZES)} "
+        f"corner_alpha={verify.getpixel((0,0))[3]}"
+    )
+    return 1
+
+
 def main() -> int:
     print("Rounding desktop app icons (squircle mask, color-preserving)")
     print()
@@ -360,6 +384,10 @@ def main() -> int:
 
     print("→ Windows multi-frame ICO (regenerated):")
     n_win = round_windows_ico()
+    print()
+
+    print("→ Windows tray ICO (brand icon, not white):")
+    round_tray_ico()
     print()
 
     print("→ Wizard banners (composited from real YueLink icon):")

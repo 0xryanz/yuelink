@@ -25,6 +25,70 @@ class ConnectionRepairPage extends ConsumerStatefulWidget {
 class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
   bool _busy = false;
 
+  Future<void> _exportDiagnosticLogs() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final appDir = await getApplicationSupportDirectory();
+      const sources = [
+        'core.log',
+        'crash.log',
+        'event.log',
+        'startup_report.json',
+      ];
+      final buffer = StringBuffer();
+      buffer.writeln('YueLink diagnostic bundle');
+      buffer.writeln('Generated: ${DateTime.now().toIso8601String()}');
+      buffer.writeln('Platform: ${Platform.operatingSystem} '
+          '${Platform.operatingSystemVersion}');
+      buffer.writeln();
+      var found = 0;
+      for (final name in sources) {
+        final f = File('${appDir.path}/$name');
+        buffer.writeln('═══ $name ${'═' * (60 - name.length)}');
+        if (f.existsSync()) {
+          found++;
+          try {
+            buffer.writeln(await f.readAsString());
+          } catch (e) {
+            buffer.writeln('<read failed: $e>');
+          }
+        } else {
+          buffer.writeln('<not present>');
+        }
+        buffer.writeln();
+      }
+      if (found == 0) {
+        if (mounted) AppNotifier.warning(S.current.exportLogsEmpty);
+        return;
+      }
+      final now = DateTime.now();
+      final stamp =
+          '${now.year}${now.month.toString().padLeft(2, '0')}'
+          '${now.day.toString().padLeft(2, '0')}_'
+          '${now.hour.toString().padLeft(2, '0')}'
+          '${now.minute.toString().padLeft(2, '0')}'
+          '${now.second.toString().padLeft(2, '0')}';
+      final fileName = 'yuelink-diagnostics-$stamp.txt';
+      Directory? outDir;
+      if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+        try {
+          outDir = await getDownloadsDirectory();
+        } catch (_) {}
+      }
+      outDir ??= await getApplicationDocumentsDirectory();
+      final outFile = File('${outDir.path}/$fileName');
+      await outFile.writeAsString(buffer.toString());
+      if (mounted) {
+        AppNotifier.success('${S.current.exportLogsSuccess}: ${outFile.path}');
+      }
+    } catch (e) {
+      if (mounted) AppNotifier.error('${S.current.exportLogsFailed}: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _run(String label, Future<bool> Function() action) async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -174,6 +238,17 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
                   size: 18, color: YLColors.zinc400),
               onTap: () => Navigator.push(context,
                   MaterialPageRoute(builder: (_) => const StartupReportPage())),
+            ),
+            Divider(height: 1, color: divColor),
+            _ActionRow(
+              icon: Icons.file_download_outlined,
+              label: s.exportLogs,
+              subtitle: Localizations.localeOf(context).languageCode == 'en'
+                  ? 'Bundle core/crash/event logs into one file'
+                  : '打包核心 / 崩溃 / 事件日志为单个文件',
+              isDark: isDark,
+              busy: _busy,
+              onTap: _exportDiagnosticLogs,
             ),
           ]),
           const SizedBox(height: 8),

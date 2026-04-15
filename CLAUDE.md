@@ -1,337 +1,217 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code working in this repo. Keep this file lean — only record gotchas and conventions that aren't derivable from reading the code.
 
-## Project Overview
+## Project
 
-YueLink (悦通) is a cross-platform proxy client built with Flutter + mihomo (Clash.Meta) Go core.
-Supports: Android, iOS, macOS, Windows, Linux (AppImage).
+YueLink (悦通) — Flutter UI + mihomo (Clash.Meta) Go core. Targets: Android, iOS, macOS, Windows, Linux. Package/Bundle ID: `com.yueto.yuelink`. iOS App Group: `group.com.yueto.yuelink`.
 
-## Build Commands
+## Build
 
 ```bash
-flutter pub get                                    # Install Flutter dependencies
-dart setup.dart build -p <platform> [-a <arch>]    # Compile Go core (android|ios|macos|windows)
-dart setup.dart install -p <platform>              # Copy libs to Flutter platform dirs
-dart setup.dart clean                              # Remove build artifacts
-flutter run                                        # Run (mock mode if no native lib)
-flutter analyze --no-fatal-infos --no-fatal-warnings  # Analyze (CI flags)
-flutter test                                       # Run all tests
-flutter test test/models/                          # Run single test directory
-flutter build apk|ios|macos|windows                # Release builds
+flutter pub get
+dart setup.dart build -p <android|ios|macos|windows> [-a <arch>]
+dart setup.dart install -p <platform>          # copies libs into platform dirs (gitignored)
+dart setup.dart clean
+flutter run                                    # mock mode if no native lib
+flutter analyze --no-fatal-infos --no-fatal-warnings
+flutter test
+flutter build apk|ios|macos|windows
 ```
 
-Go >= 1.22 required for core compilation. Flutter >= 3.27, Dart >= 3.6. CI uses Flutter 3.41.5, Go 1.23.
-Xcode >= 15 for iOS/macOS builds. Android NDK r26+ for Android builds.
+Requires Go ≥ 1.22, Flutter ≥ 3.27, Dart ≥ 3.6. CI uses Flutter 3.41.5 / Go 1.23. Xcode ≥ 15. Android NDK r26+.
 
-**macOS universal binary** (two separate arch builds, then `install` merges via `lipo`):
+**macOS universal**: build `arm64` and `x86_64` separately, then `install` merges via `lipo`.
+
+**Android signed release**:
 ```bash
-dart setup.dart build -p macos -a arm64
-dart setup.dart build -p macos -a x86_64
-dart setup.dart install -p macos
+KEYSTORE_PATH="$(pwd)/android/app/yuelink.jks" KEYSTORE_PASSWORD=yuelink2024 \
+KEY_ALIAS=yuelink KEY_PASSWORD=yuelink2024 \
+flutter build apk --release --split-per-abi
 ```
 
-**Quick start without Go core** (mock mode — full UI development):
-```bash
-git clone --recursive https://github.com/onesyue/yuelink.git && cd yuelink
-flutter pub get && flutter run
-```
+Native libs install to: `android/app/src/main/jniLibs/<abi>/libclash.so`, `ios/Frameworks/libclash.a(+.h)`, `macos/Frameworks/libclash.dylib`, `windows/libs/<arch>/libclash.dll`.
 
-## Architecture
+## Architecture overview
 
 ```
-Flutter UI (Dart, Riverpod) → CoreController (dart:ffi) → hub.go (CGO //export) → mihomo engine
-                                                                                       ↕
-                              MihomoApi (REST :9090) ← ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ mihomo HTTP API
-                                                                                       ↕
-                                                              Platform VPN service (TUN/system proxy)
-
-XBoardApi (HTTPS) ← ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ CloudFront → XBoard panel
+Flutter (Dart, Riverpod) → CoreController (FFI) → hub.go (CGO) → mihomo
+                         → MihomoApi (REST :9090) ← ─ ─ ─ ─ ─ ─ ─ ─┘
+                                                                    ↕
+                                                   Platform VPN (TUN / system proxy)
+XBoardApi (HTTPS) → CloudFront → XBoard panel
 ```
 
-**Unified `ClashCore` interface** (`lib/core/clash_core.dart`): every clash operation — lifecycle AND data — lives on one abstract class. `RealClashCore` (`clash_core_real.dart`) dispatches lifecycle to FFI bindings (`CoreController`) and data to REST (`MihomoApi`). `MockClashCore` (`clash_core_mock.dart`) routes everything to `CoreMock`. Callers do `CoreManager.instance.core.X()` and don't care which implementation is in use. The old hand-policed rule "FFI for lifecycle, REST for data, never mix" is no longer needed — there is exactly one place to add a new operation (the abstract interface) and both implementations must satisfy it. This matches FlClash's `CoreInterface` pattern. Streaming operations (traffic / connections / logs websockets) stay in their dedicated repositories — those are real-mode-only and the mock equivalents are timer-based polls in providers.
+Unified `ClashCore` interface (`lib/core/clash_core.dart`): `RealClashCore` dispatches lifecycle to FFI and data to REST; `MockClashCore` routes to `CoreMock`. Callers always go through `CoreManager.instance.core.X()`. Streaming (traffic / connections / logs websockets) lives in dedicated repositories — real-mode only; mocks are timer-based polls.
 
-### Directory structure (flat, single layer)
+`lib/` is flat — no legacy `pages/` `services/` `providers/` `ffi/` `l10n/`. Top-level: `core/`, `domain/`, `infrastructure/`, `modules/`, `shared/`, `i18n/`, `theme.dart`, `constants.dart`, `main.dart`. New features go in `lib/modules/<feature>/`.
 
-After the dual-layer cleanup, `lib/` is consistently organized — no `pages/` / `services/` / `providers/` / `ffi/` / `l10n/` legacy folders. The full top-level shape:
+`core/managers/` — one file per external system: `core_lifecycle_manager`, `core_heartbeat_manager`, `system_proxy_manager`. `core/kernel/` holds `core_manager.dart` (8-step startup), `config_template.dart`, `geodata_service.dart`, `overwrite_service.dart`, `process_manager.dart`, `recovery_manager.dart`. `core/providers/core_provider.dart` is thin Riverpod wiring (~160 lines).
 
-```
-lib/
-  main.dart          App entry, runApp, ProviderScope, AppLifecycle observer
-  constants.dart     AppConstants + appVersionProvider
-  theme.dart         Design system (YLColors, YLText, etc.)
-  core/              Kernel + FFI + managers + ClashCore + central providers
-  domain/            Pure data models (no Flutter, no Riverpod)
-  infrastructure/    Datasources + repositories (REST, websocket, secure storage)
-  modules/           17 feature modules (dashboard, nodes, store, emby, …)
-  shared/            Cross-cutting utilities (app_notifier, error_logger, formatters)
-  i18n/              JSON sources + slang codegen + S adapter
-```
+`infrastructure/datasources/xboard/` is a 5-file module (`client`, `errors`, `models`, `api`, `index` barrel). Always import via `index.dart`.
 
-When adding new features, use the `lib/modules/<feature>/` pattern (page + providers/ + widgets/). The `lib/core/` and `lib/infrastructure/` layers should rarely change — they hold the kernel and the data plane.
+`appVersionProvider` reads version from `pubspec.yaml` at runtime — no hardcoded version. CI passes `--build-name` with `-pre` suffix for pre-releases.
 
-### Key layers
+## Platform VPN
 
-- **`core/` (Go)** — Go wrapper around mihomo. Exports C functions via `//export` (CGO). Compiled to `.so`/`.dylib`/`.dll` (dynamic) or `.a` (static, iOS only) via `setup.dart`. Android builds use `-tags with_gvisor` (required for TUN fd/file-descriptor mode — without it mihomo fails with "gVisor is not included in this build").
-- **`lib/core/ffi/`** — Dart FFI bindings. `CoreBindings` has raw FFI (lifecycle symbols: InitCore, StartCore, StopCore, Shutdown, IsRunning, ValidateConfig, UpdateConfig, FreeCString, plus MITM control). `CoreController` is the high-level FFI wrapper. **Data operations do NOT go through FFI** — they go through `MihomoApi` (REST on port 9090). Both are hidden behind `ClashCore` (see below).
-- **`lib/core/clash_core.dart`** + **`clash_core_real.dart`** + **`clash_core_mock.dart`** — Unified `ClashCore` interface. Real impl forwards lifecycle to FFI and data to `MihomoApi`; mock impl forwards everything to `CoreMock`. Callers do `CoreManager.instance.core.X()` and don't care which side they're on.
-- **`lib/core/managers/`** — One file per external system (FlClash pattern):
-  - `core_lifecycle_manager.dart` — start / stop / toggle / hotSwitchConnectionMode
-  - `core_heartbeat_manager.dart` — periodic ping + ProxyGuard tick + crash detection
-  - `system_proxy_manager.dart` — `networksetup` / registry / `gsettings` / verify cache / TUN DNS
-- **`lib/core/kernel/`** — `core_manager.dart` (top-level lifecycle singleton with 8-step startup), `config_template.dart`, `geodata_service.dart`, `overwrite_service.dart`, `process_manager.dart`, `recovery_manager.dart`.
-- **`lib/core/providers/core_provider.dart`** — Thin Riverpod wiring (~160 lines): state providers (CoreStatus, traffic, settings-backed) + `coreActionsProvider` facade + `coreHeartbeatProvider` wrapper. The heavy lifting lives in the managers.
-- **`lib/core/profile/`** — `profile_service.dart` (static profile CRUD) + `subscription_sync_service.dart` (background timer for stale subs).
-- **`lib/core/storage/`** — `auth_token_service.dart`, `secure_storage_service.dart`, `settings_service.dart`.
-- **`lib/core/service/`** — Desktop Service Mode helper client + manager (Unix socket + peer-cred).
-- **`lib/core/platform/windows_proxy.dart`** — Windows-specific proxy registry helpers.
-- **`lib/infrastructure/datasources/`** — `mihomo_api.dart` (mihomo REST :9090), `mihomo_stream.dart` (websocket), `xboard/` (5-file XBoard panel module: `client` / `errors` / `models` / `api` / `index` barrel).
-- **`lib/shared/`** — `app_notifier.dart` (global toast/snackbar), `error_logger.dart` (crash → file + remote), `event_log.dart`, `traffic_formatter.dart`, `rich_content.dart`, `formatters/`.
-- **`lib/i18n/`** — `strings.i18n.json` (English base), `strings_zh-CN.i18n.json`, `strings_g.dart` (slang codegen, do not edit), `app_strings.dart` (`S` adapter that forwards to slang's `t` for ~500 legacy `S.of(context).foo` call sites). Source of truth for new strings is the JSON files.
-- **`lib/theme.dart`** — Design system: `YLColors` (zinc palette + semantic colors), `YLText` (typography), `YLSpacing`/`YLRadius`, `YLShadow` (context-aware for dark mode), reusable widgets (`YLSurface`, `YLStatusDot`, `YLChip`, `YLDelayBadge`, `YLPillSegmentedControl`, etc.).
-- **`lib/constants.dart`** — `AppConstants` (static consts: appName, packageName, ports, etc.) + `appVersionProvider` (reads version from `pubspec.yaml` at runtime via `package_info_plus`). No hardcoded version string — `pubspec.yaml` is the single source of truth. CI passes `--build-name` with `-pre` suffix for pre-release builds, so `appVersionProvider` automatically returns `1.0.5-pre` vs `1.0.5`.
+| Platform | Mechanism |
+|----------|-----------|
+| Android | `VpnService` + TUN fd (always, regardless of connectionMode) — `android/.../YueLinkVpnService.kt` |
+| iOS / TrollStore | `NEPacketTunnelProvider` separate process; AppDelegate handles `startVpn`/`stopVpn`/`resetVpnProfile`/`clearAppGroupConfig`; 20s timeout; `backgroundVpnObserver` sends `vpnRevoked`. Min iOS 15. |
+| macOS | `networksetup` on ALL interfaces (`_verifySystemProxy` checks each) |
+| Windows | Registry |
 
-### Modules layer (`lib/modules/`)
+MethodChannel name: `com.yueto.yuelink/vpn`.
 
-| Module | Contents |
-|--------|----------|
-| `yue_auth/` | Login page, `AuthNotifier` (StateNotifier), `AuthState`, `xboardApiProvider` |
-| `announcements/` | `AnnouncementBanner` widget, `AnnouncementsPage`, `AnnouncementReadService`, `announcementsProvider`, `readAnnouncementIdsProvider` |
-| `emby/` | Netflix-style media streaming: `EmbyMediaPage` (hero banner + horizontal poster rows per library), `EmbyDetailPage` (backdrop + info + cast + episodes + similar), `EmbyPlayerPage` (media_kit native player with subtitle size control, playback progress tracking via Emby Sessions API, resume prompt). `EmbyClient` (keep-alive HTTP + proxy-aware image cache with HiDPI `devicePixelRatio` scaling). `EmbyTheme` (dark/light adaptive colors). All content is data-driven from Emby server — no hardcoded library names/order. |
-| `mine/` | `AccountCard` (with inline change-password + logout icons), `TrafficUsageCard` (always shows XBoard `u`/`d`/`transfer_enable` — no VPN required) — the 我的 page widgets |
-| `store/` | `StorePage`, `PlanCard`, `PlanDetailSheet`, `CurrentPlanCard`, `PurchaseNotifier` (state machine: Idle→Loading→AwaitingPayment→Polling→Success/Failed; `payExistingOrder()` skips `createOrder` for pending orders from history), `OrderHistoryPage` (pending orders show Pay Now + `PaymentMethodSelector` + Cancel) |
-| `dashboard/` | `HeroCard`, `QuickActionsCard`, `AnnouncementBanner`, `SubscriptionCard` (tappable → StorePage), `ExitIpCard` (with AI unlock badge), `ChartCard`, `StatsCard` |
-| `nodes/` | Proxy group UI (`GroupCard` + `GroupListSection` with pill badges for type+count, `NodeTile`, sort chip) |
-| `profiles/` | Profile list page + providers |
-| `connections/`, `logs/` | Sub-pages / providers |
-| `settings/` | Settings shell page (我的 page), `sub/general_settings_page.dart` (preferences sub-page with theme, language, routing, split tunnel on Android), `web_page.dart` (in-app WebView), `connection_repair_page.dart` (repair tools: rebuild VPN profile, clear App Group config, re-sync subscription, clear local cache, one-click full repair; links to `StartupReportPage` for diagnostics) |
-| `checkin/` | Daily check-in: `CheckinRepository` (standalone API at `yue.yuebao.website`, separate from XBoard), `CheckinNotifier` (tracks local vs other-device check-in via `SettingsService`), `CheckinCard` widget, `CheckinResult` model. App check-in uses `v2_user.app_sign` field — independent from Telegram Bot check-in (`user_account.sign`). Each system allows one check-in per day; rewards (random traffic or balance) stack. **Server**: Python FastAPI on `23.80.91.14:8011`, authenticates by calling XBoard `/api/v1/user/info` **directly** (`http://66.55.76.208:8001`, NOT through CloudFront — CloudFront→origin is unreliable and XBoard nginx blocks non-CF traffic + python-urllib UA). XBoard API does NOT return `id` in user info — server resolves user by `email` from DB. Midnight reset (APScheduler `Asia/Shanghai`) clears `app_sign` for all users. **Client**: `_isAlreadyCheckedError` must only match genuine "already checked" messages — never match auth/server errors. `CheckinRepository._assertSuccess` must reject all non-2xx HTTP status codes to prevent treating 502 as successful check-in. |
-| `onboarding/` | First-launch tutorial PageView (mobile only) |
-| `updater/` | Version checking & update UI — `update_checker.dart` (GitHub releases + jsDelivr fallbacks + skip-version persistence) |
-| `yue_account/` | Account details, member status, device list (skeleton, future repository layer) |
-| `yue_store/` | Shop UI refactor (skeleton, future repository layer — current store logic in `store/`) |
+## Critical conventions (gotchas — not derivable from code)
 
-**Node count display**: Both `GroupCard` and `GroupListSection` use a `_Badge` widget (pill style, same as type badge) placed immediately after the type badge. Shows plain count (`23`) normally, filtered count (`3/23`) in accent color when search is active. The sort button in the nodes app bar is a chip showing the current `NodeSortMode` label — tap cycles through modes.
+### Core / FFI
+- **Default connection mode is `systemProxy`** (not TUN). Mobile always uses VPN regardless; setting only applies to desktop.
+- iOS Go core must be `c-archive`, not `c-shared`. Extension has ~15MB memory limit.
+- All Go state behind a single mutex (`state.go`).
+- **All Go exports return `*C.char`**: empty = success, non-empty = error, NULL pointer = success (Go can return NULL after panic recovery). `CoreController._callStringFn` handles all three.
+- **Never use `Isolate.run()` for FFI**. Re-opening `DynamicLibrary` in a new isolate hangs on Android/macOS. `InitCore` (~1s) and `StartCore` (~2s) run synchronously on main isolate. Same for pure Dart config processing — <10ms, no isolate needed.
+- `CoreManager` handles VPN per-platform — `CoreActions` must NOT call `VpnService` directly.
+- FFI bindings (`core_bindings.dart`) cover lifecycle + MITM control only. Data goes through `MihomoApi`. All failable exports return `Pointer<Utf8>`.
 
-### Infrastructure layer (`lib/infrastructure/`)
+### Android
+- VPN permission always requested (no connectionMode guard).
+- `POST_NOTIFICATIONS` requested at runtime in `MainActivity.onStart()` for API 33+. Without it the foreground notification is suppressed and the service may be killed.
+- **Samsung Secure Folder** apps run as user 95; `VpnService.establish()` always returns null for non-primary users (TUN fd = -1). Only one VPN can be active system-wide. Verify with `adb shell dumpsys package com.yueto.yuelink | grep dataDir` — must show `/data/user/0/`.
+- **TUN config** (`ConfigTemplate._injectTunFd`): `stack: gvisor`, `auto-route: false`, `auto-detect-interface: false` (netlink banned on 14+), `find-process-mode: off`. Never set `auto-route: true` with VpnService fd.
+- Build with `-tags with_gvisor` (required for fd mode).
+- APK install via MethodChannel `installApk` uses `FileProvider` (`${applicationId}.fileprovider`, `cache-path`). Needs `REQUEST_INSTALL_PACKAGES`.
 
-- **`datasources/xboard/`** — XBoard panel REST client (cedar2025/Xboard), split into 5 files: `client.dart` (HTTP transport, retry, fallback), `errors.dart` (`XBoardApiException`), `models.dart` (`LoginResponse`/`UserProfile`/`SubscribeData`/`SubscribeResult`), `api.dart` (`XBoardApi` facade with endpoint methods), `index.dart` (barrel — import this). Endpoint: `https://yuetong.app` (primary), `https://d7ccm19ki90mg.cloudfront.net` (fallback). Methods: `login`, `getSubscribeData` (combined: profile + subscribe URL via `/api/v1/user/getSubscribe`), `fetchSubscribeConfig`, `getEmby`, `getAnnouncements`, plus Store methods (`fetchPlans`, `createOrder`, `checkoutOrder`, `fetchOrderDetail`, `cancelOrder`, `fetchOrders`, `validateCoupon`, `fetchPaymentMethods`). Models: `LoginResponse`, `UserProfile`, `SubscribeData`, `SubscribeResult`, `Announcement`, `EmbyInfo`, `XBoardApiException`. **Critical**: XBoard returns `{"status":"fail","message":"..."}` with HTTP 200 for business-level errors. `_getRawData`/`_postRawData` both call `_assertSuccess(json)` which throws `XBoardApiException` on `status:"fail"` — callers must NOT wrap in try-catch that swallows this. **XBoard tinyint(1) bool casting**: PHP encodes `tinyint(1)` columns as JSON `true`/`false` instead of `1`/`0`. Dart `as int?` throws `type 'bool' is not a subtype of type 'int?'`. All store models (`StorePlan`, `StoreOrder`, `CouponResult`, `PaymentMethod`) use `_toInt(dynamic v)` / `_toBool(dynamic v)` helpers that handle `bool`, `int`, and `double` inputs. Never use `json['field'] as int?` directly for XBoard numeric fields. **Traffic units**: `UserProfile.transferEnable`, `uploadUsed` (`u`), `downloadUsed` (`d`) are all in **bytes** — pass directly to `formatBytes()`, do not multiply or divide. `StorePlan.transferEnable` is in **GB** (different table). **Checkout**: `CheckoutResult.type == -1` = free/instant (no URL, `paymentUrl` = `''`); type 0 = QR URL; type 1 = redirect URL. `PaymentMethod.payment` is a `String` (e.g. `"alipay"`), not int. `OrderStatus.isSuccess` includes `processing` (status=1, payment received but activating) in addition to `completed` (3) and `discounted` (4).
-- **`datasources/mihomo_api.dart`** — mihomo REST client (port 9090).
-- **`datasources/mihomo_stream.dart`** — WebSocket for real-time traffic/logs.
+### iOS
+- **TUN config** (`PacketTunnelProvider.injectTunConfig`): `stack: gvisor`, `find-process-mode: off`, keep-alive-interval. **DNS is handled entirely by Dart `ConfigTemplate._ensureDns()`** — do NOT add DNS injection in Swift.
+- **App Group geo sync** (`AppDelegate.writeConfigToAppGroup`, called on every `startVpn`): writes `config.yaml` AND copies `GeoIP.dat`/`GeoSite.dat`/`country.mmdb`/`ASN.mmdb` from main app's Application Support to `AppGroup/mihomo/`. Without this, GEOIP/GEOSITE rules fail silently in the extension. Skipped when destination is up-to-date.
+- **TrollStore**: `ios/PacketTunnel/Info.plist` MUST have `CFBundleExecutable = $(EXECUTABLE_NAME)` — without it ldid fails (TrollStore error 175). Entitlements: `application-groups` + `networkextension: packet-tunnel-provider`. Do NOT add push, iCloud, or `keychain-access-groups`.
 
-### XBoard auth flow
+### Desktop
+- Connection mode UI hidden on mobile (`isDesktop = Platform.isMacOS || Platform.isWindows`).
+- **Port conflict**: Before `ConfigTemplate.process()`, `CoreManager` calls `_findAvailablePort(preferred)` for both `mixedPort` and `apiPort`, scanning `[preferred, preferred+20)`. `mixedPort` is patched into the config string via `ConfigTemplate.setMixedPort()`. Mobile skips this (handled at OS level).
+- **macOS secure storage**: `SecureStorageService` writes JSON in Application Support — NOT `flutter_secure_storage`. The Keychain needs signing entitlements that block `flutter run` without a paid account. Do NOT switch back or add `keychain-access-groups`.
+- **Sidebar uses instant state switching** (no AnimatedContainer) — intentional, avoids Windows flicker.
+- Settings providers: `closeBehaviorProvider` ('tray'|'exit', default 'tray'), `toggleHotkeyProvider` (lowercase "ctrl+alt+c", parsed via `parseStoredHotkey()`).
 
-1. User logs in via `AuthNotifier.login(email, password)` → `XBoardApi.login()` → saves `auth_data` token + api host via `AuthTokenService`. **Important**: XBoard login returns two token fields: `auth_data` (Sanctum token, already has `Bearer ` prefix — use this for API Authorization header) and `token` (raw database token, only for subscription download URLs via Client middleware). Always use `auth_data` for API calls, matching both reference clients (ClashMetaForAndroid, clash-verge-rev).
-2. `AuthNotifier` fetches `UserProfile` and subscribe URL on login; caches profile in secure storage.
-3. `syncSubscription()`: downloads Clash YAML from subscribe URL → `ProfileService.addProfile/updateProfile()` with name `'悦通'`. Auto-selects the profile on first create.
-4. On app start, `AuthNotifier._init()` restores token from secure storage and shows cached profile while refreshing in background. Token expired (401/403) triggers auto-logout.
-5. `AuthTokenService` (`lib/core/storage/auth_token_service.dart`) is the single source of truth for: token, subscribe URL, cached UserProfile JSON, api host.
+### XBoard auth & API
+- Login returns two tokens: **`auth_data`** (Sanctum, has `Bearer ` prefix — use for API Authorization) and `token` (raw, only for subscription URLs via Client middleware). Always use `auth_data` for API.
+- `AuthTokenService` is the single source of truth for token, subscribe URL, cached UserProfile JSON, api host.
+- `AuthNotifier._init()` shows cached profile while refreshing in background. 401/403 triggers auto-logout.
+- `syncSubscription()` downloads YAML → `ProfileService.addProfile/updateProfile()` named `'悦通'`. Auto-selects on first create.
+- **XBoard returns `{"status":"fail","message":"..."}` with HTTP 200 for business errors.** `_assertSuccess(json)` throws `XBoardApiException` — callers must NOT swallow this.
+- **XBoard `tinyint(1)` bool casting**: PHP encodes as JSON `true`/`false`, not `1`/`0`. `as int?` throws. All store models use `_toInt`/`_toBool` helpers. Never `json['field'] as int?` for XBoard numeric fields.
+- **Traffic units**: `UserProfile.transferEnable`/`uploadUsed`(`u`)/`downloadUsed`(`d`) are **bytes** — pass directly to `formatBytes()`. `StorePlan.transferEnable` is **GB** (different table).
+- **Checkout**: `CheckoutResult.type == -1` = free/instant (no URL); 0 = QR URL; 1 = redirect. `PaymentMethod.payment` is a String (`"alipay"`), not int. `OrderStatus.isSuccess` includes `processing`(1), `completed`(3), `discounted`(4).
+- **CloudFront fallback**: primary `https://yuetong.app`, fallback `https://d7ccm19ki90mg.cloudfront.net`. All `XBoardApi` instantiations in `yue_auth_providers.dart` MUST pass `fallbackUrl: _kDirectOriginUrl`. Auto-retries on 502/503.
 
-### TLS / HTTP client requirement
+### TLS / HTTP
+- Always use `XBoardApi._buildClient()` (returns `IOClient(HttpClient())`) for CloudFront calls. Plain `http.Client` doesn't reliably send TLS SNI on all platforms; CloudFront rejects with `HandshakeException`. Each `_get`/`_post` creates a fresh client and closes in `finally`.
+- **Dart `HttpClient` cascade + arrow function parser bug**: do NOT chain `..findProxy = (_) => '...'` with other cascade setters — Dart misattributes the type. Always set as separate statements:
+  ```dart
+  final client = HttpClient();
+  client.findProxy = (uri) => 'PROXY 127.0.0.1:$port';
+  client.connectionTimeout = const Duration(seconds: 10);
+  ```
 
-**Always use `XBoardApi._buildClient()`** (returns `IOClient(HttpClient())`) for all HTTP calls to the CloudFront endpoint. The plain `http.Client` from the `http` package does not reliably send TLS SNI on all platforms; CloudFront rejects connections without SNI with `HandshakeException: Connection terminated during handshake`. Every `_get`/`_post` call creates a fresh client and closes it in `finally`.
-
-**dart:io `HttpClient` cascade + arrow function bug**: Do NOT use cascade (`..`) to set `findProxy` and other properties on the same `HttpClient` in a single chain when any assigned value is an arrow function. Dart's parser misattributes the type after `..findProxy = (_) => '...'`, causing downstream cascade setters to fail with "setter not defined for class String". Always set `HttpClient` properties as separate statements:
-```dart
-// WRONG — Dart parse bug
-final client = HttpClient()..findProxy = (_) => 'PROXY ...'..connectionTimeout = ...;
-// CORRECT
-final client = HttpClient();
-client.findProxy = (uri) => 'PROXY 127.0.0.1:$port';
-client.connectionTimeout = const Duration(seconds: 10);
-```
-
-### Announcements read state
-
-`AnnouncementReadService` persists read announcement IDs as a JSON array in `read_announcement_ids.json` (via `path_provider` app documents directory). Do not use SharedPreferences or SecureStorage for this — it is non-sensitive and needs to survive app reinstalls on the same device without re-prompting.
-
-### Platform VPN implementations
-
-| Platform | Mechanism | Location |
-|----------|-----------|----------|
-| Android | `VpnService` + TUN fd → Go core (always, regardless of connectionMode) | `android/.../YueLinkVpnService.kt` |
-| iOS | `NEPacketTunnelProvider` (separate process, static lib); AppDelegate (`ios/Runner/AppDelegate.swift`) handles `startVpn`/`stopVpn`/`resetVpnProfile`/`clearAppGroupConfig` MethodChannel calls; 20s timeout if tunnel doesn't reach `.connected`; `backgroundVpnObserver` sends `vpnRevoked` to Flutter on unexpected disconnect | `ios/PacketTunnel/` |
-| iOS (TrollStore) | Same as above; minimum iOS 15.0 for PacketTunnel extension | — |
-| macOS | System proxy via `networksetup` (sets ALL interfaces; `_verifySystemProxy` checks all and logs which are active vs missing) | `lib/core/managers/system_proxy_manager.dart` |
-| Windows | System proxy via registry | `lib/core/managers/system_proxy_manager.dart` |
-
-### Native library install paths
-
-`setup.dart install` copies built libraries to these locations (all gitignored):
-
-| Platform | Destination |
-|----------|-------------|
-| Android | `android/app/src/main/jniLibs/<abi>/libclash.so` |
-| iOS | `ios/Frameworks/libclash.a` + `.h` |
-| macOS | `macos/Frameworks/libclash.dylib` (universal via `lipo`) |
-| Windows | `windows/libs/<arch>/libclash.dll` |
-
-### Critical conventions
-
-- **Default connection mode is `systemProxy`** (not TUN). Mobile (Android/iOS) always uses VPN regardless of this setting; the setting only applies to desktop.
-- iOS: Go core must be `c-archive` (static library), not `c-shared`. Extension runs in separate process with ~15MB memory limit.
-- Go core state is protected by a single mutex (`state.go`) — all exported functions must acquire the lock.
-- **All Go exports that can fail return `*C.char`**: empty string = success, non-empty = error. **NULL pointer (address == 0) also means success** — Go can return NULL on some code paths (e.g., when panic is recovered). Dart `_callStringFn` in `CoreController` handles all three cases. Caller must free non-null results via `FreeCString`.
-- **Never use `Isolate.run()` for FFI calls**. Spawning a new isolate to call CGO functions causes hangs on Android/macOS (new isolate re-opens `DynamicLibrary`, interacts badly with Go runtime). FFI calls (`InitCore` ~1s, `StartCore` ~2s) are made synchronously on the main isolate — well within ANR limits. Same rule applies to pure Dart config processing (`OverwriteService.apply`, `ConfigTemplate.process`) — these are <10ms and don't need isolate isolation.
-- `CoreManager` handles VPN internally for each platform — `CoreActions` must NOT call `VpnService` directly.
-- Android VPN permission is always requested (no connectionMode guard) because Android always needs VpnService.
-- **Android notification permission**: `POST_NOTIFICATIONS` is requested at runtime in `MainActivity.onStart()` on Android 13+ (API 33+). Without it the foreground VPN notification is silently suppressed, and the service may be killed. The permission is declared in `AndroidManifest.xml` and requested via `checkSelfPermission`/`requestPermissions` (no AndroidX dependency needed).
-- **Android Secure Folder (Samsung)**: Apps installed inside Samsung Secure Folder run as user 95 (not user 0). `VpnService.establish()` always returns null for non-primary users — TUN fd will be -1 and VPN will never work. Only one VPN can be active system-wide; a Secure Folder instance running its VPN blocks the main-space instance. Verify with `adb shell dumpsys package com.yueto.yuelink | grep dataDir` — must show `/data/user/0/`.
-- **Android TUN config**: `ConfigTemplate._injectTunFd()` replaces the entire `tun:` section with Android-safe settings: `stack: gvisor`, `auto-route: false`, `auto-detect-interface: false` (netlink banned on Android 14+), `find-process-mode: off`. Never set `auto-route: true` when using VpnService fd.
-- **iOS TUN config**: `PacketTunnelProvider.injectTunConfig()` uses `stack: gvisor`, forces `find-process-mode: off`, injects keep-alive-interval. **DNS config is handled entirely by Dart's `ConfigTemplate._ensureDns()`** before the config reaches Swift — do NOT add DNS injection in Swift (it was removed to eliminate 130 lines of duplicated logic). Swift only injects TUN fd-related config.
-- **iOS App Group geo sync**: `AppDelegate.writeConfigToAppGroup()` (called on every `startVpn`) writes `config.yaml` to `AppGroup/mihomo/` AND copies `GeoIP.dat`, `GeoSite.dat`, `country.mmdb`, `ASN.mmdb` from the main app's Application Support to the same directory via `copyGeoFilesToAppGroup()`. This is required because the PacketTunnel extension runs in a separate process and cannot access the main app sandbox — without the copy, GEOIP/GEOSITE rules fail silently. Files are only copied if the destination is missing or smaller than the source (avoids redundant copies).
-- Connection mode UI is hidden on mobile — only shown on desktop (`isDesktop = Platform.isMacOS || Platform.isWindows`).
-- MethodChannel name: `com.yueto.yuelink/vpn` (consistent across all platforms).
-- Package/Bundle ID: `com.yueto.yuelink`
-- App Group (iOS): `group.com.yueto.yuelink`
-- User-Agent for subscription downloads: `clash.meta` (required for airport compatibility).
-- `ProfileService` uses static methods, not a Riverpod provider. Call `ProfileService.loadConfig(id)` directly.
-- `YLColors.primary` is black (`#000000`) — never use it as foreground in dark mode. Use `isDark ? Colors.white : YLColors.primary` pattern.
-- Android native strings (VPN notification etc.) use Android string resources with `values-zh/` locale variant, not the Dart `S` class.
-- **Android APK install**: `MainActivity` handles `installApk` via MethodChannel. Uses `FileProvider` (`${applicationId}.fileprovider`) with `cache-path` to share APK files. Requires `REQUEST_INSTALL_PACKAGES` permission in manifest.
-- **Desktop settings providers** (in `settings_page.dart`): `closeBehaviorProvider` ('tray' | 'exit', default 'tray'), `toggleHotkeyProvider` (stored as lowercase "ctrl+alt+c", parsed via `parseStoredHotkey()`, displayed via `displayHotkey()`).
-- **Sidebar uses instant state switching** (no AnimatedContainer). This is intentional to avoid flicker on Windows. Do not add animation back.
-- **App lifecycle**: `_YueLinkAppState` implements `WidgetsBindingObserver`. On `AppLifecycleState.resumed`, `_onAppResumed()` immediately checks `CoreManager.isRunning` + `api.isAvailable()` and resets state if core died in the background — do NOT wait for the 10s heartbeat. Register/unregister via `WidgetsBinding.instance.addObserver/removeObserver` in `initState`/`dispose`.
-- **Heartbeat scope**: `coreHeartbeatProvider` is `ref.watch`-ed in `_YueLinkAppState.build()` (root widget), not just the Dashboard page. This keeps the 10s crash-detection timer active regardless of which tab is visible. The provider itself guards: `if (status != CoreStatus.running) return` — no timer when stopped.
-- **Auth gate startup flash**: `_AuthGate` returns `const Scaffold()` (blank) during `AuthStatus.unknown`. Do NOT show `CircularProgressIndicator` there — auth resolves in ~100ms from cached storage and the spinner causes a visible white flash before content loads.
-- **Port conflict handling (desktop)**: Before `ConfigTemplate.process()`, `CoreManager` calls `_findAvailablePort(preferred)` for both `mixedPort` and `apiPort`. If the preferred port is busy (other proxy software running), the next free port in range `[preferred, preferred+20)` is used. For `mixedPort`, the config string is patched via `ConfigTemplate.setMixedPort()` before processing. Mobile platforms skip this — VPN replacement is handled at OS level.
-- **Stream subscription lifecycle**: `_appLinks.uriLinkStream.listen()` result must be stored as `_appLinksSub` and cancelled in `dispose()`. `ref.listenManual()` returns a `ProviderSubscription` that must be `.close()`d in `dispose()` — not `.cancel()`. `ref.listen()` in `build()` is managed automatically by Riverpod.
-- **Listener placement**: Use `ref.listenManual()` in `initState()` (via `Future.microtask`) for listeners that should run once, not `ref.listen()` in `build()` which re-registers every frame. Store the `ProviderSubscription` and `.close()` it in `dispose()`. This pattern is used in `_YueLinkAppState` (5 listeners) and `_DashboardPageState` (1 listener).
-- **WebSocket reconnection**: `MihomoStream` uses exponential backoff (2s→4s→8s→16s→30s cap) on connection failure. Backoff resets to 2s on successful connection. Never retry with fixed interval — causes CPU burn during outages.
-- **StreamController cleanup**: When creating `StreamController` with `onCancel`, always call `controller.close()` in the `onCancel` callback in addition to cancelling upstream subscriptions. Without this, downstream listeners never receive a done event.
-- **File I/O safety**: Always ensure parent directories exist before writing files (`dir.create(recursive: true)`). `SettingsService`, `SecureStorageService`, and `AnnouncementReadService` all follow this pattern — the Application Support directory may not exist on first run or after system cleanup.
-- **iOS TrollStore distribution**: `ios/PacketTunnel/Info.plist` **must** have `CFBundleExecutable = $(EXECUTABLE_NAME)`. Without it, ldid fails with "Cannot find key CFBundleExecutable" (exit code 1, TrollStore error 175) during recursive bundle signing. `CFBundleDisplayName` should be `悦通`. The entitlements (`application-groups` + `networkextension: packet-tunnel-provider`) are compatible with TrollStore — do NOT add push notifications, iCloud, or `keychain-access-groups`.
-- **macOS secure storage**: `SecureStorageService` uses a JSON file in Application Support directory (`path_provider`) on macOS, NOT `flutter_secure_storage`. The Keychain (both legacy and Data Protection) requires signing entitlements that block `flutter run` without a paid developer account. The JSON-file approach is the standard for non-App-Store macOS apps (used by FlClash etc.). Do NOT switch macOS back to `flutter_secure_storage` or add `keychain-access-groups` to entitlements.
-
-### FFI symbol alignment
-
-Dart bindings (`core_bindings.dart`) must exactly match Go exports (`core/hub.go`). Current bindings cover lifecycle + MITM control. Data operations (proxies/connections/rules/traffic/logs) belong on `MihomoApi`, which is wrapped by `RealClashCore` so callers go through `CoreManager.instance.core` and don't reach into FFI directly. All failable exports return `Pointer<Utf8>` (C string), not `int`.
-
-### Mock mode
-
-When Go core is unavailable (no native library), `CoreController` automatically falls back to `CoreMock`, which simulates proxy groups, nodes, traffic, and connections. UI development works fully without Go — just `flutter run`.
-
-### Config processing pipeline (`ConfigTemplate.process()`)
-
-Uses "ensure" pattern: only injects when missing, never overwrites subscription-provided settings.
-
-1. Replace template variables (`$app_name` → `YueLink`)
+### Config processing (`ConfigTemplate.process()`)
+"Ensure" pattern — only injects when missing, never overwrites subscription settings.
+1. Template variables (`$app_name` → `YueLink`)
 2. `_ensureMixedPort` — without it mihomo silently skips HTTP+SOCKS listener
-3. `_ensureExternalController` — REST API endpoint for data operations (always replaces existing value with `127.0.0.1:port`)
-4. `_ensureDns` — two-path logic: (a) **no dns section**: inject full default including expanded `fake-ip-filter` and domestic DoH nameservers; (b) **existing dns section**: ensure `enable: true`, then detect actual indentation from existing keys (`RegExp(r'\n( +)\S').firstMatch(dnsSection)`) and inject `nameserver-policy` + `direct-nameserver` for Apple/iCloud using the detected indent — prevents "dial tcp 0.0.0.0:443" when subscription routes Apple domains DIRECT and UDP DNS returns 0.0.0.0.
-5. `_ensureSniffer` — HTTP/TLS/QUIC domain detection for DOMAIN-type rules
-6. `_ensureGeodata` — geodata-mode + geo URLs + auto-update for GEOIP/GEOSITE rules
-7. `_ensureProfile` — store-selected + store-fake-ip persistence
+3. `_ensureExternalController` — always replaces with `127.0.0.1:port`
+4. `_ensureDns` — two paths: (a) no dns section: inject full default with expanded `fake-ip-filter` + domestic DoH; (b) existing: ensure `enable: true`, **detect actual indent from existing keys** (`RegExp(r'\n( +)\S').firstMatch(dnsSection)`), inject `nameserver-policy` + `direct-nameserver` for Apple/iCloud — prevents "dial tcp 0.0.0.0:443" when subscription routes Apple DIRECT
+5. `_ensureSniffer` — HTTP/TLS/QUIC for DOMAIN rules
+6. `_ensureGeodata` — geodata-mode + geo URLs + auto-update
+7. `_ensureProfile` — store-selected + store-fake-ip
 8. `_ensurePerformance` — tcp-concurrent, unified-delay, TLS fingerprint
-9. `_ensureAllowLan` — allow-lan + bind-address for mixed-port
-10. `_ensureFindProcessMode` — `always` on desktop, `off` on mobile (no permission)
-11. `_injectTunFd` — Android TUN fd injection (only when tunFd provided)
+9. `_ensureAllowLan`
+10. `_ensureFindProcessMode` — `always` desktop, `off` mobile
+11. `_injectTunFd` — Android only
 
-**YAML injection safety rule**: Never inject into an existing YAML block with hardcoded indentation. Always detect the actual indent from existing sibling keys first (see `_ensureDns` indent detection pattern). String injection at section boundaries only works safely for top-level keys (0 indent) appended at EOF. `ConfigTemplate.setMixedPort()` is the only method that replaces an existing top-level scalar — it uses a regex on the `mixed-port: N` line.
+**YAML injection rule**: never inject with hardcoded indentation. Always detect indent from sibling keys first. String injection at section boundaries only safe for top-level keys appended at EOF. `setMixedPort()` uses regex on the `mixed-port: N` line.
 
-iOS PacketTunnelProvider has `injectTunConfig()` in Swift for TUN fd injection only. DNS/performance/find-process-mode config is handled by Dart `ConfigTemplate.process()` before the config reaches Swift via App Group. Do NOT duplicate DNS logic in Swift.
+### Startup & diagnostics
+`CoreManager.start()` runs 8 steps recorded in `StartupReport` with errorCode (E002–E009). On failure, dashboard `_StartupErrorBanner` shows `[Exx] step: error` (expandable: all steps + last 20 lines of `core.log`). Saved to `startup_report.json`. Go logs tagged `[BOOT]`/`[CORE]` via logrus → `core.log`.
 
-### Core startup sequence & diagnostics
+Steps: `ensureGeo`(E009) → `initCore`(E002) → `vpnPermission`(E003, Android) → `startVpn`(E004, Android) → `buildConfig`(E005, port check + overwrite + template) → `startCore`(E006) → `waitApi`(E007, 50×100ms) → `verify`(E008).
 
-`CoreManager.start()` runs 8 observable steps, each recorded in `StartupReport` (`lib/models/startup_report.dart`) with name, success, errorCode, error, detail, and durationMs:
+### Lifecycle / heartbeat
+- `_YueLinkAppState` implements `WidgetsBindingObserver`. On `resumed`, `_onAppResumed()` immediately checks `CoreManager.isRunning` + `api.isAvailable()` — do NOT wait for the 10s heartbeat.
+- `coreHeartbeatProvider` is `ref.watch`-ed in `_YueLinkAppState.build()` (root), not just Dashboard. Provider self-guards: `if (status != running) return`.
+- **Auth gate**: `_AuthGate` returns `const Scaffold()` (blank) during `AuthStatus.unknown`. Do NOT show `CircularProgressIndicator` — auth resolves in ~100ms, spinner causes white flash.
+- **Listener placement**: use `ref.listenManual()` in `initState` (via `Future.microtask`) for one-time listeners, not `ref.listen()` in `build` which re-registers every frame. Store `ProviderSubscription`, `.close()` in `dispose`.
+- `_appLinks.uriLinkStream.listen()` → store as `_appLinksSub`, cancel in `dispose`.
 
-| Step | errorCode | What it does |
-|------|-----------|--------------|
-| `ensureGeo` | E009 | Copy GeoIP/GeoSite assets to homeDir (CDN fallback if missing) |
-| `initCore` | E002 | Call `InitCore(homeDir)` via FFI, set up Go logrus → `core.log` |
-| `vpnPermission` | E003 | Android only: request VpnService permission |
-| `startVpn` | E004 | Android only: get TUN fd from `VpnService` |
-| `buildConfig` | E005 | Port conflict check (desktop: scan for free ports) + `OverwriteService.apply()` + `ConfigTemplate.process()` (sync, no Isolate) |
-| `startCore` | E006 | Call `StartCore(configYaml)` via FFI (hub.Parse + listeners) |
-| `waitApi` | E007 | Poll REST API up to 50× × 100ms = 5s |
-| `verify` | E008 | Check `IsRunning` + API available + DNS diagnostic |
+### Streams / WebSocket
+- **Single-WebSocket rule for `/traffic`**: `trafficStreamProvider` keeps ONE `trafficSub` writing both `trafficProvider` and a local `TrafficHistory` ring buffer (1800 entries, 1Hz). Two connections to the same endpoint → mihomo drops the second silently, chart goes blank. History reset on stop and crash.
+- **TrafficHistory perf**: version-based change detection. Mutated in-place with `version++`. `ChartCard` watches `trafficHistoryVersionProvider` (cheap int) and reads history by reference. Never `.copy()` per tick.
+- `MihomoStream` uses exponential backoff (2→4→8→16→30s cap), resets on success. Never fixed-interval retry.
+- `MihomoStream` passes secret via `Authorization: Bearer` header (not URL query) via `IOWebSocketChannel.connect(uri, headers:)`.
+- `StreamController` with `onCancel`: always call `controller.close()` in `onCancel` in addition to cancelling upstream subs.
 
-On failure, `StartupReport.failureSummary` returns `"[Exx_CODE] stepName: error"` — shown in `_StartupErrorBanner` on dashboard (expandable: shows all steps + last 20 lines of Go `core.log`). Report saved to `startup_report.json`. Go side logs tagged `[BOOT]`/`[CORE]` via logrus redirected to `core.log`; Dart reads this after startup in `_finishReport()`.
+### File I/O
+- Always `dir.create(recursive: true)` before writing — Application Support may not exist on first run. `SettingsService`, `SecureStorageService`, `AnnouncementReadService` all follow this.
+- **Announcements**: `AnnouncementReadService` persists read IDs as JSON in `read_announcement_ids.json` (path_provider docs dir). NOT SharedPreferences/SecureStorage — needs to survive reinstalls.
 
-### Dashboard data sources
+### UI / theme
+- `YLColors.primary` is black `#000000`. Never use as foreground in dark mode. Pattern: `isDark ? Colors.white : YLColors.primary`.
+- `YLShadow` is context-aware for dark mode.
+- Android native strings (VPN notification etc.) use Android string resources with `values-zh/`, NOT Dart `S` class.
+- **Language detection** in `yue_auth_page.dart`: use `Localizations.localeOf(context).languageCode == 'en'`, NOT string compares like `s.navHome == 'Dashboard'`.
+- **Node count**: Both `GroupCard` and `GroupListSection` use `_Badge` (pill, same as type badge) right after type badge. Plain `23` normally, `3/23` accent when filtered.
 
-- **出口IP** (`exitIpInfoProvider`, aliased as `proxyServerIpProvider`, in `lib/modules/dashboard/providers/dashboard_providers.dart`): Fetches actual exit IP by routing an HTTP request through mihomo's mixed-port proxy (`127.0.0.1:mixedPort`) to `api.ip.sb/geoip`. Direct mode fetches local public IP without proxy. This through-proxy approach works regardless of proxy type, group structure, or whether proxy-provider nodes expose `server` in the API (the old proxy-chain-resolution approach failed for proxy-provider nodes). Returns `ExitIpInfo` with `flagEmoji` (Unicode Regional Indicators) and `locationLine`. Tap on `ExitIpCard` → `ref.invalidate(exitIpInfoProvider)`. Uses separate `HttpClient` statements per CLAUDE.md cascade bug rule.
-- **Traffic chart** (`ChartCard`): Driven by a **single** WebSocket to mihomo `/traffic`. `trafficStreamProvider` maintains one `trafficSub` that writes both `trafficProvider` (current speed) and a local `TrafficHistory` ring buffer (1800 entries, 1 Hz). Two separate WebSocket connections to the same endpoint are unreliable — mihomo silently drops the second, leaving the chart blank. `trafficHistoryProvider` is reset to an empty `TrafficHistory()` on both manual stop and heartbeat-detected crash. **Performance**: `TrafficHistory` uses version-based change detection — mutated in-place with `version++`, `ChartCard` watches `trafficHistoryVersionProvider` (cheap int) and reads history by reference. Never `.copy()` the ring buffer every tick.
-- **StatsCard upload/download**: Shows XBoard `userProfileProvider.uploadUsed` / `downloadUsed` (`u`/`d` fields), NOT locally accumulated traffic. `TrafficUsageCard` on Mine page also shows these fields broken out individually — they are always available from the cached profile regardless of VPN state.
-- **ChartCard speed**: Watches `trafficProvider` (1Hz WebSocket ticks) and displays real-time `↓ x.xx MB/s / ↑ x.xx MB/s` in the header alongside the historical curve.
-- **Language detection** in `yue_auth_page.dart`: Use `Localizations.localeOf(context).languageCode == 'en'`, NOT string comparisons like `s.navHome == 'Dashboard'`.
+### Dashboard data
+- **出口IP** (`exitIpInfoProvider`): routes HTTPS through mihomo's mixed-port to `api.ip.sb/geoip`. Direct mode skips proxy. This works for proxy-provider nodes (the old proxy-chain-resolution approach failed because providers don't expose `server`). Returns `ExitIpInfo` with `flagEmoji` + `locationLine`. Tap → `ref.invalidate`. Uses separate `HttpClient` statements (cascade bug).
+- **StatsCard upload/download** = XBoard `userProfileProvider.uploadUsed`/`downloadUsed`, NOT locally accumulated. `TrafficUsageCard` (Mine) shows the same — always available regardless of VPN state.
+- **ChartCard speed** = `trafficProvider` (1Hz) → `↓ x.xx MB/s / ↑ x.xx MB/s` in header.
+- **Proxy group ordering**: by GLOBAL group's `all` field from `/proxies`, NOT alphabetical. See `ProxyGroupsNotifier.refresh()`.
 
-### Proxy group ordering
+### Profiles / subscriptions
+- `ProfileService` uses static methods, NOT a Riverpod provider. Call `ProfileService.loadConfig(id)` directly.
+- User-Agent for subscription downloads: `clash.meta` (required for airport compatibility).
 
-Groups are ordered by the `GLOBAL` group's `all` field from the mihomo API (`/proxies`), not alphabetically. See `proxy_provider.dart` `ProxyGroupsNotifier.refresh()`.
+### Emby module
+Fully data-driven from server — no hardcoded library names/order. Reads `/emby/Users/{uid}/Views`. Empty libraries auto-hide. **HiDPI**: `EmbyImage` multiplies width by `devicePixelRatio` (1–3x); backdrops use 1920px direct. **Responsive posters**: 180/240/280 (mobile/tablet/desktop). Hero Banner picks first item with backdrop from `isMediaLibrary` (movies||tvshows only — boxsets excluded). LRU preview cache, max 5 libraries.
+
+**STRM library support**: `_Library.includeItemTypes` returns `Movie,Video` (movies), `Series,Video` (tvshows), `MusicAlbum`, `BoxSet`. The `Video` type is required for STRM-based 搬运 servers — Emby indexes incomplete metadata files as generic `Video`. Without it, count = 0.
+
+**Boxsets** (Emby 4.9 `CollectionType: "boxsets"`): `_Library.isCollectionLibrary` true. Sort by `SortName` asc; others by `DateCreated` desc. Detail page uses `BoxSet`-only query.
+
+### Checkin (`yue.yuebao.website`)
+- Standalone API, separate from XBoard. Server: Python FastAPI on `23.80.91.14:8011`, nginx-proxied.
+- App check-in uses `v2_user.app_sign` — independent from Telegram Bot check-in (`user_account.sign`). One per day per system; rewards stack.
+- **Server auth**: calls XBoard `/api/v1/user/info` **directly at `http://66.55.76.208:8001`**, NOT via CloudFront. CloudFront→origin is unreliable + nginx blocks non-CF traffic by UA + python-urllib UA is rejected. XBoard does NOT return `id` — server resolves user by `email` from DB.
+- Midnight reset: APScheduler `Asia/Shanghai` clears `app_sign` for all users.
+- `_isAlreadyCheckedError` must only match genuine "already checked" — never match auth/server errors. `_assertSuccess` must reject all non-2xx (don't treat 502 as success).
+- Deploy: `scp main.py root@23.80.91.14:/opt/checkin-api/main.py && ssh root@23.80.91.14 systemctl restart checkin-api`.
+
+### Environment
+- `EnvConfig.isStandalone` (default `true`) gates self-update. Build for store: `flutter build ios --dart-define=STANDALONE=false`.
+- `UpdateChecker` only runs when standalone. Skip-version persists via `SettingsService`.
+- `SubscriptionSyncService` 30min background timer for stale profiles. Activated via `ref.watch(subscriptionSyncProvider)` in root.
+- `ErrorLogger.init()` in `main()` — writes `crash.log` + `EventLog` + `RemoteReporter`.
+- `LogExportService` collects core.log + crash.log + event.log + startup_report.json with PII redaction (11 regex patterns).
+- `RecoveryManager.resetCoreToStopped(ref)` is the canonical "reset to stopped" — use it instead of writing 4 provider states manually.
+
+## Testing & enforcement
+
+```bash
+flutter test                    # 207 tests
+bash scripts/check_imports.sh   # modules must NOT import datasources/ directly
+```
+
+Modules import via repository/auth layer. `yue_auth` re-exports `XBoardApiException`, `UserProfile` etc. via `yue_auth_providers.dart`. `store_repository.dart` re-exports store types.
+
+Pre-commit (`scripts/pre-commit`): analyze + test + import check. Install: `ln -sf ../../scripts/pre-commit .git/hooks/pre-commit`.
+
+`analysis_options.yaml`: `cancel_subscriptions`, `close_sinks`, `prefer_const_constructors`, `avoid_unnecessary_containers`.
 
 ## Git & CI
 
-- **Branches**: `master` (main/release), `dev` (development). CI triggers on tags and `workflow_dispatch` only (not on branch pushes).
-- **Tag strategy**: CI triggers on `v*` tags (create GitHub Release) and the `pre` tag (pre-release, overwrites previous). Use `pre` for testing builds, `v1.0.x` for production releases. Move the `pre` tag with `git tag -d pre && git push origin :refs/tags/pre && git tag pre && git push origin pre`.
-- **Release flow**: commit to `dev` → move `pre` tag for test build → merge `dev` into `master` → `git tag -a vX.Y.Z -m "release notes" && git push origin vX.Y.Z` for release. Never tag before pushing the commit.
-- **CI pipeline** (`.github/workflows/build.yml`): analyze+test → build Go cores (per-platform matrix) → Flutter builds (download core artifacts → install → build) → release (on `v*` and `pre` tags).
-- **Release artifacts**: `YueLink-Windows-Setup.exe` (Inno Setup), `YueLink-macOS.dmg` (create-dmg, universal binary), `YueLink-Android.apk` (fat universal), `YueLink-iOS.ipa` (no-codesign).
-- **Analyze in CI** uses `--no-fatal-infos --no-fatal-warnings` — only errors fail the build.
-- Submodules: `core/mihomo` is a git submodule. Clone with `--recursive` or run `git submodule update --init --recursive`.
-- **mihomo patches** (`core/patches/`): Applied during CI build. `0001-non-fatal-buildAndroidRules.patch` (PackageManager errors non-fatal), `0002-non-fatal-mmdb-and-iptables.patch` (MMDB/ASN `log.Fatalln` → `log.Errorln`, removes `os.Exit(2)` from iptables handler). These prevent the Go core from killing the entire Flutter process on non-critical failures.
-
-## Testing
-
-```bash
-flutter test                          # Run all tests (207 tests)
-flutter test test/models/             # Model tests (profile, proxy, traffic, rule, connection)
-flutter test test/services/           # Service tests (config_template, mihomo_api, mihomo_stream, subscription_parser, xboard_api, core_manager)
-flutter test test/ffi/                # FFI/mock tests
-flutter test test/providers/          # Provider tests
-bash scripts/check_imports.sh         # Architecture import guard (modules must not import datasources directly)
-```
-
-### Architecture enforcement
-
-- **Import rules**: `scripts/check_imports.sh` enforces `modules/ → repository/auth layer` (never `datasources/` directly). `yue_auth` re-exports `XBoardApiException`, `UserProfile` etc. via `yue_auth_providers.dart`. `store_repository.dart` re-exports store types.
-- **Pre-commit hook**: `scripts/pre-commit` runs `flutter analyze` + `flutter test` + import check. Install: `ln -sf ../../scripts/pre-commit .git/hooks/pre-commit`.
-- **analysis_options.yaml**: Extended with `cancel_subscriptions`, `close_sinks`, `prefer_const_constructors`, `avoid_unnecessary_containers` etc.
-
-### Recovery & error handling
-
-- **RecoveryManager** (`lib/core/kernel/recovery_manager.dart`): Centralises the "reset to stopped" pattern used by heartbeat, resume check, and VPN revocation. Call `resetCoreToStopped(ref)` instead of manually writing 4 provider states.
-- **ErrorLogger** (`lib/shared/error_logger.dart`): Unified crash handler — writes to `crash.log` + `EventLog` + optional remote (`RemoteReporter` interface for Sentry/Crashlytics). Initialized in `main()` via `ErrorLogger.init()`.
-- **LogExportService** (`lib/shared/log_export_service.dart`): Collects core.log + crash.log + event.log + startup_report.json with PII redaction (11 regex patterns for tokens, IPs, emails, UUIDs).
-
-### Environment configuration
-
-- **EnvConfig** (`lib/core/env_config.dart`): `isStandalone` flag (default `true`) gates self-update features. Build for store: `flutter build ios --dart-define=STANDALONE=false`.
-- **UpdateChecker**: Only runs when `EnvConfig.isStandalone`. Supports skip-version persistence via `SettingsService`.
-- **SubscriptionSyncService**: Background timer (30min) auto-updates stale profiles. Activated via `ref.watch(subscriptionSyncProvider)` in root widget.
-
-### WebSocket authentication
-
-`MihomoStream` passes the secret token via HTTP `Authorization: Bearer` header (not URL query parameter) to prevent token exposure in proxy/server logs. Uses `IOWebSocketChannel.connect(uri, headers: ...)`.
-
-### Emby module architecture
-
-The Emby module (`lib/modules/emby/`) is fully data-driven from the Emby server:
-- **No hardcoded library names/order** — reads from `/emby/Users/{uid}/Views` API, server controls order via SortName.
-- **Empty libraries auto-hidden** — if a library has 0 items, its row is not rendered.
-- **HiDPI image scaling** — `EmbyImage` multiplies requested width by `devicePixelRatio` (1-3x). Backdrop URLs use 1920px directly.
-- **Responsive poster sizing** — 180px (mobile) / 240px (tablet >900px) / 280px (desktop >1200px).
-- **Hero Banner** — auto-selects first item with backdrop from any library for the featured 16:9 banner.
-- **LRU preview cache** — max 5 libraries cached in memory; `_previewCache` auto-evicts oldest.
-- **STRM library support** — `_Library.includeItemTypes` returns `Movie,Video` (movies), `Series,Video` (tvshows), `MusicAlbum` (music), `BoxSet` (boxsets). The `Video` type is required for STRM-based 搬运 servers where Emby indexes files as generic `Video` items instead of `Movie`/`Series` when metadata scraping is incomplete. Without `Video`, item count returns 0 for these libraries.
-- **Boxsets library** — Emby 4.9 reports `CollectionType: "boxsets"`. `_Library.isCollectionLibrary` is true for this type. Boxsets are NOT eligible for the Hero Banner (only `isMediaLibrary = movies || tvshows` qualify). Boxsets sort by `SortName` ascending; other libraries sort by `DateCreated` descending. The detail page also uses a separate `BoxSet`-only query path.
-
-### CloudFront fallback
-
-`_kDefaultApiHost` is `https://yuetong.app` (CloudFront CDN, China-accessible). `_kDirectOriginUrl` is `https://d7ccm19ki90mg.cloudfront.net` (raw CloudFront distribution domain, fallback if yuetong.app DNS is unreachable). Both hit the same CloudFront distribution (E1HUMZN8N2WASG) → origin `66.55.76.208:8001`. `XBoardApi` accepts `fallbackUrl` in its constructor — after exhausting retries on 502/503, it automatically retries the full request on the fallback URL. All `XBoardApi` instantiations in `yue_auth_providers.dart` must include `fallbackUrl: _kDirectOriginUrl`.
-
-### Checkin API server
-
-Runs on `23.80.91.14:8011`, nginx-proxied via `yue.yuebao.website`. Deploy: `scp main.py root@23.80.91.14:/opt/checkin-api/main.py && ssh root@23.80.91.14 systemctl restart checkin-api`. **Critical**: XBoard `/api/v1/user/info` does NOT return `id` — the server resolves user ID by querying `v2_user` by `email` from the info response. `XBOARD_BASE` must be set to `http://66.55.76.208:8001` (direct origin) in `.env`, NOT the CloudFront domain — XBoard's nginx blocks non-CloudFront traffic by UA and the Python urllib UA is rejected.
-
-### Android signing
-
-Keystore: `android/app/yuelink.jks`, alias `yuelink`, store/key password `yuelink2024`. Build signed release:
-```bash
-KEYSTORE_PATH="$(pwd)/android/app/yuelink.jks" \
-KEYSTORE_PASSWORD="yuelink2024" \
-KEY_ALIAS="yuelink" \
-KEY_PASSWORD="yuelink2024" \
-flutter build apk --release --split-per-abi
-```
-Output: `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk` (recommended for distribution, ~93MB).
+- Branches: `master` (release), `dev` (development). CI triggers only on tags + `workflow_dispatch`.
+- Tags: `v*` → GitHub Release; `pre` → pre-release (overwrites previous). Move `pre`: `git tag -d pre && git push origin :refs/tags/pre && git tag pre && git push origin pre`.
+- Release flow: commit to `dev` → move `pre` for test build → merge `dev`→`master` → `git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z`. Never tag before pushing the commit.
+- Pipeline: analyze+test → Go cores (matrix) → Flutter builds (download artifacts → install → build) → release.
+- Artifacts: `YueLink-Windows-Setup.exe` (Inno), `YueLink-macOS.dmg` (create-dmg, universal), `YueLink-Android.apk` (fat), `YueLink-iOS.ipa` (no-codesign).
+- Submodule: `core/mihomo`. Clone with `--recursive`.
+- **mihomo patches** (`core/patches/`, applied in CI): `0001-non-fatal-buildAndroidRules` (PackageManager errors non-fatal), `0002-non-fatal-mmdb-and-iptables` (MMDB/ASN `log.Fatalln` → `Errorln`, removes `os.Exit(2)` in iptables). Prevents Go from killing the whole Flutter process on non-critical failures.

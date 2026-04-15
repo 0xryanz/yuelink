@@ -209,8 +209,10 @@ class _ProfileContent extends ConsumerWidget {
                   ],
                 ),
               ),
-              // Devices online
-              if (profile.deviceLimit != null) ...[
+              // Devices online — show whenever we have any device data,
+              // even if deviceLimit is missing (XBoard sometimes omits it).
+              if (profile.onlineCount != null ||
+                  profile.deviceLimit != null) ...[
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.center,

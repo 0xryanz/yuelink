@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../infrastructure/store/store_repository.dart';
 import '../../i18n/app_strings.dart';
 import '../../shared/app_notifier.dart';
+import '../../shared/friendly_error.dart';
 import '../../theme.dart';
 import '../../domain/store/store_order.dart';
 import '../../domain/store/store_plan.dart';
@@ -623,14 +624,8 @@ class _OrderDetailSheetState extends ConsumerState<_OrderDetailSheet> {
         AppNotifier.success(widget.isEn ? 'Order cancelled' : '订单已取消');
         ref.read(orderHistoryProvider.notifier).refresh();
       }
-    } on XBoardApiException catch (e) {
-      if (mounted) AppNotifier.error(e.message);
-    } catch (_) {
-      if (mounted) {
-        AppNotifier.error(
-          widget.isEn ? 'Failed to cancel, please try again' : '取消订单失败，请稍后重试',
-        );
-      }
+    } catch (e) {
+      if (mounted) AppNotifier.error(friendlyError(e));
     } finally {
       if (mounted) setState(() => _cancelling = false);
     }

@@ -197,7 +197,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                     itemBuilder: (context, index) {
                       final profile = sorted[index];
                       final isActive = profile.id == activeId;
-                      return _ProfileCard(
+                      final card = _ProfileCard(
                         profile: profile,
                         isActive: isActive,
                         onTap: () {
@@ -211,6 +211,21 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                         onExport: () => _exportProfile(context, ref, profile),
                         onDelete: () =>
                             _confirmDelete(context, ref, profile),
+                      );
+                      // On mobile, left-swipe reveals a delete action — the
+                      // iOS Mail / Gmail convention. Desktop keeps the
+                      // existing context-menu Delete row, since swipe
+                      // gestures don't apply to mouse-driven UIs.
+                      if (!(Platform.isIOS || Platform.isAndroid)) return card;
+                      return Dismissible(
+                        key: ValueKey('profile_${profile.id}'),
+                        direction: DismissDirection.endToStart,
+                        background: _SwipeDeleteBackground(),
+                        confirmDismiss: (_) async {
+                          return await _confirmDeleteSheet(
+                              context, ref, profile);
+                        },
+                        child: card,
                       );
                     },
                   ),
@@ -1087,4 +1102,102 @@ class _ProfileCard extends StatelessWidget {
         '${dt.hour.toString().padLeft(2, '0')}:'
         '${dt.minute.toString().padLeft(2, '0')}';
   }
+}
+
+
+// ── Swipe-to-delete helpers ───────────────────────────────────────────────
+
+/// Red background shown behind a profile row while the user is dragging
+/// left to reveal the delete action. Used by Dismissible on mobile.
+class _SwipeDeleteBackground extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE53935),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      alignment: Alignment.centerRight,
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.delete_outline_rounded, color: Colors.white, size: 22),
+          SizedBox(width: 6),
+          Text(
+            "删除",
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Bottom-sheet confirmation used by the swipe-to-delete gesture on mobile.
+/// Returns true if the user confirmed (profile gets deleted), false or null
+/// if they backed out (Dismissible rubber-bands the row back).
+Future<bool> _confirmDeleteSheet(
+  BuildContext context,
+  WidgetRef ref,
+  Profile profile,
+) async {
+  final s = S.of(context);
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final result = await showModalBottomSheet<bool>(
+    context: context,
+    showDragHandle: true,
+    backgroundColor: isDark ? const Color(0xFF18181B) : Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (ctx) => Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(s.confirmDelete,
+              style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  )),
+          const SizedBox(height: 8),
+          Text(s.confirmDeleteMessage(profile.name),
+              style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                    color: isDark ? Colors.white70 : Colors.black54,
+                  )),
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(ctx, true);
+              await ref.read(profilesProvider.notifier).delete(profile.id);
+              final activeId = ref.read(activeProfileIdProvider);
+              if (activeId == profile.id) {
+                ref.read(activeProfileIdProvider.notifier).select(null);
+              }
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFE53935),
+              minimumSize: const Size.fromHeight(48),
+            ),
+            child: Text(s.delete),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            style: TextButton.styleFrom(
+              minimumSize: const Size.fromHeight(44),
+            ),
+            child: Text(s.cancel),
+          ),
+        ],
+      ),
+    ),
+  );
+  return result == true;
 }

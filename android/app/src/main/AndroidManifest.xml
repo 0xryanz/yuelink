@@ -11,6 +11,7 @@
     <application
         android:label="YueLink"
         android:name=".MainApplication"
+        android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round">
         <activity

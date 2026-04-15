@@ -3,6 +3,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import 'haptics.dart';
+
 /// Global [ScaffoldMessengerKey] — set on [MaterialApp.scaffoldMessengerKey].
 /// Allows showing styled snackbars from anywhere (services, tray callbacks, etc.)
 /// without needing a [BuildContext].
@@ -118,9 +120,18 @@ class AppNotifier {
     }
   }
 
-  static void success(String message) => _show(message, _SnackType.success);
-  static void error(String message)   => _show(message, _SnackType.error);
-  static void warning(String message) => _show(message, _SnackType.warning);
+  static void success(String message) {
+    Haptics.success();
+    _show(message, _SnackType.success);
+  }
+  static void error(String message) {
+    Haptics.error();
+    _show(message, _SnackType.error);
+  }
+  static void warning(String message) {
+    Haptics.selection();
+    _show(message, _SnackType.warning);
+  }
   static void info(String message)    => _show(message, _SnackType.info);
 }
 

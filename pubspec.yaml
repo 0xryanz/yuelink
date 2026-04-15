@@ -46,6 +46,11 @@ dependencies:
   flutter_widget_from_html_core: ^0.15.2
   mobile_scanner: ^6.0.0
   google_fonts: ^6.2.1
+  # Material You — pull system dynamic color palette on Android 12+.
+  dynamic_color: ^1.7.0
+  # Skeleton loaders (shimmer) to replace CircularProgressIndicator
+  # at content-loading surfaces.
+  shimmer: ^3.0.0
 
 dev_dependencies:
   flutter_test:

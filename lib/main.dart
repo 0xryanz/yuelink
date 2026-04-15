@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
@@ -110,6 +112,22 @@ final tileShowNodeInfoProvider = StateProvider<bool>((ref) => false);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ── Android 15 edge-to-edge ──
+  // Android 15 enforces edge-to-edge for apps targeting SDK 35+ and
+  // deprecates the old "leave nav bar area" behavior. Match the system
+  // bar colour to the scaffold background so the UI feels native end-
+  // to-end. SafeArea / Scaffold handle the actual inset math; we just
+  // make the bars transparent with the correct icon brightness.
+  if (Platform.isAndroid) {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+      systemNavigationBarContrastEnforced: false,
+    ));
+  }
 
   // ── Image cache limit (prevent 1GB+ memory from decoded bitmaps) ──
   PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024;
@@ -1238,25 +1256,43 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     ref.listen<void>(coreHeartbeatProvider, (_, __) {});
     ref.listen<void>(subscriptionSyncProvider, (_, __) {});
 
-    return MaterialApp(
-      title: AppConstants.appName,
-      debugShowCheckedModeBanner: false,
-      navigatorKey: navigatorKey,
-      scaffoldMessengerKey: scaffoldMessengerKey,
+    // DynamicColorBuilder pulls the OS palette (Material You) on Android 12+
+    // and macOS, falling back to our seeded accentColor elsewhere. The
+    // returned ColorSchemes are only applied when the user has NOT manually
+    // picked an accent — once they pick a colour, our explicit accent wins
+    // so the app doesn't spontaneously change palette under them.
+    return DynamicColorBuilder(
+      builder: (lightDynamic, darkDynamic) {
+        final useDynamic = accentColor == YLColors.primary &&
+            lightDynamic != null && darkDynamic != null;
+        return MaterialApp(
+          title: AppConstants.appName,
+          debugShowCheckedModeBanner: false,
+          navigatorKey: navigatorKey,
+          scaffoldMessengerKey: scaffoldMessengerKey,
 
-      // i18n
-      locale: Locale(language),
-      supportedLocales: const [Locale('zh'), Locale('en')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
+          locale: Locale(language),
+          supportedLocales: const [Locale('zh'), Locale('en')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
 
-      themeMode: themeMode,
-      theme: buildTheme(Brightness.light, accentColor: accentColor),
-      darkTheme: buildTheme(Brightness.dark, accentColor: accentColor),
-      home: const _AuthGate(),
+          themeMode: themeMode,
+          theme: buildTheme(
+            Brightness.light,
+            accentColor: accentColor,
+            dynamicScheme: useDynamic ? lightDynamic : null,
+          ),
+          darkTheme: buildTheme(
+            Brightness.dark,
+            accentColor: accentColor,
+            dynamicScheme: useDynamic ? darkDynamic : null,
+          ),
+          home: const _AuthGate(),
+        );
+      },
     );
   }
 }

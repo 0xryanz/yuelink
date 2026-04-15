@@ -144,7 +144,11 @@ class YLShadow {
 
 // ── Theme factory ─────────────────────────────────────────────────────────────
 
-ThemeData buildTheme(Brightness brightness, {Color? accentColor}) {
+ThemeData buildTheme(
+  Brightness brightness, {
+  Color? accentColor,
+  ColorScheme? dynamicScheme,
+}) {
   final isDark = brightness == Brightness.dark;
 
   final bg      = isDark ? YLColors.zinc950  : YLColors.zinc100;
@@ -159,10 +163,15 @@ ThemeData buildTheme(Brightness brightness, {Color? accentColor}) {
   // This ensures Switch, FAB, ProgressIndicator, Slider, Checkbox, etc.
   // all respect the user's chosen color — not just a static secondary slot.
   final accent = accentColor ?? YLColors.accent;
-  final seedScheme = ColorScheme.fromSeed(
-    seedColor: accent,
-    brightness: brightness,
-  );
+  // When Material You dynamic color is available (Android 12+), use it as
+  // the seed so primary/secondary/tertiary tint every M3 component to the
+  // user's system wallpaper palette. Falls back to our brand-seeded
+  // scheme on older Android / iOS / desktop.
+  final seedScheme = dynamicScheme ??
+      ColorScheme.fromSeed(
+        seedColor: accent,
+        brightness: brightness,
+      );
   // Keep our custom zinc surfaces but take primary/secondary/tertiary
   // from the seed-generated scheme so Material components are tinted.
   final colorScheme = seedScheme.copyWith(
@@ -200,6 +209,25 @@ ThemeData buildTheme(Brightness brightness, {Color? accentColor}) {
     scaffoldBackgroundColor: bg,
     splashFactory: NoSplash.splashFactory, // Remove Android ripples for premium feel
     splashColor: Colors.transparent,
+    // Unified push/pop transitions across all platforms:
+    //   iOS/macOS — Cupertino (edge swipe-back supported on iOS)
+    //   Android/Windows/Linux — Material 3 zoom (shared-axis feel)
+    // Replaces the default Android slide-from-right which feels dated.
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.android: ZoomPageTransitionsBuilder(
+          allowEnterRouteSnapshotting: false,
+        ),
+        TargetPlatform.windows: ZoomPageTransitionsBuilder(
+          allowEnterRouteSnapshotting: false,
+        ),
+        TargetPlatform.linux: ZoomPageTransitionsBuilder(
+          allowEnterRouteSnapshotting: false,
+        ),
+      },
+    ),
     // iOS-style press feedback: subtle gray fade instead of Material ripple.
     highlightColor: isDark
         ? Colors.white.withValues(alpha: 0.06)

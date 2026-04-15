@@ -426,11 +426,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                     if (isGuest || isLoggedOut) ...[
                       _GuestLoginCard(isDark: isDark),
                     ] else ...[
-                      // ── Profile row（Apple Settings 风格）──
+                      // ── Profile row + 流量（合并为账户簇）──
                       _ProfileRow(isDark: isDark),
-
-                      // ── 流量 ──
-                      const _SectionTitle('流量'),
+                      const SizedBox(height: 8),
                       _MineTrafficSection(isDark: isDark),
                     ],
 
@@ -485,54 +483,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                       ),
                     ),
 
-                    // ══ 模块管理 ══════════════════════════════════════════
-                    _SectionTitle(s.sectionModules),
-                    _SettingsCard(
-                      child: YLInfoRow(
-                        label: s.modulesLabel,
-                        leading: const YLSettingIcon(
-                            icon: Icons.extension_outlined,
-                            color: Colors.deepPurple),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Consumer(builder: (ctx, ref, _) {
-                              final state = ref.watch(moduleProvider);
-                              final count =
-                                  state.modules.where((m) => m.enabled).length;
-                              if (count == 0) return const SizedBox.shrink();
-                              return Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: (isDark
-                                          ? YLColors.primaryDark
-                                          : YLColors.primary)
-                                      .withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  '$count',
-                                  style: YLText.caption.copyWith(
-                                      color: isDark
-                                          ? YLColors.primaryDark
-                                          : YLColors.primary),
-                                ),
-                              );
-                            }),
-                            const SizedBox(width: 4),
-                            const Icon(Icons.chevron_right,
-                                size: 18, color: YLColors.zinc400),
-                          ],
-                        ),
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) => const ModulesPage()),
-                        ),
-                      ),
-                    ),
-
-                    // ══ 2. 通用 ══════════════════════════════════════════
+                    // ══ 2. 设置（偏好 / 覆写 / 修复 / 模块）═══════════════
                     _SectionTitle(s.sectionSettings),
                     _SettingsCard(
                       child: Column(
@@ -574,6 +525,53 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                             onTap: () => Navigator.of(context).push(
                               MaterialPageRoute(
                                   builder: (_) => const ConnectionRepairPage()),
+                            ),
+                          ),
+                          Divider(
+                              height: 1, thickness: 0.5, color: dividerColor),
+                          YLInfoRow(
+                            label: s.modulesLabel,
+                            leading: const YLSettingIcon(
+                                icon: Icons.extension_outlined,
+                                color: Colors.deepPurple),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Consumer(builder: (ctx, ref, _) {
+                                  final state = ref.watch(moduleProvider);
+                                  final count = state.modules
+                                      .where((m) => m.enabled)
+                                      .length;
+                                  if (count == 0) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: (isDark
+                                              ? YLColors.primaryDark
+                                              : YLColors.primary)
+                                          .withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      '$count',
+                                      style: YLText.caption.copyWith(
+                                          color: isDark
+                                              ? YLColors.primaryDark
+                                              : YLColors.primary),
+                                    ),
+                                  );
+                                }),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.chevron_right,
+                                    size: 18, color: YLColors.zinc400),
+                              ],
+                            ),
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => const ModulesPage()),
                             ),
                           ),
                         ],

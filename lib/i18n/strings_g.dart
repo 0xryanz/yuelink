@@ -390,7 +390,7 @@ class Translations implements BaseTranslations<AppLocale, Translations> {
 	String get sectionStatus => 'Status';
 	String get sectionTools => 'Tools';
 	String get sectionAbout => 'About';
-	String get sectionSettings => 'General';
+	String get sectionSettings => 'Settings';
 	String get sectionService => 'My Subscription';
 	String get sectionSupport => 'Support';
 	String get preferencesLabel => 'Preferences';
@@ -1131,7 +1131,7 @@ class _StringsGZhCn extends Translations {
 	@override String get sectionStatus => '状态';
 	@override String get sectionTools => '工具';
 	@override String get sectionAbout => '关于';
-	@override String get sectionSettings => '通用';
+	@override String get sectionSettings => '设置';
 	@override String get sectionService => '我的订阅';
 	@override String get sectionSupport => '支持';
 	@override String get preferencesLabel => '偏好设置';
@@ -1852,7 +1852,7 @@ extension on Translations {
 			case 'sectionStatus': return 'Status';
 			case 'sectionTools': return 'Tools';
 			case 'sectionAbout': return 'About';
-			case 'sectionSettings': return 'General';
+			case 'sectionSettings': return 'Settings';
 			case 'sectionService': return 'My Subscription';
 			case 'sectionSupport': return 'Support';
 			case 'preferencesLabel': return 'Preferences';
@@ -2573,7 +2573,7 @@ extension on _StringsGZhCn {
 			case 'sectionStatus': return '状态';
 			case 'sectionTools': return '工具';
 			case 'sectionAbout': return '关于';
-			case 'sectionSettings': return '通用';
+			case 'sectionSettings': return '设置';
 			case 'sectionService': return '我的订阅';
 			case 'sectionSupport': return '支持';
 			case 'preferencesLabel': return '偏好设置';

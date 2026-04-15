@@ -22,6 +22,7 @@ import '../../../shared/app_notifier.dart';
 import '../../../shared/telemetry.dart';
 import '../../../theme.dart';
 import '../settings_page.dart';
+import 'telemetry_preview_page.dart';
 
 /// Standalone settings sub-page — displays all general settings
 /// (theme, language, auto-connect, routing, connection mode, etc.)
@@ -40,6 +41,7 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
   String _updateChannel = 'stable';
   bool _autoCheckUpdates = true;
   DateTime? _lastUpdateCheck;
+  bool _telemetryEnabled = false;
 
   @override
   void initState() {
@@ -52,12 +54,14 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
     final channel = await UpdateChecker.getChannel();
     final autoCheck = await UpdateChecker.getAutoCheck();
     final lastCheck = await UpdateChecker.getLastCheck();
+    final telemetry = await SettingsService.getTelemetryEnabled();
     if (mounted) {
       setState(() {
         _launchAtStartup = startup;
         _updateChannel = channel;
         _autoCheckUpdates = autoCheck;
         _lastUpdateCheck = lastCheck;
+        _telemetryEnabled = telemetry;
       });
     }
   }
@@ -288,10 +292,11 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
             children: [
+              // === 外观 / Appearance ===
+              _GsSectionTitle(s.sectionAppearance),
               _Card(
                 child: Column(
                   children: [
-                    // Theme
                     YLInfoRow(
                       label: s.themeLabel,
                       trailing: SizedBox(
@@ -326,7 +331,6 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                       ),
                     ),
                     Divider(height: 1, thickness: 0.5, color: dividerColor),
-                    // Accent color
                     _AccentColorRow(
                       currentHex: accentHex,
                       onChanged: (hex) {
@@ -336,7 +340,6 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                       isEn: isEn,
                     ),
                     Divider(height: 1, thickness: 0.5, color: dividerColor),
-                    // Language
                     YLInfoRow(
                       label: s.sectionLanguage,
                       trailing: SizedBox(
@@ -361,92 +364,16 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                         ),
                       ),
                     ),
-                    if (EnvConfig.isStandalone) ...[
-                      Divider(height: 1, thickness: 0.5, color: dividerColor),
-                      YLInfoRow(
-                        label: isEn ? 'Last checked' : '上次检查',
-                        value: _formatLastChecked(
-                          _lastUpdateCheck,
-                          isEn: isEn,
-                        ),
-                        trailing: const SizedBox.shrink(),
-                      ),
-                      Divider(height: 1, thickness: 0.5, color: dividerColor),
-                      YLSettingsRow(
-                        title: isEn
-                            ? 'Auto-check updates on startup'
-                            : '启动时自动检查更新',
-                        trailing: CupertinoSwitch(
-                          value: _autoCheckUpdates,
-                          activeTrackColor: YLColors.connected,
-                          onChanged: (v) async {
-                            await UpdateChecker.setAutoCheck(v);
-                            if (mounted) setState(() => _autoCheckUpdates = v);
-                          },
-                        ),
-                      ),
-                      Divider(height: 1, thickness: 0.5, color: dividerColor),
-                      YLInfoRow(
-                        label: isEn ? 'Update channel' : '更新通道',
-                        value: _updateChannel == 'pre'
-                            ? (isEn ? 'Pre-release' : '预发布')
-                            : (isEn ? 'Stable' : '稳定版'),
-                        trailing: const Icon(Icons.chevron_right,
-                            size: 18, color: YLColors.zinc400),
-                        onTap: () async {
-                          final picked = await showModalBottomSheet<String>(
-                            context: context,
-                            builder: (ctx) => SafeArea(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  ListTile(
-                                    title: Text(
-                                      isEn ? 'Stable (stable)' : '稳定版 (stable)',
-                                    ),
-                                    subtitle: Text(
-                                      isEn
-                                          ? 'Only receive formal v* releases'
-                                          : '只接收正式 v* 版本，更稳定',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                    trailing: _updateChannel == 'stable'
-                                        ? const Icon(Icons.check,
-                                            color: YLColors.primary)
-                                        : null,
-                                    onTap: () => Navigator.pop(ctx, 'stable'),
-                                  ),
-                                  ListTile(
-                                    title: Text(
-                                      isEn
-                                          ? 'Pre-release (pre-release)'
-                                          : '预发布 (pre-release)',
-                                    ),
-                                    subtitle: Text(
-                                      isEn
-                                          ? 'Get new builds early, may be unstable'
-                                          : '抢先体验新功能，可能有问题',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                    trailing: _updateChannel == 'pre'
-                                        ? const Icon(Icons.check,
-                                            color: YLColors.primary)
-                                        : null,
-                                    onTap: () => Navigator.pop(ctx, 'pre'),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                          if (picked != null && picked != _updateChannel) {
-                            await UpdateChecker.setChannel(picked);
-                            if (mounted) setState(() => _updateChannel = picked);
-                          }
-                        },
-                      ),
-                    ],
-                    Divider(height: 1, thickness: 0.5, color: dividerColor),
-                    // Auto connect
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // === 连接 / Connection ===
+              _GsSectionTitle(isEn ? 'Connection' : '连接'),
+              _Card(
+                child: Column(
+                  children: [
                     YLSettingsRow(
                       title: s.autoConnect,
                       trailing: CupertinoSwitch(
@@ -458,56 +385,7 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                         },
                       ),
                     ),
-                    if (Platform.isAndroid) ...[
-                      Divider(height: 1, thickness: 0.5, color: dividerColor),
-                      // Android Quick Settings tile: show current exit
-                      // node in the tile subtitle.
-                      YLSettingsRow(
-                        title: isEn
-                            ? 'Show node in Quick Settings tile'
-                            : '磁贴显示当前节点',
-                        description: isEn
-                            ? 'Shows the exit region in the tile — visible to anyone who pulls down the shade.'
-                            : '磁贴副标题显示当前节点出口地区，拉下通知栏的人都会看到',
-                        trailing: CupertinoSwitch(
-                          value: ref.watch(tileShowNodeInfoProvider),
-                          activeTrackColor: YLColors.connected,
-                          onChanged: (v) async {
-                            ref.read(tileShowNodeInfoProvider.notifier).state =
-                                v;
-                            await SettingsService.setTileShowNodeInfo(v);
-                          },
-                        ),
-                      ),
-                    ],
                     Divider(height: 1, thickness: 0.5, color: dividerColor),
-                    // Subscription sync interval
-                    YLInfoRow(
-                      label: isEn ? 'Subscription update' : '订阅更新频率',
-                      trailing: DropdownButton<int>(
-                        value: subSyncInterval,
-                        underline: const SizedBox.shrink(),
-                        style: YLText.body.copyWith(
-                          color: isDark ? YLColors.zinc200 : YLColors.zinc700,
-                        ),
-                        dropdownColor: isDark ? YLColors.zinc800 : Colors.white,
-                        items: [
-                          DropdownMenuItem(value: 0, child: Text(isEn ? 'Manual' : '手动')),
-                          DropdownMenuItem(value: 1, child: Text(isEn ? 'Every hour' : '每小时')),
-                          DropdownMenuItem(value: 6, child: Text(isEn ? 'Every 6 hours' : '每6小时')),
-                          DropdownMenuItem(value: 12, child: Text(isEn ? 'Every 12 hours' : '每12小时')),
-                          DropdownMenuItem(value: 24, child: Text(isEn ? 'Every day' : '每天')),
-                          DropdownMenuItem(value: 48, child: Text(isEn ? 'Every 2 days' : '每2天')),
-                        ],
-                        onChanged: (v) async {
-                          if (v == null) return;
-                          ref.read(subSyncIntervalProvider.notifier).state = v;
-                          await SettingsService.setSubSyncInterval(v);
-                        },
-                      ),
-                    ),
-                    Divider(height: 1, thickness: 0.5, color: dividerColor),
-                    // Routing mode
                     YLInfoRow(
                       label: s.routingModeSetting,
                       trailing: SizedBox(
@@ -548,11 +426,37 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                         ),
                       ),
                     ),
-                    // Connection mode & system proxy: desktop only
-                    if (Platform.isMacOS ||
-                        Platform.isWindows ||
-                        Platform.isLinux) ...[
+                    if (Platform.isAndroid) ...[
                       Divider(height: 1, thickness: 0.5, color: dividerColor),
+                      YLSettingsRow(
+                        title: isEn
+                            ? 'Show node in Quick Settings tile'
+                            : '磁贴显示当前节点',
+                        description: isEn
+                            ? 'Shows the exit region in the tile — visible to anyone who pulls down the shade.'
+                            : '磁贴副标题显示当前节点出口地区，拉下通知栏的人都会看到',
+                        trailing: CupertinoSwitch(
+                          value: ref.watch(tileShowNodeInfoProvider),
+                          activeTrackColor: YLColors.connected,
+                          onChanged: (v) async {
+                            ref.read(tileShowNodeInfoProvider.notifier).state =
+                                v;
+                            await SettingsService.setTileShowNodeInfo(v);
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // === 高级 / Advanced (desktop only) ===
+              if (isDesktop) ...[
+                _GsSectionTitle(isEn ? 'Advanced' : '高级'),
+                _Card(
+                  child: Column(
+                    children: [
                       YLInfoRow(
                         label: s.connectionMode,
                         trailing: DropdownButton<String>(
@@ -698,8 +602,9 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                             ],
                             onChanged: (v) async {
                               if (v == null) return;
-                              ref.read(desktopTunStackProvider.notifier).state =
-                                  v;
+                              ref
+                                  .read(desktopTunStackProvider.notifier)
+                                  .state = v;
                               await SettingsService.setDesktopTunStack(v);
                             },
                           ),
@@ -735,8 +640,17 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                         ),
                       ),
                     ],
-                    if (isDesktop) ...[
-                      Divider(height: 1, thickness: 0.5, color: dividerColor),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // === 启动与快捷键 / Startup & Hotkey (desktop only) ===
+              if (isDesktop) ...[
+                _GsSectionTitle(isEn ? 'Startup & Hotkey' : '启动与快捷键'),
+                _Card(
+                  child: Column(
+                    children: [
                       YLSettingsRow(
                         title: s.launchAtStartupLabel,
                         description: s.launchAtStartupSub,
@@ -754,22 +668,222 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
                           },
                         ),
                       ),
-                      Divider(height: 1, thickness: 0.5, color: dividerColor),
                       if (!Platform.isLinux) ...[
-                        _CloseBehaviorRow(),
                         Divider(height: 1, thickness: 0.5, color: dividerColor),
+                        _CloseBehaviorRow(),
                       ],
+                      Divider(height: 1, thickness: 0.5, color: dividerColor),
                       _HotkeyRow(),
                     ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // === 订阅 / Subscription ===
+              _GsSectionTitle(isEn ? 'Subscription' : '订阅'),
+              _Card(
+                child: Column(
+                  children: [
+                    YLInfoRow(
+                      label: isEn ? 'Subscription update' : '订阅更新频率',
+                      trailing: DropdownButton<int>(
+                        value: subSyncInterval,
+                        underline: const SizedBox.shrink(),
+                        style: YLText.body.copyWith(
+                          color: isDark ? YLColors.zinc200 : YLColors.zinc700,
+                        ),
+                        dropdownColor: isDark ? YLColors.zinc800 : Colors.white,
+                        items: [
+                          DropdownMenuItem(
+                              value: 0, child: Text(isEn ? 'Manual' : '手动')),
+                          DropdownMenuItem(
+                              value: 1,
+                              child: Text(isEn ? 'Every hour' : '每小时')),
+                          DropdownMenuItem(
+                              value: 6,
+                              child: Text(isEn ? 'Every 6 hours' : '每6小时')),
+                          DropdownMenuItem(
+                              value: 12,
+                              child: Text(isEn ? 'Every 12 hours' : '每12小时')),
+                          DropdownMenuItem(
+                              value: 24,
+                              child: Text(isEn ? 'Every day' : '每天')),
+                          DropdownMenuItem(
+                              value: 48,
+                              child: Text(isEn ? 'Every 2 days' : '每2天')),
+                        ],
+                        onChanged: (v) async {
+                          if (v == null) return;
+                          ref.read(subSyncIntervalProvider.notifier).state = v;
+                          await SettingsService.setSubSyncInterval(v);
+                        },
+                      ),
+                    ),
                   ],
                 ),
               ),
-              if (Platform.isAndroid) ...[
+              const SizedBox(height: 16),
+
+              // === 更新 / Updates ===
+              if (EnvConfig.isStandalone) ...[
+                _GsSectionTitle(isEn ? 'Updates' : '更新'),
+                _Card(
+                  child: Column(
+                    children: [
+                      YLInfoRow(
+                        label: isEn ? 'Last checked' : '上次检查',
+                        value: _formatLastChecked(
+                          _lastUpdateCheck,
+                          isEn: isEn,
+                        ),
+                        trailing: const SizedBox.shrink(),
+                      ),
+                      Divider(height: 1, thickness: 0.5, color: dividerColor),
+                      YLSettingsRow(
+                        title: isEn
+                            ? 'Auto-check updates on startup'
+                            : '启动时自动检查更新',
+                        trailing: CupertinoSwitch(
+                          value: _autoCheckUpdates,
+                          activeTrackColor: YLColors.connected,
+                          onChanged: (v) async {
+                            await UpdateChecker.setAutoCheck(v);
+                            if (mounted) setState(() => _autoCheckUpdates = v);
+                          },
+                        ),
+                      ),
+                      Divider(height: 1, thickness: 0.5, color: dividerColor),
+                      YLInfoRow(
+                        label: isEn ? 'Update channel' : '更新通道',
+                        value: _updateChannel == 'pre'
+                            ? (isEn ? 'Pre-release' : '预发布')
+                            : (isEn ? 'Stable' : '稳定版'),
+                        trailing: const Icon(Icons.chevron_right,
+                            size: 18, color: YLColors.zinc400),
+                        onTap: () async {
+                          final picked = await showModalBottomSheet<String>(
+                            context: context,
+                            builder: (ctx) => SafeArea(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ListTile(
+                                    title: Text(
+                                      isEn
+                                          ? 'Stable (stable)'
+                                          : '稳定版 (stable)',
+                                    ),
+                                    subtitle: Text(
+                                      isEn
+                                          ? 'Only receive formal v* releases'
+                                          : '只接收正式 v* 版本，更稳定',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                    trailing: _updateChannel == 'stable'
+                                        ? const Icon(Icons.check,
+                                            color: YLColors.primary)
+                                        : null,
+                                    onTap: () => Navigator.pop(ctx, 'stable'),
+                                  ),
+                                  ListTile(
+                                    title: Text(
+                                      isEn
+                                          ? 'Pre-release (pre-release)'
+                                          : '预发布 (pre-release)',
+                                    ),
+                                    subtitle: Text(
+                                      isEn
+                                          ? 'Get new builds early, may be unstable'
+                                          : '抢先体验新功能，可能有问题',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                    trailing: _updateChannel == 'pre'
+                                        ? const Icon(Icons.check,
+                                            color: YLColors.primary)
+                                        : null,
+                                    onTap: () => Navigator.pop(ctx, 'pre'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                          if (picked != null && picked != _updateChannel) {
+                            await UpdateChecker.setChannel(picked);
+                            if (mounted) {
+                              setState(() => _updateChannel = picked);
+                            }
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 16),
-                const _SplitTunnelSection(),
               ],
+
+              // === 分流 / Split Tunnel (Android only) ===
+              if (Platform.isAndroid) ...[
+                _GsSectionTitle(isEn ? 'Split Tunnel' : '分流'),
+                const _SplitTunnelSection(),
+                const SizedBox(height: 16),
+              ],
+
+              // === 隐私 / Privacy ===
+              _GsSectionTitle(s.privacy),
+              _Card(
+                child: Column(
+                  children: [
+                    YLSettingsRow(
+                      title: s.telemetryTitle,
+                      description: s.telemetrySubtitle,
+                      trailing: CupertinoSwitch(
+                        value: _telemetryEnabled,
+                        activeTrackColor: YLColors.connected,
+                        onChanged: (v) {
+                          setState(() => _telemetryEnabled = v);
+                          Telemetry.setEnabled(v);
+                        },
+                      ),
+                    ),
+                    Divider(height: 1, thickness: 0.5, color: dividerColor),
+                    YLInfoRow(
+                      label: s.telemetryViewEvents,
+                      trailing: const Icon(Icons.chevron_right,
+                          size: 18, color: YLColors.zinc400),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const TelemetryPreviewPage(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GsSectionTitle extends StatelessWidget {
+  final String text;
+  const _GsSectionTitle(this.text);
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+      child: Text(
+        text.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          letterSpacing: 0.4,
+          color: YLColors.zinc500,
         ),
       ),
     );

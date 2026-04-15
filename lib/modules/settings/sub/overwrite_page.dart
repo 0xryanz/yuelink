@@ -19,8 +19,6 @@ class _OverwriteData {
     this.extraYaml = '',
   }) : rules = rules ?? [];
 
-  // ── Parse from YAML ────────────────────────────────────────────────────────
-
   factory _OverwriteData.parse(String yaml) {
     String? mode;
     String? mixedPort;
@@ -46,7 +44,6 @@ class _OverwriteData {
       }
     }
 
-    // Extra YAML: remove the known keys we structured
     final extra = yaml
         .replaceAll(RegExp(r'^mode:\s*\S+[ \t]*\n?', multiLine: true), '')
         .replaceAll(
@@ -58,8 +55,6 @@ class _OverwriteData {
     return _OverwriteData(
         mode: mode, mixedPort: mixedPort, rules: rules, extraYaml: extra);
   }
-
-  // ── Serialize to YAML ──────────────────────────────────────────────────────
 
   String toYaml() {
     final buf = StringBuffer();
@@ -83,7 +78,7 @@ class _OverwriteData {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// OverwritePage
+// OverwritePage — single-list IA (rules first, advanced collapsed)
 // ══════════════════════════════════════════════════════════════════════════════
 
 class OverwritePage extends StatefulWidget {
@@ -93,20 +88,17 @@ class OverwritePage extends StatefulWidget {
   State<OverwritePage> createState() => _OverwritePageState();
 }
 
-class _OverwritePageState extends State<OverwritePage>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabCtrl;
+class _OverwritePageState extends State<OverwritePage> {
   final _portCtrl = TextEditingController();
   final _extraCtrl = TextEditingController();
 
   _OverwriteData _data = _OverwriteData();
-  _OverwriteData? _savedData; // snapshot of last saved/loaded state
+  _OverwriteData? _savedData;
   bool _loading = true;
   bool _saving = false;
 
   static const _modes = ['', 'rule', 'global', 'direct'];
 
-  // True when current state differs from last saved state.
   bool get _isDirty {
     if (_loading || _savedData == null) return false;
     final sd = _savedData!;
@@ -130,7 +122,6 @@ class _OverwritePageState extends State<OverwritePage>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 3, vsync: this);
     _load();
   }
 
@@ -149,7 +140,6 @@ class _OverwritePageState extends State<OverwritePage>
 
   @override
   void dispose() {
-    _tabCtrl.dispose();
     _portCtrl.dispose();
     _extraCtrl.dispose();
     super.dispose();
@@ -157,8 +147,6 @@ class _OverwritePageState extends State<OverwritePage>
 
   Future<void> _save() async {
     final s = S.of(context);
-
-    // Validate port
     final portStr = _portCtrl.text.trim();
     if (portStr.isNotEmpty) {
       final port = int.tryParse(portStr);
@@ -167,135 +155,17 @@ class _OverwritePageState extends State<OverwritePage>
         return;
       }
     }
-
-    // Sync text field values into data model before saving
     _data.mixedPort = portStr.isEmpty ? null : portStr;
     _data.extraYaml = _extraCtrl.text.trim();
 
     setState(() => _saving = true);
     try {
       await OverwriteService.save(_data.toYaml());
-      if (mounted) {
-        setState(() => _savedData = _snapshotCurrent());
-      }
+      if (mounted) setState(() => _savedData = _snapshotCurrent());
       AppNotifier.success(s.savedNextConnect);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-  }
-
-  // ── Tab 0: Basic ────────────────────────────────────────────────────────────
-
-  Widget _buildBasicTab(S s) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // Mode override
-        Text(s.overwriteModeLabel,
-            style: Theme.of(context)
-                .textTheme
-                .labelLarge
-                ?.copyWith(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          children: [
-            for (final mode in _modes)
-              ChoiceChip(
-                label: Text(mode.isEmpty ? s.overwriteModeNone : mode),
-                selected: _data.mode == (mode.isEmpty ? null : mode),
-                onSelected: (_) => setState(() {
-                  _data.mode = mode.isEmpty ? null : mode;
-                }),
-              ),
-          ],
-        ),
-        const SizedBox(height: 24),
-
-        // Mixed-port override
-        Text(s.overwritePortLabel,
-            style: Theme.of(context)
-                .textTheme
-                .labelLarge
-                ?.copyWith(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _portCtrl,
-          keyboardType: TextInputType.number,
-          decoration: InputDecoration(
-            hintText: s.overwritePortHint,
-            border: const OutlineInputBorder(),
-            isDense: true,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Tab 1: Rules ────────────────────────────────────────────────────────────
-
-  Widget _buildRulesTab(S s) {
-    return Column(
-      children: [
-        // Header
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(s.overwriteCustomRulesLabel,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant)),
-              ),
-              TextButton.icon(
-                icon: const Icon(Icons.add, size: 18),
-                label: Text(s.overwriteAddRule),
-                onPressed: () => _addRule(s),
-              ),
-            ],
-          ),
-        ),
-
-        // Rules list
-        Expanded(
-          child: _data.rules.isEmpty
-              ? Center(
-                  child: Text(s.noData,
-                      style: const TextStyle(color: Colors.grey)))
-              : ReorderableListView.builder(
-                  padding: EdgeInsets.zero,
-                  itemCount: _data.rules.length,
-                  onReorder: (oldIndex, newIndex) {
-                    setState(() {
-                      if (newIndex > oldIndex) newIndex--;
-                      final item = _data.rules.removeAt(oldIndex);
-                      _data.rules.insert(newIndex, item);
-                    });
-                  },
-                  itemBuilder: (context, i) {
-                    return ListTile(
-                      key: ValueKey(_data.rules[i] + i.toString()),
-                      dense: true,
-                      leading: const Icon(Icons.drag_handle, size: 18),
-                      title: Text(
-                        _data.rules[i],
-                        style: const TextStyle(
-                            fontFamily: 'monospace', fontSize: 12),
-                      ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete_outline,
-                            size: 18, color: Colors.red),
-                        onPressed: () =>
-                            setState(() => _data.rules.removeAt(i)),
-                      ),
-                      onTap: () => _editRule(s, i),
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
   }
 
   Future<void> _addRule(S s) async {
@@ -309,9 +179,7 @@ class _OverwritePageState extends State<OverwritePage>
   Future<void> _editRule(S s, int index) async {
     final rule = await _showRuleDialog(s, _data.rules[index]);
     if (!mounted) return;
-    if (rule != null) {
-      setState(() => _data.rules[index] = rule.trim());
-    }
+    if (rule != null) setState(() => _data.rules[index] = rule.trim());
   }
 
   Future<String?> _showRuleDialog(S s, String initialValue) {
@@ -341,41 +209,6 @@ class _OverwritePageState extends State<OverwritePage>
     ).whenComplete(ctrl.dispose);
   }
 
-  // ── Tab 2: Advanced ─────────────────────────────────────────────────────────
-
-  Widget _buildAdvancedTab(S s) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: Text(s.overwriteExtraYamlLabel,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: TextField(
-              controller: _extraCtrl,
-              expands: true,
-              maxLines: null,
-              minLines: null,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                hintText: s.overwriteHintText,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Discard confirmation ─────────────────────────────────────────────────────
-
   Future<bool> _showDiscardDialog(S s) async {
     final result = await showDialog<bool>(
       context: context,
@@ -384,20 +217,192 @@ class _OverwritePageState extends State<OverwritePage>
         content: Text(s.unsavedChangesBody),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(s.stayOnPage),
-          ),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(s.stayOnPage)),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(s.discardAndLeave),
-          ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(s.discardAndLeave)),
         ],
       ),
     );
     return result == true;
   }
 
-  // ── Build ────────────────────────────────────────────────────────────────────
+  // ── Body ──────────────────────────────────────────────────────────────────
+
+  Widget _sectionTitle(String text) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 24, 4, 8),
+        child: Text(
+          text.toUpperCase(),
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0.4,
+            color: Colors.grey,
+          ),
+        ),
+      );
+
+  Widget _buildRulesCard(S s, BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          // Header with add button
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    s.overwriteCustomRulesLabel,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ),
+                TextButton.icon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: Text(s.overwriteAddRule),
+                  onPressed: () => _addRule(s),
+                ),
+              ],
+            ),
+          ),
+          if (_data.rules.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: Text(s.noData,
+                  style: const TextStyle(color: Colors.grey)),
+            )
+          else
+            ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: EdgeInsets.zero,
+              itemCount: _data.rules.length,
+              onReorder: (oldIndex, newIndex) {
+                setState(() {
+                  if (newIndex > oldIndex) newIndex--;
+                  final item = _data.rules.removeAt(oldIndex);
+                  _data.rules.insert(newIndex, item);
+                });
+              },
+              itemBuilder: (context, i) {
+                return ListTile(
+                  key: ValueKey(_data.rules[i] + i.toString()),
+                  dense: true,
+                  leading: const Icon(Icons.drag_handle, size: 18),
+                  title: Text(
+                    _data.rules[i],
+                    style: const TextStyle(
+                        fontFamily: 'monospace', fontSize: 12),
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline,
+                        size: 18, color: Colors.red),
+                    onPressed: () =>
+                        setState(() => _data.rules.removeAt(i)),
+                  ),
+                  onTap: () => _editRule(s, i),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExtraYamlCard(S s, BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: TextField(
+          controller: _extraCtrl,
+          minLines: 6,
+          maxLines: 18,
+          style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+          decoration: InputDecoration(
+            border: InputBorder.none,
+            hintText: s.overwriteHintText,
+            isCollapsed: true,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdvancedCard(S s, BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        title: Text(s.overwriteTabAdvanced),
+        subtitle: Text(
+          Localizations.localeOf(context).languageCode == 'en'
+              ? 'Override routing mode and mixed port'
+              : '覆盖路由模式与 Mixed 端口（覆盖偏好设置）',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        children: [
+          // Mode override
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(s.overwriteModeLabel,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelLarge
+                    ?.copyWith(fontWeight: FontWeight.w600)),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final mode in _modes)
+                ChoiceChip(
+                  label: Text(mode.isEmpty ? s.overwriteModeNone : mode),
+                  selected: _data.mode == (mode.isEmpty ? null : mode),
+                  onSelected: (_) => setState(() {
+                    _data.mode = mode.isEmpty ? null : mode;
+                  }),
+                ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          // Mixed-port override
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(s.overwritePortLabel,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelLarge
+                    ?.copyWith(fontWeight: FontWeight.w600)),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _portCtrl,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              hintText: s.overwritePortHint,
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -424,29 +429,26 @@ class _OverwritePageState extends State<OverwritePage>
                     child: CircularProgressIndicator(strokeWidth: 2)),
               )
             else
-              TextButton(
-                onPressed: _save,
-                child: Text(s.save),
-              ),
+              TextButton(onPressed: _save, child: Text(s.save)),
           ],
-          bottom: TabBar(
-            controller: _tabCtrl,
-            tabs: [
-              Tab(text: s.overwriteTabBasic),
-              Tab(text: s.overwriteTabRules),
-              Tab(text: s.overwriteTabAdvanced),
-            ],
-          ),
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
-            : TabBarView(
-                controller: _tabCtrl,
-                children: [
-                  _buildBasicTab(s),
-                  _buildRulesTab(s),
-                  _buildAdvancedTab(s),
-                ],
+            : Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                    children: [
+                      _sectionTitle(s.overwriteTabRules),
+                      _buildRulesCard(s, context),
+                      _sectionTitle(s.overwriteExtraYamlLabel),
+                      _buildExtraYamlCard(s, context),
+                      const SizedBox(height: 16),
+                      _buildAdvancedCard(s, context),
+                    ],
+                  ),
+                ),
               ),
       ),
     );

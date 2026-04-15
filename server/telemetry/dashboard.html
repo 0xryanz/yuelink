@@ -22,21 +22,15 @@
     margin: 0;
     padding: 24px;
   }
-  h1 {
-    margin: 0 0 4px;
-    font-size: 20px;
-    font-weight: 600;
-  }
-  .sub {
-    color: var(--muted);
-    margin-bottom: 24px;
-  }
+  h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
+  .sub { color: var(--muted); margin-bottom: 20px; }
   .controls {
     display: flex;
     gap: 8px;
     margin-bottom: 20px;
+    flex-wrap: wrap;
   }
-  .controls button {
+  .controls button, .tab {
     background: var(--panel);
     color: var(--text);
     border: 1px solid var(--border);
@@ -45,15 +39,16 @@
     cursor: pointer;
     font-size: 12px;
   }
-  .controls button.active {
+  .controls button.active, .tab.active {
     background: var(--accent);
     border-color: var(--accent);
     color: white;
   }
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
     gap: 16px;
+    margin-bottom: 16px;
   }
   .card {
     background: var(--panel);
@@ -63,36 +58,22 @@
   }
   .card h2 {
     margin: 0 0 12px;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
-  .big {
-    font-size: 32px;
-    font-weight: 600;
-    margin-bottom: 2px;
-  }
-  .big-sub {
-    color: var(--muted);
-    font-size: 12px;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-  }
+  .big { font-size: 32px; font-weight: 600; margin-bottom: 2px; }
+  .big-sub { color: var(--muted); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
   th, td {
     text-align: left;
     padding: 6px 0;
     border-bottom: 1px solid var(--border);
     font-variant-numeric: tabular-nums;
   }
-  th {
-    font-weight: 500;
-    color: var(--muted);
-  }
+  th { font-weight: 500; color: var(--muted); }
   .num { text-align: right; }
   .bar {
     height: 4px;
@@ -127,6 +108,7 @@
     border-radius: 4px;
     white-space: nowrap;
     font-size: 11px;
+    z-index: 10;
   }
   code {
     font-family: "SF Mono", "Menlo", monospace;
@@ -134,6 +116,55 @@
     color: var(--muted);
   }
   .error { color: var(--err); margin-top: 10px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  .node-score {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .score-high { background: rgba(34, 197, 94, 0.2); color: var(--ok); }
+  .score-mid  { background: rgba(245, 158, 11, 0.2); color: var(--warn); }
+  .score-low  { background: rgba(239, 68, 68, 0.2); color: var(--err); }
+  .score-na   { background: var(--border); color: var(--muted); }
+  .comment {
+    background: var(--bg);
+    border-left: 2px solid var(--accent);
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    border-radius: 4px;
+  }
+  .comment-meta { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+  .flag-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+  }
+  .flag-row:last-child { border-bottom: 0; }
+  .flag-row input[type="number"] {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 12px;
+    width: 60px;
+  }
+  .flag-row button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 11px;
+  }
 </style>
 </head>
 <body>
@@ -141,60 +172,140 @@
   <div class="sub" id="refreshTime">Loading…</div>
 
   <div class="controls">
-    <button data-days="1" onclick="setWindow(1)">1d</button>
-    <button data-days="7" onclick="setWindow(7)" class="active">7d</button>
+    <button data-days="1"  onclick="setWindow(1)">1d</button>
+    <button data-days="7"  onclick="setWindow(7)" class="active">7d</button>
     <button data-days="30" onclick="setWindow(30)">30d</button>
     <button data-days="90" onclick="setWindow(90)">90d</button>
   </div>
 
-  <div class="grid">
-    <div class="card">
-      <h2>Overview</h2>
-      <div class="big" id="totalEvents">—</div>
-      <div class="big-sub">events</div>
-      <div style="margin-top:14px" class="big" id="uniqueClients">—</div>
-      <div class="big-sub">unique clients</div>
-    </div>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('overview')">Overview</div>
+    <div class="tab"        onclick="switchTab('nodes')">Nodes</div>
+    <div class="tab"        onclick="switchTab('nps')">NPS</div>
+    <div class="tab"        onclick="switchTab('flags')">Feature Flags</div>
+  </div>
 
-    <div class="card">
-      <h2>DAU (last 30d)</h2>
-      <div class="chart" id="dauChart"></div>
-      <div style="margin-top:6px; color:var(--muted); font-size:11px;"
-           id="dauRange"></div>
-    </div>
+  <!-- OVERVIEW -->
+  <div id="tab-overview" class="tab-content active">
+    <div class="grid">
+      <div class="card">
+        <h2>Overview</h2>
+        <div class="big" id="totalEvents">—</div>
+        <div class="big-sub">events</div>
+        <div style="margin-top:14px" class="big" id="uniqueClients">—</div>
+        <div class="big-sub">unique clients</div>
+      </div>
 
-    <div class="card">
-      <h2>Startup funnel</h2>
-      <div class="big" id="startupOkRate">—</div>
-      <div class="big-sub">ok rate</div>
-      <table style="margin-top:12px">
-        <thead><tr><th>Step</th><th>Code</th><th class="num">Fails</th></tr></thead>
-        <tbody id="startupFails"></tbody>
-      </table>
-    </div>
+      <div class="card">
+        <h2>Crash-free sessions</h2>
+        <div class="big" id="crashFreeRate">—</div>
+        <div class="big-sub" id="crashFreeSub">sessions tracked</div>
+        <div class="chart" style="margin-top:12px" id="crashFreeChart"></div>
+      </div>
 
+      <div class="card">
+        <h2>DAU (last 30d)</h2>
+        <div class="chart" id="dauChart"></div>
+        <div style="margin-top:6px; color:var(--muted); font-size:11px;" id="dauRange"></div>
+      </div>
+
+      <div class="card">
+        <h2>Startup funnel</h2>
+        <div class="big" id="startupOkRate">—</div>
+        <div class="big-sub">ok rate</div>
+        <table style="margin-top:12px">
+          <thead><tr><th>Step</th><th>Code</th><th class="num">Fails</th></tr></thead>
+          <tbody id="startupFails"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Top events</h2>
+        <table>
+          <thead><tr><th>Event</th><th class="num">Count</th></tr></thead>
+          <tbody id="topEvents"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Errors</h2>
+        <table>
+          <thead><tr><th>Type</th><th>Source</th><th class="num">Count</th></tr></thead>
+          <tbody id="errorList"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Versions</h2>
+        <table>
+          <thead><tr><th>Platform</th><th>Version</th><th class="num">Clients</th></tr></thead>
+          <tbody id="versionList"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- NODES -->
+  <div id="tab-nodes" class="tab-content">
     <div class="card">
-      <h2>Top events</h2>
+      <h2>Node health — real user metrics</h2>
       <table>
-        <thead><tr><th>Event</th><th class="num">Count</th></tr></thead>
-        <tbody id="topEvents"></tbody>
+        <thead><tr>
+          <th>FP</th><th>Type</th><th>Region</th>
+          <th class="num">Users</th>
+          <th class="num">Tests</th>
+          <th class="num">Success</th>
+          <th class="num">p95 ms</th>
+          <th class="num">Connect OK</th>
+          <th class="num">Score</th>
+        </tr></thead>
+        <tbody id="nodeList"></tbody>
       </table>
     </div>
+  </div>
 
-    <div class="card">
-      <h2>Errors</h2>
-      <table>
-        <thead><tr><th>Type</th><th>Source</th><th class="num">Count</th></tr></thead>
-        <tbody id="errorList"></tbody>
-      </table>
+  <!-- NPS -->
+  <div id="tab-nps" class="tab-content">
+    <div class="grid">
+      <div class="card">
+        <h2>NPS Score</h2>
+        <div class="big" id="npsScore">—</div>
+        <div class="big-sub" id="npsResponses">responses</div>
+        <div style="margin-top:10px; font-size:12px; color:var(--muted)">
+          <div>Promoters (9-10): <span id="npsPromoters">—</span></div>
+          <div>Detractors (0-6): <span id="npsDetractors">—</span></div>
+        </div>
+      </div>
+      <div class="card" style="grid-column: span 2">
+        <h2>Recent comments</h2>
+        <div id="npsComments"></div>
+      </div>
     </div>
+  </div>
 
+  <!-- FLAGS -->
+  <div id="tab-flags" class="tab-content">
     <div class="card">
-      <h2>Versions</h2>
-      <table>
-        <thead><tr><th>Platform</th><th>Version</th><th class="num">Clients</th></tr></thead>
-        <tbody id="versionList"></tbody>
-      </table>
+      <h2>Feature flags</h2>
+      <p style="color: var(--muted); font-size: 12px; margin: 0 0 12px">
+        rollout_pct = 0 disables the flag for everyone; 100 enables for all clients.
+        Intermediate values are stable per client (hash-based bucketing).
+      </p>
+      <div id="flagsList"></div>
+      <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border)">
+        <h2 style="margin-bottom: 8px">Add / update</h2>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center">
+          <input id="newFlagKey" placeholder="key" style="flex:1;min-width:150px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px 8px">
+          <select id="newFlagType" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px 8px">
+            <option value="bool">bool</option>
+            <option value="num">num</option>
+            <option value="string">string</option>
+          </select>
+          <input id="newFlagValue" placeholder="value (true / 123 / hello)" style="flex:2;min-width:150px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px 8px">
+          <input id="newFlagPct" type="number" placeholder="pct" value="100" min="0" max="100" style="width:70px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px 8px">
+          <button onclick="addFlag()" style="background:var(--accent);color:white;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:12px">Save</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -203,75 +314,34 @@
 <script>
 const API = '/api/client/telemetry';
 let currentDays = 7;
+let currentTab = 'overview';
 
 async function jget(path) {
   const r = await fetch(path, { credentials: 'include' });
   if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
   return r.json();
 }
+async function jpost(path, body) {
+  const r = await fetch(path, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
+  return r.json();
+}
 
-async function refresh() {
-  document.getElementById('err').textContent = '';
-  document.getElementById('refreshTime').textContent =
-    'Loaded ' + new Date().toLocaleString() + ' · window: ' + currentDays + 'd';
-  try {
-    const [summary, dau, funnel, errors, versions] = await Promise.all([
-      jget(`${API}/stats/summary?days=${currentDays}`),
-      jget(`${API}/stats/dau?days=30`),
-      jget(`${API}/stats/startup_funnel?days=${currentDays}`),
-      jget(`${API}/stats/errors?days=${currentDays}`),
-      jget(`${API}/stats/versions?days=${currentDays}`),
-    ]);
-
-    document.getElementById('totalEvents').textContent =
-      summary.total_events.toLocaleString();
-    document.getElementById('uniqueClients').textContent =
-      summary.unique_clients.toLocaleString();
-
-    const ok = funnel.ok_rate;
-    document.getElementById('startupOkRate').textContent =
-      ok === null ? '—' : (ok * 100).toFixed(1) + '%';
-    const cls = ok === null ? '' : ok > 0.95 ? 'ok' : ok > 0.8 ? 'warn' : 'err';
-    document.getElementById('startupOkRate').className = 'big ' + cls;
-    document.getElementById('startupFails').innerHTML =
-      funnel.failures.map(f =>
-        `<tr><td><code>${f.step || '?'}</code></td>` +
-        `<td><code>${f.code || '?'}</code></td>` +
-        `<td class="num">${f.n}</td></tr>`
-      ).join('') || '<tr><td colspan="3" style="color:var(--muted)">no failures</td></tr>';
-
-    const maxN = Math.max(...summary.top_events.map(e => e.n), 1);
-    document.getElementById('topEvents').innerHTML = summary.top_events.map(e =>
-      `<tr><td><code>${e.event}</code><div class="bar" style="width:${e.n / maxN * 100}%"></div></td>` +
-      `<td class="num">${e.n}</td></tr>`
-    ).join('') || '<tr><td colspan="2" style="color:var(--muted)">no data</td></tr>';
-
-    const series = dau.series;
-    const maxDau = Math.max(...series.map(s => s.dau), 1);
-    document.getElementById('dauChart').innerHTML = series.map(s =>
-      `<div class="col" data-label="${s.day}: ${s.dau}" ` +
-      `style="height:${s.dau / maxDau * 100}%"></div>`
-    ).join('');
-    if (series.length) {
-      document.getElementById('dauRange').textContent =
-        `${series[0].day} → ${series[series.length - 1].day}`;
-    }
-
-    document.getElementById('errorList').innerHTML = errors.top_errors.map(e =>
-      `<tr><td><code>${e.type || '?'}</code></td>` +
-      `<td><code>${e.src || '?'}</code></td>` +
-      `<td class="num">${e.n}</td></tr>`
-    ).join('') || '<tr><td colspan="3" style="color:var(--muted)">no errors</td></tr>';
-
-    document.getElementById('versionList').innerHTML = versions.distribution.map(v =>
-      `<tr><td>${v.platform || '?'}</td>` +
-      `<td><code>${v.version || '?'}</code></td>` +
-      `<td class="num">${v.clients}</td></tr>`
-    ).join('') || '<tr><td colspan="3" style="color:var(--muted)">no data</td></tr>';
-
-  } catch (e) {
-    document.getElementById('err').textContent = e.message;
-  }
+function switchTab(t) {
+  currentTab = t;
+  document.querySelectorAll('.tab').forEach((el, i) => {
+    const names = ['overview','nodes','nps','flags'];
+    el.classList.toggle('active', names[i] === t);
+  });
+  document.querySelectorAll('.tab-content').forEach(el => {
+    el.classList.toggle('active', el.id === `tab-${t}`);
+  });
+  refresh();
 }
 
 function setWindow(d) {
@@ -280,6 +350,169 @@ function setWindow(d) {
     b.classList.toggle('active', +b.dataset.days === d);
   });
   refresh();
+}
+
+function scoreClass(score, insufficient) {
+  if (insufficient) return 'score-na';
+  if (score >= 75) return 'score-high';
+  if (score >= 50) return 'score-mid';
+  return 'score-low';
+}
+
+async function refreshOverview() {
+  const [summary, dau, funnel, errors, versions, crash] = await Promise.all([
+    jget(`${API}/stats/summary?days=${currentDays}`),
+    jget(`${API}/stats/dau?days=30`),
+    jget(`${API}/stats/startup_funnel?days=${currentDays}`),
+    jget(`${API}/stats/errors?days=${currentDays}`),
+    jget(`${API}/stats/versions?days=${currentDays}`),
+    jget(`${API}/stats/crash_free?days=${currentDays}`),
+  ]);
+
+  document.getElementById('totalEvents').textContent = summary.total_events.toLocaleString();
+  document.getElementById('uniqueClients').textContent = summary.unique_clients.toLocaleString();
+
+  // Crash-free
+  const cr = crash.crash_free_rate;
+  document.getElementById('crashFreeRate').textContent = cr === null ? '—' : (cr * 100).toFixed(2) + '%';
+  document.getElementById('crashFreeRate').className = 'big ' + (cr === null ? '' : cr > 0.99 ? 'ok' : cr > 0.95 ? 'warn' : 'err');
+  document.getElementById('crashFreeSub').textContent = `${crash.sessions.toLocaleString()} sessions · ${crash.crashed_sessions} crashed`;
+  const cfmax = Math.max(...crash.series.map(s => s.sessions), 1);
+  document.getElementById('crashFreeChart').innerHTML = crash.series.map(s =>
+    `<div class="col" data-label="${s.day}: ${((s.rate||0)*100).toFixed(1)}% (${s.crashed}/${s.sessions})" ` +
+    `style="height:${(s.rate||0)*100}%; background:${s.rate>0.99?'var(--ok)':s.rate>0.95?'var(--warn)':'var(--err)'}"></div>`
+  ).join('');
+
+  // Startup funnel
+  const ok = funnel.ok_rate;
+  document.getElementById('startupOkRate').textContent = ok === null ? '—' : (ok * 100).toFixed(1) + '%';
+  document.getElementById('startupOkRate').className = 'big ' + (ok === null ? '' : ok > 0.95 ? 'ok' : ok > 0.8 ? 'warn' : 'err');
+  document.getElementById('startupFails').innerHTML = funnel.failures.map(f =>
+    `<tr><td><code>${f.step || '?'}</code></td>` +
+    `<td><code>${f.code || '?'}</code></td>` +
+    `<td class="num">${f.n}</td></tr>`
+  ).join('') || '<tr><td colspan="3" style="color:var(--muted)">no failures</td></tr>';
+
+  const maxN = Math.max(...summary.top_events.map(e => e.n), 1);
+  document.getElementById('topEvents').innerHTML = summary.top_events.map(e =>
+    `<tr><td><code>${e.event}</code><div class="bar" style="width:${e.n / maxN * 100}%"></div></td>` +
+    `<td class="num">${e.n}</td></tr>`
+  ).join('') || '<tr><td colspan="2" style="color:var(--muted)">no data</td></tr>';
+
+  // DAU
+  const series = dau.series;
+  const maxDau = Math.max(...series.map(s => s.dau), 1);
+  document.getElementById('dauChart').innerHTML = series.map(s =>
+    `<div class="col" data-label="${s.day}: ${s.dau}" ` +
+    `style="height:${s.dau / maxDau * 100}%"></div>`
+  ).join('');
+  if (series.length) {
+    document.getElementById('dauRange').textContent = `${series[0].day} → ${series[series.length - 1].day}`;
+  }
+
+  document.getElementById('errorList').innerHTML = errors.top_errors.map(e =>
+    `<tr><td><code>${e.type || '?'}</code></td>` +
+    `<td><code>${e.src || '?'}</code></td>` +
+    `<td class="num">${e.n}</td></tr>`
+  ).join('') || '<tr><td colspan="3" style="color:var(--muted)">no errors</td></tr>';
+
+  document.getElementById('versionList').innerHTML = versions.distribution.map(v =>
+    `<tr><td>${v.platform || '?'}</td>` +
+    `<td><code>${v.version || '?'}</code></td>` +
+    `<td class="num">${v.clients}</td></tr>`
+  ).join('') || '<tr><td colspan="3" style="color:var(--muted)">no data</td></tr>';
+}
+
+async function refreshNodes() {
+  const nodes = await jget(`${API}/stats/nodes?days=${currentDays}&limit=200`);
+  document.getElementById('nodeList').innerHTML = nodes.nodes.map(n => {
+    const cls = scoreClass(n.score, n.insufficient_data);
+    const scoreText = n.insufficient_data ? 'n/a' : n.score;
+    return `<tr>
+      <td><code>${n.fp.substring(0, 8)}…</code></td>
+      <td><code>${n.type || '?'}</code></td>
+      <td>${n.region || '?'}</td>
+      <td class="num">${n.users}</td>
+      <td class="num">${n.tests}</td>
+      <td class="num">${(n.success_rate * 100).toFixed(1)}%</td>
+      <td class="num">${n.p95_delay_ms}</td>
+      <td class="num">${n.connect_attempts ? (n.connect_ok_rate * 100).toFixed(0) + '%' : '—'}</td>
+      <td class="num"><span class="node-score ${cls}">${scoreText}</span></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="9" style="color:var(--muted)">no node data yet — client needs to send node_urltest / node_connect / node_inventory events</td></tr>';
+}
+
+async function refreshNps() {
+  const nps = await jget(`${API}/stats/nps?days=${Math.max(currentDays, 30)}`);
+  document.getElementById('npsScore').textContent = nps.nps === null ? '—' : nps.nps;
+  document.getElementById('npsScore').className = 'big ' + (nps.nps === null ? '' : nps.nps > 30 ? 'ok' : nps.nps > 0 ? 'warn' : 'err');
+  document.getElementById('npsResponses').textContent = `${nps.total_responses} responses`;
+  document.getElementById('npsPromoters').textContent = nps.promoters;
+  document.getElementById('npsDetractors').textContent = nps.detractors;
+  document.getElementById('npsComments').innerHTML = nps.recent_comments.map(c =>
+    `<div class="comment">
+      <div class="comment-meta">
+        score: ${c.score} · ${c.platform} ${c.version} · ${new Date(c.ts).toLocaleString()}
+      </div>
+      <div>${escapeHtml(c.comment)}</div>
+    </div>`
+  ).join('') || '<div style="color:var(--muted)">no comments yet</div>';
+}
+
+async function refreshFlags() {
+  const r = await jget(`${API}/admin/flags`);
+  document.getElementById('flagsList').innerHTML = r.flags.map(f => {
+    let val;
+    try { val = JSON.parse(f.value_json); } catch (_) { val = f.value_json; }
+    const valStr = typeof val === 'object' ? JSON.stringify(val) : String(val);
+    return `<div class="flag-row">
+      <code style="flex:2">${f.key}</code>
+      <span style="flex:2; color:var(--muted)">${escapeHtml(valStr)}</span>
+      <label>pct <input type="number" min="0" max="100" value="${f.rollout_pct}" id="pct_${f.key}"></label>
+      <button onclick='saveFlagPct("${f.key}", ${JSON.stringify(val)})'>Save</button>
+    </div>`;
+  }).join('') || '<div style="color:var(--muted)">no flags yet — use the form below</div>';
+}
+
+async function saveFlagPct(key, value) {
+  const pct = +document.getElementById(`pct_${key}`).value;
+  await jpost(`${API}/admin/flags`, { key, value, rollout_pct: pct });
+  refreshFlags();
+}
+
+async function addFlag() {
+  const key = document.getElementById('newFlagKey').value.trim();
+  const type = document.getElementById('newFlagType').value;
+  const raw = document.getElementById('newFlagValue').value.trim();
+  const pct = +document.getElementById('newFlagPct').value;
+  if (!key) return;
+  let value;
+  if (type === 'bool') value = (raw === 'true' || raw === '1');
+  else if (type === 'num') value = Number(raw);
+  else value = raw;
+  await jpost(`${API}/admin/flags`, { key, value, rollout_pct: pct });
+  document.getElementById('newFlagKey').value = '';
+  document.getElementById('newFlagValue').value = '';
+  refreshFlags();
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function refresh() {
+  document.getElementById('err').textContent = '';
+  document.getElementById('refreshTime').textContent =
+    'Loaded ' + new Date().toLocaleString() + ' · window: ' + currentDays + 'd';
+  try {
+    if (currentTab === 'overview') await refreshOverview();
+    else if (currentTab === 'nodes') await refreshNodes();
+    else if (currentTab === 'nps') await refreshNps();
+    else if (currentTab === 'flags') await refreshFlags();
+  } catch (e) {
+    document.getElementById('err').textContent = e.message;
+  }
 }
 
 refresh();

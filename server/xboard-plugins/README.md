@@ -18,6 +18,24 @@ The plugin hooks `user.subscribe.response` (a filter, not a listener) and
 re-queries the two missing columns for the authed user, then merges them
 into the response.
 
+### Freshness threshold — keep in sync with yuebot
+
+`DeviceStateService` only writes `online_count` on activity, never zeroes
+it. Both this plugin AND the yuebot Telegram-bot DAO apply the same
+"last_online_at within N seconds" freshness filter so the desktop client
+and the bot's `查询在线设备` reply always show the same number.
+
+Both sides currently use **600 seconds (10 minutes)**:
+
+| Side | File | Constant |
+|------|------|----------|
+| XBoard plugin (PHP) | `server/xboard-plugins/YueOnlineCount/Plugin.php` | `STALE_AFTER_SECONDS` |
+| yuebot (Python) | `/opt/telegram-bot/yue/dao/v2_user.py` on 23.80.91.14 | `DEVICE_ONLINE_STALE_SECONDS` |
+
+Change one without changing the other and the two surfaces will silently
+disagree. The DAO file lives on a different host so we can't share a
+literal symbol; the cross-references in each file are the contract.
+
 ## Install / enable
 
 The plugin directory is bind-mounted, so just `scp -r YueOnlineCount/`

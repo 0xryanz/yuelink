@@ -13,11 +13,18 @@ use Illuminate\Support\Carbon;
  * even though the columns exist on v2_user and DeviceStateService keeps
  * them up to date (Redis-backed dedup-by-IP, 600s TTL).
  *
- * Freshness filter: if last_online_at is older than 10 minutes the
- * stored online_count is treated as stale and reported as 0. This
- * matches the yuebot Telegram-bot DAO query behaviour (see
- * batch_check_online_device_counts in dao/v2_user.py) so both the bot
- * and the desktop client see the same numbers.
+ * Freshness filter: if last_online_at is older than STALE_AFTER_SECONDS
+ * the stored online_count is treated as stale and reported as 0.
+ * DeviceStateService only writes the column on activity, never zeroes it,
+ * so without this filter a user whose devices all disconnected an hour
+ * ago would still appear "online".
+ *
+ * The threshold MUST stay in sync with yuebot's Telegram-bot DAO
+ * (DEVICE_ONLINE_STALE_SECONDS at the top of
+ * /opt/telegram-bot/yue/dao/v2_user.py on 23.80.91.14) so the bot's
+ * "查询在线设备" reply and the YueLink mine page show the same number.
+ * Change one without changing the other and the two surfaces will
+ * silently disagree.
  */
 class Plugin extends AbstractPlugin
 {

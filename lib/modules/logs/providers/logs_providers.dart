@@ -39,6 +39,13 @@ class LogEntriesNotifier extends Notifier<List<LogEntry>> {
         state = [];
       }
     });
+    // `ref.listen` only fires on CHANGE — if the provider is rebuilt after
+    // the core is already running (opening the Logs page mid-session), we
+    // must kick off listening ourselves; otherwise the tail stays empty
+    // until the next core state change.
+    if (ref.read(coreStatusProvider) == CoreStatus.running) {
+      _startListening();
+    }
     // Restart stream when log level changes while core is running
     ref.listen(logLevelProvider, (prev, next) {
       if (prev != next && ref.read(coreStatusProvider) == CoreStatus.running) {

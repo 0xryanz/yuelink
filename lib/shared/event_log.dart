@@ -30,6 +30,67 @@ class EventLog {
     _append(tag);
   }
 
+  /// Keys in a context map whose values should never land on disk. Matched
+  /// case-insensitively against the bare key name.
+  static const _redactedKeys = <String>{
+    'token',
+    'access_token',
+    'auth_token',
+    'authorization',
+    'auth_data',
+    'password',
+    'secret',
+    'api_key',
+    'apikey',
+    'cookie',
+  };
+
+  /// Format a tagged event with context key/values. Safe for logs:
+  /// - sensitive keys ([_redactedKeys]) are replaced with `<redacted>`
+  /// - whitespace (including embedded newlines) is collapsed to single spaces
+  /// - the full line is truncated to ~160 chars, ending with `...`
+  ///
+  /// `tag` may be passed bare (`'Auth'`) or already bracketed (`'[Auth]'`).
+  static String formatTagged(
+    String tag,
+    String event, {
+    Map<String, Object?>? context,
+  }) {
+    final normTag = tag.startsWith('[') ? tag : '[$tag]';
+    final buf = StringBuffer('$normTag $event');
+    if (context != null) {
+      for (final entry in context.entries) {
+        final key = entry.key;
+        final isSecret = _redactedKeys.contains(key.toLowerCase());
+        final rawValue = entry.value == null ? '' : entry.value.toString();
+        final value = isSecret ? '<redacted>' : _normalizeWs(rawValue);
+        buf.write(' $key=$value');
+      }
+    }
+    return _clampLine(buf.toString());
+  }
+
+  /// Append a formatted tagged event. Preferred over [write] when you have
+  /// structured context — the formatter handles redaction + clamping so
+  /// callers don't have to.
+  static void writeTagged(
+    String tag,
+    String event, {
+    Map<String, Object?>? context,
+  }) {
+    _append(formatTagged(tag, event, context: context));
+  }
+
+  static String _normalizeWs(String input) {
+    return input.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  static String _clampLine(String line) {
+    const maxLen = 160;
+    if (line.length <= maxLen) return line;
+    return '${line.substring(0, maxLen - 3)}...';
+  }
+
   static void _append(String tag) async {
     try {
       final f = await _getFile();

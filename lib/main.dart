@@ -1047,14 +1047,18 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
           await _singleInstanceServer?.close();
         } catch (_) {}
         await CoreActions.clearSystemProxyStatic().catchError((_) {});
+        try {
+          await trayManager.destroy();
+        } catch (_) {}
         await windowManager.setPreventClose(false);
         await windowManager.destroy();
-      } else {
-        exit(0);
       }
-    } catch (_) {
-      exit(0);
-    }
+    } catch (_) {}
+    // Force process termination. windowManager.destroy() only closes the
+    // window — on Windows the tray listener, single-instance server, and
+    // background timers keep the Dart isolate alive, so the tray "Quit"
+    // menu would close the window but leave yuelink.exe running.
+    exit(0);
   }
 
   Future<void> _maybeAutoConnect() async {

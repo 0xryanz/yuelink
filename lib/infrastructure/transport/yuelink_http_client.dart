@@ -1,0 +1,155 @@
+import 'dart:convert';
+import 'dart:io';
+
+import '../datasources/xboard/index.dart';
+
+/// Shared transport helper for the standalone YueLink Checkin API server
+/// (`yue.yuebao.website`) used by [AccountRepository], [CheckinRepository],
+/// and [HomeRepository].
+///
+/// XBoard (CloudFront) traffic uses [XBoardHttpClient] — that owns retry,
+/// fallback, and `assertSuccess` for the panel's `status:"fail"` shape, and
+/// MUST NOT be replaced with this helper.
+///
+/// This helper covers only the simpler "raw `HttpClient`, manual
+/// `getUrl`/`postUrl`, Bearer auth, JSON in/out" pattern that was repeated
+/// across three repositories with identical shape.
+///
+/// CLAUDE.md: never chain `findProxy` on a cascade — set as a separate
+/// statement. This helper does NOT use a proxy; callers that need one
+/// (mihomo mixed-port) build their own `HttpClient` to keep that clear.
+class YueLinkHttpClient {
+  YueLinkHttpClient({
+    required this.baseUrl,
+    this.timeout = const Duration(seconds: 10),
+  });
+
+  final String baseUrl;
+  final Duration timeout;
+
+  /// Build a raw [HttpClient] with timeout applied as a separate statement
+  /// (per CLAUDE.md cascade-bug guidance).
+  HttpClient _buildClient() {
+    final client = HttpClient();
+    client.connectionTimeout = timeout;
+    return client;
+  }
+
+  /// GET returning decoded `data` Map (or whole body if `data` is absent).
+  /// Throws [XBoardApiException] on non-2xx or `status:"fail"`.
+  Future<Map<String, dynamic>> get(String path, {String? token}) async {
+    final client = _buildClient();
+    try {
+      final request = await client.getUrl(Uri.parse('$baseUrl$path'));
+      if (token != null) request.headers.set('Authorization', token);
+      request.headers.set('Accept', 'application/json');
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      _assertSuccess(json, response.statusCode);
+      return json['data'] as Map<String, dynamic>? ?? json;
+    } finally {
+      client.close();
+    }
+  }
+
+  /// POST returning decoded `data` Map.
+  Future<Map<String, dynamic>> post(
+    String path, {
+    String? token,
+    Map<String, dynamic>? body,
+  }) async {
+    final client = _buildClient();
+    try {
+      final request = await client.postUrl(Uri.parse('$baseUrl$path'));
+      if (token != null) request.headers.set('Authorization', token);
+      request.headers.set('Accept', 'application/json');
+      request.headers.set('Content-Type', 'application/json');
+      request.add(utf8.encode(jsonEncode(body ?? {})));
+      final response = await request.close();
+      final respBody = await response.transform(utf8.decoder).join();
+      final json = jsonDecode(respBody) as Map<String, dynamic>;
+      _assertSuccess(json, response.statusCode);
+      return json['data'] as Map<String, dynamic>? ?? json;
+    } finally {
+      client.close();
+    }
+  }
+
+  /// Same as [get] but returns the parsed `data` value as a List, or empty
+  /// on any error / non-2xx. Used by notice-style endpoints where errors
+  /// should silently degrade.
+  Future<List<Map<String, dynamic>>> getList(
+    String path, {
+    String? token,
+  }) async {
+    final client = _buildClient();
+    try {
+      final request = await client.getUrl(Uri.parse('$baseUrl$path'));
+      if (token != null) request.headers.set('Authorization', token);
+      request.headers.set('Accept', 'application/json');
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) return [];
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final data = json['data'];
+      if (data is List) {
+        return data.whereType<Map<String, dynamic>>().toList();
+      }
+      return [];
+    } finally {
+      client.close();
+    }
+  }
+
+  /// Same as [get] but returns null on any error / non-2xx instead of
+  /// throwing. Used by anonymous public endpoints (HomeRepository).
+  Future<Map<String, dynamic>?> tryGet(String path, {String? token}) async {
+    final client = _buildClient();
+    try {
+      final request = await client.getUrl(Uri.parse('$baseUrl$path'));
+      if (token != null) request.headers.set('Authorization', token);
+      request.headers.set('Accept', 'application/json');
+      final response = await request.close();
+      if (response.statusCode != 200) return null;
+      final body = await response.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      return json['data'] as Map<String, dynamic>? ?? json;
+    } catch (_) {
+      return null;
+    } finally {
+      client.close();
+    }
+  }
+
+  /// Mirrors the per-repo `_assertSuccess` that was duplicated in
+  /// AccountRepository and CheckinRepository. Throws [XBoardApiException].
+  ///
+  /// CLAUDE.md (Checkin section): "must reject all non-2xx (don't treat
+  /// 502 as success)" + "must only match genuine 'already checked'".
+  static void _assertSuccess(Map<String, dynamic> json, int statusCode) {
+    if (statusCode == 404) {
+      throw XBoardApiException(404, 'Not found');
+    }
+    if (statusCode == 401 || statusCode == 403) {
+      throw XBoardApiException(
+        statusCode,
+        json['detail']?.toString() ?? 'Unauthorized',
+      );
+    }
+    if (statusCode < 200 || statusCode >= 300) {
+      throw XBoardApiException(
+        statusCode,
+        json['detail']?.toString() ??
+            json['message']?.toString() ??
+            'Server error ($statusCode)',
+      );
+    }
+    if (json['status'] == 'fail') {
+      throw XBoardApiException(
+        200,
+        json['message']?.toString() ?? 'Unknown error',
+      );
+    }
+  }
+}

@@ -14,6 +14,8 @@ import '../../core/providers/core_provider.dart';
 import 'providers/logs_providers.dart';
 import 'providers/rule_provider.dart';
 import '../../domain/logs/log_entry.dart';
+import 'widgets/log_tile.dart';
+import 'widgets/rule_tile.dart';
 
 class LogPage extends ConsumerStatefulWidget {
   const LogPage({super.key});
@@ -347,7 +349,7 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
                     addAutomaticKeepAlives: false,
                     addRepaintBoundaries: false,
                     itemBuilder: (context, index) {
-                      return _LogTile(
+                      return LogTile(
                           entry: filtered[index],
                           isDesktop: isDesktop);
                     },
@@ -413,96 +415,6 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
     }
 
     return filtered;
-  }
-}
-
-class _LogTile extends StatelessWidget {
-  final LogEntry entry;
-  final bool isDesktop;
-  const _LogTile({required this.entry, this.isDesktop = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final timeColor = Theme.of(context).colorScheme.onSurfaceVariant;
-    final payloadColor = _payloadColor(entry.type, context);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Timestamp
-          Text(
-            '${entry.timestamp.hour.toString().padLeft(2, '0')}:'
-            '${entry.timestamp.minute.toString().padLeft(2, '0')}:'
-            '${entry.timestamp.second.toString().padLeft(2, '0')} ',
-            style: TextStyle(
-              fontSize: 11,
-              fontFamily: 'monospace',
-              color: timeColor,
-            ),
-          ),
-          // Level indicator dot (mobile) or bracket tag (desktop)
-          if (isDesktop)
-            Text(
-              '[${entry.type.toUpperCase().padRight(7)}] ',
-              style: TextStyle(
-                fontSize: 11,
-                fontFamily: 'monospace',
-                color: _levelDotColor(entry.type),
-                fontWeight: FontWeight.bold,
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.only(top: 3, right: 6),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _levelDotColor(entry.type),
-                ),
-                child: const SizedBox(width: 8, height: 8),
-              ),
-            ),
-          // Payload
-          Expanded(
-            child: SelectableText(
-              entry.payload,
-              style: TextStyle(
-                fontSize: isDesktop ? 12 : 12,
-                fontFamily: 'monospace',
-                height: 1.5,
-                color: payloadColor,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _payloadColor(String type, BuildContext context) {
-    switch (type) {
-      case 'error':
-        return Colors.red;
-      case 'warning':
-        return Colors.orange;
-      default:
-        return Theme.of(context).colorScheme.onSurface;
-    }
-  }
-
-  Color _levelDotColor(String type) {
-    switch (type) {
-      case 'error':
-        return Colors.red;
-      case 'warning':
-        return Colors.orange;
-      case 'debug':
-        return Colors.grey;
-      default:
-        return Colors.green;
-    }
   }
 }
 
@@ -649,7 +561,7 @@ class _RulesTabState extends ConsumerState<_RulesTab> {
                           horizontal: 8),
                       itemCount: filtered.length,
                       itemBuilder: (context, index) {
-                        return _RuleTile(rule: filtered[index]);
+                        return RuleTile(rule: filtered[index]);
                       },
                     ),
         ),
@@ -704,94 +616,3 @@ class _RulesTabState extends ConsumerState<_RulesTab> {
   }
 }
 
-class _RuleTile extends StatelessWidget {
-  final RuleInfo rule;
-  const _RuleTile({required this.rule});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        children: [
-          Container(
-            width: 96,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: _typeColor(context).withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              rule.type,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: _typeColor(context),
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  rule.payload.isEmpty ? '*' : rule.payload,
-                  style: const TextStyle(
-                      fontSize: 12, fontFamily: 'monospace'),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (rule.size > 0)
-                  Text('${rule.size} 条',
-                      style: TextStyle(
-                          fontSize: 10,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurfaceVariant)),
-              ],
-            ),
-          ),
-          const SizedBox(width: 6),
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color:
-                  Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              rule.proxy,
-              style: TextStyle(
-                fontSize: 10,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSecondaryContainer,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _typeColor(BuildContext context) {
-    switch (rule.type) {
-      case 'DOMAIN-SUFFIX':
-      case 'DOMAIN':
-        return Colors.blue;
-      case 'DOMAIN-KEYWORD':
-        return Colors.teal;
-      case 'GEOIP':
-        return Colors.orange;
-      case 'RULE-SET':
-        return Colors.purple;
-      case 'MATCH':
-        return Colors.red;
-      default:
-        return Theme.of(context).colorScheme.primary;
-    }
-  }
-}

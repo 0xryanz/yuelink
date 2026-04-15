@@ -1037,27 +1037,34 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
 
   Future<void> _handleQuit() async {
     _isQuitting = true;
+
+    // Hard cap on cleanup. If anything (system proxy revert, tray destroy,
+    // window destroy) hangs, we still exit. On both macOS and Windows the
+    // tray listener + single-instance server + background timers keep the
+    // Dart isolate alive otherwise, so the user sees the window close but
+    // the process never terminates.
+    Future.delayed(const Duration(seconds: 3), () => exit(0));
+
     try {
       final status = ref.read(coreStatusProvider);
       if (status == CoreStatus.running) {
-        await ref.read(coreActionsProvider).stop();
+        await ref.read(coreActionsProvider).stop().timeout(
+              const Duration(seconds: 2),
+              onTimeout: () {},
+            );
       }
-      if (Platform.isMacOS || Platform.isWindows) {
-        try {
-          await _singleInstanceServer?.close();
-        } catch (_) {}
-        await CoreActions.clearSystemProxyStatic().catchError((_) {});
-        try {
-          await trayManager.destroy();
-        } catch (_) {}
-        await windowManager.setPreventClose(false);
-        await windowManager.destroy();
-      }
+      // Fire-and-forget — none of these are awaited, so a hang in any of
+      // them can't block the exit. clearSystemProxy is the most likely
+      // culprit on Windows (registry write).
+      try { _singleInstanceServer?.close(); } catch (_) {}
+      CoreActions.clearSystemProxyStatic().catchError((_) {});
+      try { trayManager.destroy(); } catch (_) {}
+      try { windowManager.setPreventClose(false); } catch (_) {}
+      try { windowManager.destroy(); } catch (_) {}
     } catch (_) {}
-    // Force process termination. windowManager.destroy() only closes the
-    // window — on Windows the tray listener, single-instance server, and
-    // background timers keep the Dart isolate alive, so the tray "Quit"
-    // menu would close the window but leave yuelink.exe running.
+    // Give the fire-and-forget calls one event loop tick to flush, then
+    // terminate. exit(0) runs even if the awaits above completed instantly.
+    await Future<void>.delayed(const Duration(milliseconds: 200));
     exit(0);
   }
 

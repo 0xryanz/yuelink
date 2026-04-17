@@ -4,9 +4,9 @@
 /// To regenerate, run: `dart run slang`
 ///
 /// Locales: 2
-/// Strings: 1426 (713 per locale)
+/// Strings: 1430 (715 per locale)
 ///
-/// Built on 2026-04-15 at 05:52 UTC
+/// Built on 2026-04-17 at 01:01 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -765,6 +765,8 @@ class Translations implements BaseTranslations<AppLocale, Translations> {
 	String get repairResyncHint => 'Re-fetch subscription config from server';
 	String get repairClearCache => 'Clear Local Cache';
 	String get repairClearCacheHint => 'Delete local config files, logs, startup report';
+	String get repairRestartCore => 'Restart Core';
+	String get repairRestartCoreHint => 'Rebuild core state without touching the subscription — use when latency tests all time out';
 	String get repairOneClick => 'One-Click Repair All';
 	String get repairRunning => 'Repairing...';
 	String get repairNeedLogin => 'Please login first';
@@ -1506,6 +1508,8 @@ class _StringsGZhCn extends Translations {
 	@override String get repairResyncHint => '重新从服务端拉取订阅配置并解析';
 	@override String get repairClearCache => '清除本地缓存';
 	@override String get repairClearCacheHint => '删除本地配置文件、日志、启动报告';
+	@override String get repairRestartCore => '重启内核';
+	@override String get repairRestartCoreHint => '延迟测试全超时或连接异常时，不动订阅直接重建核心状态';
 	@override String get repairOneClick => '一键修复全部';
 	@override String get repairRunning => '修复中...';
 	@override String get repairNeedLogin => '请先登录';
@@ -2227,6 +2231,8 @@ extension on Translations {
 			case 'repairResyncHint': return 'Re-fetch subscription config from server';
 			case 'repairClearCache': return 'Clear Local Cache';
 			case 'repairClearCacheHint': return 'Delete local config files, logs, startup report';
+			case 'repairRestartCore': return 'Restart Core';
+			case 'repairRestartCoreHint': return 'Rebuild core state without touching the subscription — use when latency tests all time out';
 			case 'repairOneClick': return 'One-Click Repair All';
 			case 'repairRunning': return 'Repairing...';
 			case 'repairNeedLogin': return 'Please login first';
@@ -2948,6 +2954,8 @@ extension on _StringsGZhCn {
 			case 'repairResyncHint': return '重新从服务端拉取订阅配置并解析';
 			case 'repairClearCache': return '清除本地缓存';
 			case 'repairClearCacheHint': return '删除本地配置文件、日志、启动报告';
+			case 'repairRestartCore': return '重启内核';
+			case 'repairRestartCoreHint': return '延迟测试全超时或连接异常时，不动订阅直接重建核心状态';
 			case 'repairOneClick': return '一键修复全部';
 			case 'repairRunning': return '修复中...';
 			case 'repairNeedLogin': return '请先登录';

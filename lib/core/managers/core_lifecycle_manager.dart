@@ -77,6 +77,13 @@ class CoreLifecycleManager {
       // Apply routing mode (non-blocking — errors logged, not thrown)
       await _applyRoutingMode(manager);
 
+      // Apply log-level — must run AFTER start, because subscription configs
+      // typically include `log-level: info` which overrides our setting
+      // otherwise, producing 13k+ warning lines per session (mihomo logs
+      // every L4 connection at warn level). Fire-and-forget; if it fails
+      // the only consequence is noisier logs, not a broken connection.
+      unawaited(_applyLogLevel(manager));
+
       // System proxy or TUN DNS (desktop only)
       final connMode = ref.read(connectionModeProvider);
       if (!manager.isMockMode &&
@@ -100,6 +107,17 @@ class CoreLifecycleManager {
       ref.read(coreStartupErrorProvider.notifier).state = detail;
       AppNotifier.error(detail);
       return false;
+    }
+  }
+
+  /// Push the user-saved log level to the running core so a subscription's
+  /// `log-level: info` can't override our quieter default. Never throws.
+  Future<void> _applyLogLevel(CoreManager manager) async {
+    try {
+      final level = ref.read(logLevelProvider);
+      await manager.api.setLogLevel(level);
+    } catch (e) {
+      debugPrint('[CoreLifecycle] setLogLevel error: $e');
     }
   }
 
@@ -215,6 +233,19 @@ class CoreLifecycleManager {
     } else if (status == CoreStatus.stopped) {
       await start(configYaml);
     }
+  }
+
+  /// Full core restart — stop + start with the same config. Used as the
+  /// last-resort recovery path when mihomo's internal state goes stale
+  /// (delay tests all time out, DNS resolver stuck, connection pool wedged).
+  /// Cheaper than rebuilding the VPN profile; doesn't touch subscriptions.
+  Future<bool> restart(String configYaml) async {
+    if (CoreManager.instance.isRunning) {
+      await stop();
+    }
+    final ok = await start(configYaml);
+    if (ok) Telemetry.event(TelemetryEvents.coreRestarted);
+    return ok;
   }
 
   Future<bool> applySystemProxy() async {

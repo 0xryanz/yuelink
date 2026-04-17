@@ -200,8 +200,14 @@ class _GroupCardState extends ConsumerState<GroupCard>
                     ),
                   ),
                   const SizedBox(width: YLSpacing.sm),
-                  // Type badge — stays near name
-                  _Badge(label: groupTypeLabel(context, group.type), isDark: isDark),
+                  // Selection badge — shows the currently selected node for
+                  // manual groups, or the type label for auto groups.
+                  Flexible(
+                    child: _Badge(
+                      label: groupSelectionLabel(context, group),
+                      isDark: isDark,
+                    ),
+                  ),
                   if (showSmartHeader) ...[
                     const SizedBox(width: 4),
                     _Badge(
@@ -532,6 +538,8 @@ class _Badge extends StatelessWidget {
       ),
       child: Text(
         label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: YLText.caption.copyWith(
           fontSize: 10,
           color: fg,

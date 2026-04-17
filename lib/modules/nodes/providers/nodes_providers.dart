@@ -11,6 +11,7 @@ import '../../../core/kernel/core_manager.dart';
 import '../../../infrastructure/repositories/profile_repository.dart';
 import '../../../infrastructure/repositories/proxy_repository.dart';
 import '../../../shared/node_telemetry.dart';
+import '../../../shared/telemetry.dart';
 
 // ------------------------------------------------------------------
 // Node sort / view mode
@@ -372,6 +373,13 @@ class DelayTestActions {
   ///
   /// In real mode, uses the REST API group delay test (parallel).
   /// In mock mode, falls back to sequential testing.
+  ///
+  /// Auto-recovery: when the HTTP call succeeds but the result map shows
+  /// every node as timed-out (mihomo's DNS/connection pool has gone stale —
+  /// a known upstream issue reproducible after hours of uptime), we silently
+  /// flush client-side connections and retry once before surfacing the
+  /// failure. The manual "restart core" button in connection_repair_page is
+  /// the last-resort escape hatch for when this auto-recovery itself fails.
   Future<void> testGroup(String groupName, List<String> proxyNames) async {
     final manager = CoreManager.instance;
 
@@ -382,8 +390,26 @@ class DelayTestActions {
 
       final testUrl = ref.read(testUrlProvider);
       try {
-        final results =
-            await _repo.testGroupDelay(groupName, url: testUrl);
+        var results = await _repo.testGroupDelay(groupName, url: testUrl);
+
+        if (_isAllTimeout(results, proxyNames)) {
+          Telemetry.event(
+            TelemetryEvents.delayTestAllTimeout,
+            props: {'group': groupName, 'count': proxyNames.length},
+          );
+          // Silent recovery: flush stale connections, give mihomo a beat to
+          // reset its internal pools, then re-test once.
+          try {
+            await manager.api.closeAllConnections();
+          } catch (_) {}
+          await Future.delayed(const Duration(milliseconds: 800));
+          final retried = await _repo.testGroupDelay(groupName, url: testUrl);
+          if (!_isAllTimeout(retried, proxyNames)) {
+            Telemetry.event(TelemetryEvents.delayTestAutoRecovered);
+            results = retried;
+          }
+        }
+
         // Results: {proxyName: {delay: int}, ...} or {proxyName: int}
         final current = Map<String, int>.from(ref.read(delayResultsProvider));
         for (final entry in results.entries) {
@@ -426,5 +452,30 @@ class DelayTestActions {
         await Future.delayed(const Duration(milliseconds: 50));
       }
     }
+  }
+
+  // Treat a group-test result as "all timed out" when at least 5 of the
+  // requested nodes came back with delay <= 0. The floor of 5 avoids
+  // false positives on tiny groups (e.g. a 2-proxy DIRECT/REJECT setup
+  // where 0 is legitimate) while still catching the real failure mode
+  // where every proxy in a 20-node group reports 0.
+  bool _isAllTimeout(Map<String, dynamic> results, List<String> proxyNames) {
+    if (proxyNames.length < 5) return false;
+    var checked = 0;
+    var timedOut = 0;
+    for (final name in proxyNames) {
+      final v = results[name];
+      int? delay;
+      if (v is int) {
+        delay = v;
+      } else if (v is Map) {
+        delay = (v['delay'] as num?)?.toInt();
+      }
+      if (delay == null) continue;
+      checked++;
+      if (delay <= 0) timedOut++;
+    }
+    if (checked < 5) return false;
+    return timedOut / checked >= 0.9;
   }
 }

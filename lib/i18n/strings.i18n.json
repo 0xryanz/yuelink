@@ -616,6 +616,8 @@
   "repairResyncHint": "Re-fetch subscription config from server",
   "repairClearCache": "Clear Local Cache",
   "repairClearCacheHint": "Delete local config files, logs, startup report",
+  "repairRestartCore": "Restart Core",
+  "repairRestartCoreHint": "Rebuild core state without touching the subscription — use when latency tests all time out",
   "repairOneClick": "One-Click Repair All",
   "repairRunning": "Repairing...",
   "repairNeedLogin": "Please login first",

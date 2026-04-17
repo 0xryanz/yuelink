@@ -57,6 +57,11 @@ class TelemetryEvents {
   static const onboardingAnswer = 'onboarding_answer';
   static const onboardingFinish = 'onboarding_finish';
 
+  // Delay test / core recovery
+  static const delayTestAllTimeout = 'delay_test_all_timeout';
+  static const delayTestAutoRecovered = 'delay_test_auto_recovered';
+  static const coreRestarted = 'core_restarted';
+
   // Errors
   static const crash = 'crash';
 }
@@ -293,22 +298,49 @@ class Telemetry {
         '${b[10]}${b[11]}${b[12]}${b[13]}${b[14]}${b[15]}';
   }
 
-  /// Strip props to simple scalars and clamp strings. Defensive in case a
-  /// caller accidentally slips a URL, email, or large blob into a prop.
+  /// Strip props to simple scalars and clamp strings. Allows one level of
+  /// nesting (`List<Map<String, scalar>>` or `List<scalar>`) so the
+  /// `node_inventory` event can ship its `nodes` array — which used to be
+  /// silently dropped, leaving the server-side `node_identity.region`
+  /// column NULL for every user. Caps list length at 500 entries and
+  /// refuses recursion deeper than one level.
   static Map<String, dynamic> _sanitizeProps(Map<String, dynamic> input) {
     final out = <String, dynamic>{};
     input.forEach((k, v) {
-      if (v == null) return;
-      if (v is num || v is bool) {
-        out[k] = v;
-      } else if (v is String) {
-        // Clamp to 100 chars; strip common PII-ish shapes (tokens, URLs).
-        var s = v;
-        if (s.length > 100) s = s.substring(0, 100);
-        out[k] = s;
-      }
-      // Silently drop collections / objects — caller should pass flat scalars.
+      final s = _sanitizeValue(v, depth: 0);
+      if (s != null) out[k] = s;
     });
     return out;
+  }
+
+  static const _maxListLen = 500;
+
+  static dynamic _sanitizeValue(dynamic v, {required int depth}) {
+    if (v == null) return null;
+    if (v is num || v is bool) return v;
+    if (v is String) {
+      return v.length > 100 ? v.substring(0, 100) : v;
+    }
+    // One level of nesting only — enough for node_inventory.nodes but
+    // rejects arbitrary object graphs that could blow up payload size.
+    if (depth >= 1) return null;
+    if (v is List) {
+      final out = [];
+      for (final item in v.take(_maxListLen)) {
+        final s = _sanitizeValue(item, depth: depth + 1);
+        if (s != null) out.add(s);
+      }
+      return out;
+    }
+    if (v is Map) {
+      final out = <String, dynamic>{};
+      v.forEach((k, vv) {
+        if (k is! String) return;
+        final s = _sanitizeValue(vv, depth: depth + 1);
+        if (s != null) out[k] = s;
+      });
+      return out.isEmpty ? null : out;
+    }
+    return null;
   }
 }

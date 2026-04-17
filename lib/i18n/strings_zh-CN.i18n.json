@@ -616,6 +616,8 @@
   "repairResyncHint": "重新从服务端拉取订阅配置并解析",
   "repairClearCache": "清除本地缓存",
   "repairClearCacheHint": "删除本地配置文件、日志、启动报告",
+  "repairRestartCore": "重启内核",
+  "repairRestartCoreHint": "延迟测试全超时或连接异常时，不动订阅直接重建核心状态",
   "repairOneClick": "一键修复全部",
   "repairRunning": "修复中...",
   "repairNeedLogin": "请先登录",

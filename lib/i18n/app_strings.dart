@@ -663,6 +663,8 @@ class S {
   String get repairResyncHint => _t.repairResyncHint;
   String get repairClearCache => _t.repairClearCache;
   String get repairClearCacheHint => _t.repairClearCacheHint;
+  String get repairRestartCore => _t.repairRestartCore;
+  String get repairRestartCoreHint => _t.repairRestartCoreHint;
   String get repairOneClick => _t.repairOneClick;
   String get repairRunning => _t.repairRunning;
   String get repairNeedLogin => _t.repairNeedLogin;

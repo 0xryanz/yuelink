@@ -116,7 +116,12 @@ class GroupListSection extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: YLSpacing.sm),
-                _Badge(label: groupTypeLabel(context, group.type), isDark: isDark),
+                Flexible(
+                  child: _Badge(
+                    label: groupSelectionLabel(context, group),
+                    isDark: isDark,
+                  ),
+                ),
                 if (sortMode == NodeSortMode.smartRecommend) ...[
                   const SizedBox(width: 4),
                   _Badge(
@@ -202,6 +207,8 @@ class _Badge extends StatelessWidget {
       ),
       child: Text(
         label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: YLText.caption.copyWith(
           fontSize: 10,
           color: fg,

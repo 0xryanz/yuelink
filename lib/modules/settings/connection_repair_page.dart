@@ -6,11 +6,14 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../core/kernel/core_manager.dart';
 import '../../core/platform/vpn_service.dart';
+import '../../core/profile/profile_service.dart';
+import '../../core/providers/core_provider.dart';
 import '../../i18n/app_strings.dart';
 import '../../shared/app_notifier.dart';
 import '../../shared/log_export_service.dart';
 import '../../shared/telemetry.dart';
 import '../../theme.dart';
+import '../profiles/providers/profiles_providers.dart';
 import '../yue_auth/providers/yue_auth_providers.dart';
 import 'startup_report_page.dart';
 
@@ -91,6 +94,39 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
       }
     } catch (e) {
       if (mounted) AppNotifier.error('${S.current.exportLogsFailed}: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _restartCore() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final activeId = ref.read(activeProfileIdProvider);
+      if (activeId == null) {
+        AppNotifier.error(S.current.repairNeedLogin);
+        return;
+      }
+      final config = await ProfileService.loadConfig(activeId);
+      if (config == null) {
+        AppNotifier.error(S.current.repairActionFailed);
+        return;
+      }
+      final ok = await ref.read(coreActionsProvider).restart(config);
+      if (!mounted) return;
+      final label = S.current.repairRestartCore;
+      if (ok) {
+        AppNotifier.success('$label ${S.current.repairActionDone}');
+      } else {
+        AppNotifier.error('$label ${S.current.repairActionFailed}');
+      }
+    } catch (e) {
+      if (mounted) {
+        AppNotifier.error(
+          '${S.current.repairRestartCore} ${S.current.repairActionFailed}: $e',
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -198,6 +234,15 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
                 )),
           ),
           _Card(isDark: isDark, children: [
+            _ActionRow(
+              icon: Icons.restart_alt_rounded,
+              label: s.repairRestartCore,
+              subtitle: s.repairRestartCoreHint,
+              isDark: isDark,
+              busy: _busy,
+              onTap: () => _restartCore(),
+            ),
+            Divider(height: 1, color: divColor),
             if (Platform.isIOS) ...[
               _ActionRow(
                 icon: Icons.vpn_key_outlined,

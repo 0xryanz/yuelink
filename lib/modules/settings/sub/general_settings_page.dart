@@ -95,14 +95,14 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
     try {
       await ServiceManager.install();
       await _refreshDesktopService();
-      // If the core was already running (in FFI mode, since service didn't
-      // exist yet), it won't transparently switch to service mode — the
-      // mode decision happens in CoreManager.start(). Restart it so TUN
-      // picks up the now-installed helper without the user needing to
-      // manually disconnect + reconnect. The previous behaviour made
-      // users report "installed OK but nothing works until I click
-      // refresh" — refresh was a red herring, the real fix was a restart.
-      await _restartCoreIfRunning();
+      // Installing the privileged service is an explicit "I want TUN" signal
+      // — bring the core up right now so the user doesn't have to bounce
+      // back to the dashboard and click connect manually. Covers both
+      // paths: running core (restart to pick up service mode) AND stopped
+      // core (fresh start). The only skip is when the user has explicitly
+      // stopped the VPN in this session, in which case we respect that
+      // intent and leave them stopped.
+      await _applyServiceModeImmediately();
       if (!mounted) return;
       AppNotifier.success(s.serviceModeInstallOk);
     } catch (e) {
@@ -115,21 +115,33 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
     }
   }
 
-  /// After install/update completes, restart the core so the new helper
-  /// is actually used. No-op if the core isn't running. Errors are
-  /// swallowed — the install itself already succeeded and the user can
-  /// manually reconnect from the dashboard if this auto-restart fails.
-  Future<void> _restartCoreIfRunning() async {
+  /// After the service install / update succeeds, put the core into the
+  /// right state without forcing the user to go back to the dashboard:
+  ///   - running  → restart (so service mode takes effect)
+  ///   - stopped  → start (installing the service is an implicit
+  ///                       "I want TUN" intent)
+  /// Only respected the user's explicit stop (userStoppedProvider) —
+  /// if they manually disconnected in this session we leave them off.
+  /// All errors swallowed — install itself already succeeded.
+  Future<void> _applyServiceModeImmediately() async {
     try {
-      if (ref.read(coreStatusProvider) != CoreStatus.running) return;
       final activeId = ref.read(activeProfileIdProvider);
       if (activeId == null) return;
+      final status = ref.read(coreStatusProvider);
+      final userStopped = ref.read(userStoppedProvider);
+
       final config = await ProfileService.loadConfig(activeId);
       if (config == null) return;
-      await ref.read(coreActionsProvider).restart(config);
+
+      final actions = ref.read(coreActionsProvider);
+      if (status == CoreStatus.running) {
+        await actions.restart(config);
+      } else if (status == CoreStatus.stopped && !userStopped) {
+        await actions.start(config);
+      }
     } catch (_) {
-      // swallow — install succeeded; if restart fails the user sees the
-      // old running state and can manually reconnect.
+      // swallow — the install is the primary success; dashboard still
+      // has the connect button as a manual fallback.
     }
   }
 
@@ -164,7 +176,7 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
       await _refreshDesktopService();
       // Same rationale as install — the running core still holds handles
       // from the old helper binary. Restart so the new helper is picked up.
-      await _restartCoreIfRunning();
+      await _applyServiceModeImmediately();
       if (!mounted) return;
       AppNotifier.success(s.serviceModeUpdateOk);
     } catch (e) {

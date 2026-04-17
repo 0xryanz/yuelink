@@ -186,7 +186,22 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "enterPip" -> {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                            result.error("UNSUPPORTED", "PiP requires Android 8.0+", null)
+                            return@setMethodCallHandler
+                        }
+                        // enterPictureInPictureMode throws IllegalStateException
+                        // ("Activity must be foreground") when called after the
+                        // activity has paused — a common race when Dart
+                        // triggers PiP on a lifecycle event. Check state AND
+                        // wrap in try-catch since the state can flip between
+                        // the check and the call.
+                        if (isFinishing || isDestroyed) {
+                            result.error("ACTIVITY_GONE",
+                                "Activity not available for PiP", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
                             val w = call.argument<Int>("width") ?: 16
                             val h = call.argument<Int>("height") ?: 9
                             val params = PictureInPictureParams.Builder()
@@ -194,8 +209,14 @@ class MainActivity : FlutterActivity() {
                                 .build()
                             enterPictureInPictureMode(params)
                             result.success(true)
-                        } else {
-                            result.error("UNSUPPORTED", "PiP requires Android 8.0+", null)
+                        } catch (e: IllegalStateException) {
+                            android.util.Log.w("YueLinkPip",
+                                "enterPip failed: ${e.message}")
+                            result.error("PIP_UNAVAILABLE", e.message, null)
+                        } catch (e: Exception) {
+                            android.util.Log.w("YueLinkPip",
+                                "enterPip unexpected: ${e.message}")
+                            result.error("PIP_FAILED", e.message, null)
                         }
                     }
                     else -> result.notImplemented()

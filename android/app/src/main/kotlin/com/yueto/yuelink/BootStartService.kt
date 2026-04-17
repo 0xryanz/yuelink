@@ -55,7 +55,7 @@ class BootStartService : Service() {
             NotificationManager.IMPORTANCE_HIGH
         ).apply { description = "Auto-connect after boot" }
         getSystemService(NotificationManager::class.java)
-            .createNotificationChannel(channel)
+            ?.createNotificationChannel(channel)
 
         val pendingIntent = PendingIntent.getActivity(
             this, 0, launch,
@@ -81,7 +81,7 @@ class BootStartService : Service() {
                 NotificationManager.IMPORTANCE_LOW
             )
             getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(channel)
+                ?.createNotificationChannel(channel)
         }
         val pendingIntent = PendingIntent.getActivity(
             this, 0, launch,

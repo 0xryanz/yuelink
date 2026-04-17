@@ -317,7 +317,9 @@ class YueLinkVpnService : VpnService() {
             // no status bar icon from the app (system VPN key icon remains).
             NotificationManager.IMPORTANCE_MIN
         ).apply { description = "YueLink service status" }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        // `?.` — some OEM ROMs return null here even though docs say non-null,
+        // and an NPE inside startForeground() would crash the service.
+        getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
     }
 
     private fun createNotification(): Notification {

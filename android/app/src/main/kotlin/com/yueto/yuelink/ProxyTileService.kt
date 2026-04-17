@@ -55,12 +55,30 @@ class ProxyTileService : TileService() {
 
     override fun onStartListening() {
         super.onStartListening()
-        updateTileState()
+        // System-managed callback — any uncaught exception from resource
+        // lookup / getString / Icon.createWithResource would otherwise kill
+        // the tile process silently. Swallow + log; the tile just stays on
+        // its previous state until next refresh.
+        try {
+            updateTileState()
+        } catch (e: Throwable) {
+            Log.e(TAG, "onStartListening failed", e)
+        }
     }
 
     override fun onClick() {
         super.onClick()
+        // Wrap the full handler — inner try-catches below cover the
+        // invoke path, but onClick is still called via system RPC where
+        // any throw would terminate the tile service process.
+        try {
+            handleClick()
+        } catch (e: Throwable) {
+            Log.e(TAG, "onClick failed", e)
+        }
+    }
 
+    private fun handleClick() {
         val engine = FlutterEngineCache.getInstance()
             .get(MainApplication.SHARED_ENGINE_ID)
         if (engine != null) {
@@ -152,7 +170,16 @@ class ProxyTileService : TileService() {
      * onStartListening (system-driven) and synchronously after
      * optimisticTransitionAndQueue so the user sees feedback instantly.
      */
-    private fun updateTileState() {
+    private fun updateTileState() = try {
+        updateTileStateUnchecked()
+    } catch (e: Throwable) {
+        // Resource lookup / Icon.createWithResource / getString can throw
+        // on damaged APK installs, Work Profile restrictions, or OEM
+        // resource-access ACLs. Leave the tile on its last-known state.
+        Log.e(TAG, "updateTileState failed", e)
+    }
+
+    private fun updateTileStateUnchecked() {
         val tile = qsTile ?: return
         val isActive = prefs.getBoolean(KEY_VPN_ACTIVE, false)
         val transition = prefs.getString(KEY_IN_TRANSITION, null)

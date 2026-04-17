@@ -55,6 +55,89 @@ class ErrorLogger {
     _capture(error.toString(), stack, source: source);
   }
 
+  /// Scan crash.log for entries tagged `[Android/<thread>]` written by
+  /// MainApplication's UncaughtExceptionHandler since the last check.
+  /// For each new one, fire a `crash` telemetry event so server-side can
+  /// aggregate the root cause distribution. Idempotent — uses the entry's
+  /// timestamp as the cursor, persisted via [SettingsService].
+  ///
+  /// Called once at app start (after ErrorLogger.init and Telemetry.init).
+  static Future<void> scanAndroidNativeCrashes() async {
+    try {
+      final dir = await getApplicationSupportDirectory();
+      final logFile = File('${dir.path}/crash.log');
+      if (!logFile.existsSync()) return;
+      final content = await logFile.readAsString();
+      // Fast path — no Android entries at all.
+      if (!content.contains('[Android/')) return;
+      // Timestamps on Android entries are ISO 8601 like [2026-04-17T12:34:56.789].
+      // Track the most recent timestamp already reported.
+      const cursorKey = 'lastAndroidCrashTimestamp';
+      final lastSeen = await _readCrashCursor(cursorKey);
+      final entries = _parseAndroidCrashEntries(content);
+      String? newestSeen;
+      for (final e in entries) {
+        if (lastSeen != null && e.timestamp.compareTo(lastSeen) <= 0) continue;
+        Telemetry.event(
+          TelemetryEvents.crash,
+          priority: true,
+          props: {
+            'src': 'android_native',
+            'type': e.exceptionType,
+            'thread': e.thread,
+          },
+        );
+        if (newestSeen == null || e.timestamp.compareTo(newestSeen) > 0) {
+          newestSeen = e.timestamp;
+        }
+      }
+      if (newestSeen != null) await _writeCrashCursor(cursorKey, newestSeen);
+    } catch (_) {
+      // Silent — diagnostic code must never itself crash the app.
+    }
+  }
+
+  static Future<String?> _readCrashCursor(String key) async {
+    try {
+      final dir = await getApplicationSupportDirectory();
+      final cursorFile = File('${dir.path}/$key.txt');
+      if (!cursorFile.existsSync()) return null;
+      final v = (await cursorFile.readAsString()).trim();
+      return v.isEmpty ? null : v;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _writeCrashCursor(String key, String value) async {
+    try {
+      final dir = await getApplicationSupportDirectory();
+      await File('${dir.path}/$key.txt').writeAsString(value);
+    } catch (_) {}
+  }
+
+  static List<_AndroidCrashEntry> _parseAndroidCrashEntries(String content) {
+    final out = <_AndroidCrashEntry>[];
+    // Format written by MainApplication.installCrashHandler:
+    //   [2026-04-17T12:34:56.789]
+    //   [Android/<thread>] <exceptionClass>: <message>
+    //   <stack>
+    //   (blank)
+    final re = RegExp(
+      r'\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3})\]\s*\n'
+      r'\[Android/([^\]]+)\]\s*([A-Za-z0-9_.$]+)',
+      multiLine: true,
+    );
+    for (final m in re.allMatches(content)) {
+      out.add(_AndroidCrashEntry(
+        timestamp: m.group(1)!,
+        thread: m.group(2)!,
+        exceptionType: m.group(3)!,
+      ));
+    }
+    return out;
+  }
+
   // ── Internal ────────────────────────────────────────────────────────
 
   static void _capture(String error, StackTrace stack, {String? source}) {
@@ -65,16 +148,24 @@ class ErrorLogger {
     final tag = source != null ? '[$source]' : '[Error]';
     EventLog.write('$tag ${error.split('\n').first}');
 
-    // 2b. Forward exception type (not the message) to opt-in telemetry so we
-    // can see error shape distribution without leaking payload content.
+    // 2b. Forward exception type to opt-in telemetry. We split into two
+    // buckets so dashboards aren't drowned in transient network blips:
+    //   - `crash`         : genuinely unexpected exceptions (priority, always
+    //                        kept through buffer overflow)
+    //   - `network_error` : WebSocket / HTTP / socket failures that the app
+    //                        already handles (retry / reconnect logic). These
+    //                        used to mask real crashes at ~98:1 ratio; we
+    //                        keep them as non-priority telemetry for signal.
     final firstLine = error.split('\n').first;
     final typeHint = firstLine.length > 80 ? firstLine.substring(0, 80) : firstLine;
+    final typeName = _typeFromError(typeHint);
+    final isNetwork = _isNetworkError(typeName);
     Telemetry.event(
-      TelemetryEvents.crash,
-      priority: true,
+      isNetwork ? 'network_error' : TelemetryEvents.crash,
+      priority: !isNetwork,
       props: {
         'src': source ?? 'unknown',
-        'type': _typeFromError(typeHint),
+        'type': typeName,
       },
     );
 
@@ -96,6 +187,28 @@ class ErrorLogger {
     return s.length > 40 ? s.substring(0, 40) : s;
   }
 
+  /// Classify an exception type as a transient network failure. The app
+  /// already retries these at higher levels (MihomoStream reconnect,
+  /// MihomoApi circuit breaker, HttpClient with fallback URL), so they
+  /// shouldn't trip the dashboard's `crash` counter.
+  static bool _isNetworkError(String typeName) {
+    const networkTypes = {
+      'WebSocketChannelException',
+      'WebSocketException',
+      'SocketException',
+      'HandshakeException',
+      'HttpException',
+      'ClientException',
+      'TimeoutException',
+      'TlsException',
+      'OSError',
+    };
+    if (networkTypes.contains(typeName)) return true;
+    // http package wraps some of these, e.g. "ClientException with SocketException".
+    return typeName.startsWith('ClientException') ||
+        typeName.startsWith('SocketException');
+  }
+
   static Future<void> _writeCrashLog(String error, String stack) async {
     try {
       final dir = await getApplicationSupportDirectory();
@@ -105,6 +218,17 @@ class ErrorLogger {
       await logFile.writeAsString(entry, mode: FileMode.append);
     } catch (_) {}
   }
+}
+
+class _AndroidCrashEntry {
+  final String timestamp;
+  final String thread;
+  final String exceptionType;
+  const _AndroidCrashEntry({
+    required this.timestamp,
+    required this.thread,
+    required this.exceptionType,
+  });
 }
 
 // ── Remote reporter interface ──────────────────────────────────────────────

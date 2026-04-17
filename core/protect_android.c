@@ -8,52 +8,81 @@
 #ifdef __ANDROID__
 
 #include <jni.h>
+#include <pthread.h>
 #include <stdlib.h>
 
 static JavaVM*   g_vm            = NULL;
 static jobject   g_vpnService    = NULL;
 static jmethodID g_protectMethod = NULL;
 
+// Guards access to g_vpnService / g_protectMethod. protect_fd() runs from
+// arbitrary mihomo goroutines (one per outbound socket) while stopTunnel()
+// on the Android main thread triggers clear_vpn_service(). Without this
+// lock, a goroutine could read g_vpnService != NULL, then have the main
+// thread DeleteGlobalRef + NULL it out before CallBooleanMethod uses the
+// (now freed) reference — instant SIGSEGV.
+static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
+
 // Called from Go (via exported JNI function) when VPN service starts.
 void store_vpn_service(JNIEnv* env, jobject vpnService) {
     // Get JavaVM reference (needed to attach Go threads later)
     (*env)->GetJavaVM(env, &g_vm);
 
-    // Store global reference to VpnService instance
-    if (g_vpnService != NULL) {
-        (*env)->DeleteGlobalRef(env, g_vpnService);
-    }
-    g_vpnService = (*env)->NewGlobalRef(env, vpnService);
-
-    // Cache protect(int) method ID
+    // Cache protect(int) method ID before taking the lock — GetObjectClass
+    // / GetMethodID are safe without mutex (they don't touch g_vpnService).
     jclass cls = (*env)->GetObjectClass(env, vpnService);
-    g_protectMethod = (*env)->GetMethodID(env, cls, "protect", "(I)Z");
+    jmethodID mid = (*env)->GetMethodID(env, cls, "protect", "(I)Z");
     (*env)->DeleteLocalRef(env, cls);
+    jobject newRef = (*env)->NewGlobalRef(env, vpnService);
+
+    pthread_mutex_lock(&g_mu);
+    jobject oldRef = g_vpnService;
+    g_vpnService = newRef;
+    g_protectMethod = mid;
+    pthread_mutex_unlock(&g_mu);
+
+    if (oldRef != NULL) {
+        (*env)->DeleteGlobalRef(env, oldRef);
+    }
 }
 
 // Called from Go (via DefaultSocketHook) for each outbound socket.
 int protect_fd(int fd) {
-    if (g_vm == NULL || g_vpnService == NULL || g_protectMethod == NULL) {
+    pthread_mutex_lock(&g_mu);
+    JavaVM* vm = g_vm;
+    jobject svc = g_vpnService;
+    jmethodID mid = g_protectMethod;
+
+    if (vm == NULL || svc == NULL || mid == NULL) {
+        pthread_mutex_unlock(&g_mu);
         return 0;
     }
 
     JNIEnv* env = NULL;
     int need_detach = 0;
 
-    jint status = (*g_vm)->GetEnv(g_vm, (void**)&env, JNI_VERSION_1_6);
+    jint status = (*vm)->GetEnv(vm, (void**)&env, JNI_VERSION_1_6);
     if (status == JNI_EDETACHED) {
-        if ((*g_vm)->AttachCurrentThread(g_vm, &env, NULL) != JNI_OK) {
+        if ((*vm)->AttachCurrentThread(vm, &env, NULL) != JNI_OK) {
+            pthread_mutex_unlock(&g_mu);
             return 0;
         }
         need_detach = 1;
     } else if (status != JNI_OK) {
+        pthread_mutex_unlock(&g_mu);
         return 0;
     }
 
-    jboolean ok = (*env)->CallBooleanMethod(env, g_vpnService, g_protectMethod, (jint)fd);
+    // Hold the lock across CallBooleanMethod — protect() is a cheap
+    // Java method call (no blocking IO), so the critical section stays
+    // microsecond-short and the lock can't meaningfully throttle
+    // socket creation throughput.
+    jboolean ok = (*env)->CallBooleanMethod(env, svc, mid, (jint)fd);
+
+    pthread_mutex_unlock(&g_mu);
 
     if (need_detach) {
-        (*g_vm)->DetachCurrentThread(g_vm);
+        (*vm)->DetachCurrentThread(vm);
     }
 
     return ok ? 1 : 0;
@@ -61,11 +90,15 @@ int protect_fd(int fd) {
 
 // Called from Go when VPN stops — release global reference.
 void clear_vpn_service(JNIEnv* env) {
-    if (g_vpnService != NULL) {
-        (*env)->DeleteGlobalRef(env, g_vpnService);
-        g_vpnService = NULL;
-    }
+    pthread_mutex_lock(&g_mu);
+    jobject oldRef = g_vpnService;
+    g_vpnService = NULL;
     g_protectMethod = NULL;
+    pthread_mutex_unlock(&g_mu);
+
+    if (oldRef != NULL) {
+        (*env)->DeleteGlobalRef(env, oldRef);
+    }
 }
 
 // JNI entry point: called by YueLinkVpnService.nativeStartProtect(this)

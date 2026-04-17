@@ -33,18 +33,4 @@ class AppConstants {
 
   /// YueOps operations API base URL.
   static const yueOpsBaseUrl = 'https://ops.yue.to';
-
-  /// Subscription URL host-substitution fallbacks. When a subscription fetch
-  /// fails because the apex host is blocked/slow, the repository will retry
-  /// with each entry swapped in place of the original host. Order matters:
-  /// first entry is tried first.
-  ///
-  /// Empty by default — operator fills these in per-deployment. Example:
-  ///   subscriptionFallbackHosts: [
-  ///     'sub-backup.yue.to',         // second regional CDN
-  ///     'sub.yuelink-cdn.pages.dev', // Cloudflare Pages mirror
-  ///   ]
-  /// Only YueLink-owned mirrors should appear here — a mismatched host could
-  /// serve a poisoned config.
-  static const List<String> subscriptionFallbackHosts = <String>[];
 }

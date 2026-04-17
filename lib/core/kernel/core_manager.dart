@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -137,7 +139,11 @@ class CoreManager {
 
   void configure({int? port, String? secret, CoreMode? mode}) {
     if (port != null) _apiPort = port;
-    _apiSecret = secret;
+    // Only replace cached secret when the caller actually supplies one.
+    // Previously `_apiSecret = secret` unconditionally wiped the cached
+    // value if called with `secret: null`, breaking the API client for
+    // the rest of the session.
+    if (secret != null) _apiSecret = secret;
     if (mode != null) _mode = mode;
     _api = null;
     _stream = null;
@@ -175,6 +181,19 @@ class CoreManager {
     }
     if (_running) return true; // re-check after waiting
     _pendingOperation = Completer<void>();
+
+    // Resolve the external-controller secret BEFORE building config.
+    //   1. If we already have one cached this session, keep it.
+    //   2. Otherwise load the persisted secret from SettingsService.
+    //   3. Otherwise generate a fresh one and persist it — once.
+    // A subscription YAML that already declares its own `secret:` will
+    // override whatever we pass; CoreManager picks that value up via
+    // ConfigTemplate.getSecret(processed) and it flows through unchanged.
+    _apiSecret ??= await SettingsService.getClashApiSecret();
+    if (_apiSecret == null || _apiSecret!.isEmpty) {
+      _apiSecret = _generateApiSecret();
+      await SettingsService.setClashApiSecret(_apiSecret!);
+    }
 
     final steps = <StartupStep>[];
     String? homeDir;
@@ -293,7 +312,9 @@ class CoreManager {
           );
           _apiPort = ConfigTemplate.getApiPort(processed);
           _mixedPort = ConfigTemplate.getMixedPort(processed);
-          _apiSecret ??= ConfigTemplate.getSecret(processed);
+          final parsedSecret = ConfigTemplate.getSecret(processed);
+          if (parsedSecret != null && parsedSecret.isNotEmpty)
+            _apiSecret = parsedSecret;
           _api = null;
           _stream = null;
           _clashCore = null;
@@ -316,7 +337,9 @@ class CoreManager {
           );
           _apiPort = ConfigTemplate.getApiPort(processed);
           _mixedPort = ConfigTemplate.getMixedPort(processed);
-          _apiSecret ??= ConfigTemplate.getSecret(processed);
+          final parsedSecret = ConfigTemplate.getSecret(processed);
+          if (parsedSecret != null && parsedSecret.isNotEmpty)
+            _apiSecret = parsedSecret;
           _api = null;
           _stream = null;
           _clashCore = null;
@@ -523,7 +546,9 @@ class CoreManager {
         );
         _apiPort = ConfigTemplate.getApiPort(processed);
         _mixedPort = ConfigTemplate.getMixedPort(processed);
-        _apiSecret ??= ConfigTemplate.getSecret(processed);
+        final parsedSecret = ConfigTemplate.getSecret(processed);
+        if (parsedSecret != null && parsedSecret.isNotEmpty)
+          _apiSecret = parsedSecret;
         _api = null;
         _stream = null;
         _clashCore = null;
@@ -627,7 +652,9 @@ class CoreManager {
         );
         _apiPort = ConfigTemplate.getApiPort(processed);
         _mixedPort = ConfigTemplate.getMixedPort(processed);
-        _apiSecret ??= ConfigTemplate.getSecret(processed);
+        final parsedSecret = ConfigTemplate.getSecret(processed);
+        if (parsedSecret != null && parsedSecret.isNotEmpty)
+          _apiSecret = parsedSecret;
         _api = null;
         _stream = null;
         _clashCore = null;
@@ -640,8 +667,7 @@ class CoreManager {
       // subsequent POST /v1/start to race and fail — the classic "user has
       // to refresh once before it connects" symptom. Matches FlClash's
       // `sc query RUNNING && ping` and CVR's `wait_for_service_ipc`.
-      await _step(steps, 'waitService', StartupError.coreStartFailed,
-          () async {
+      await _step(steps, 'waitService', StartupError.coreStartFailed, () async {
         for (var i = 0; i < 50; i++) {
           if (await ServiceClient.ping()) {
             return 'ready after ${i + 1} ping(s)';
@@ -859,6 +885,15 @@ class CoreManager {
   // ==================================================================
 
   static const _kLastWorkingConfig = 'last_working_config.yaml';
+
+  /// Cryptographically random 256-bit token, URL-safe base64, no padding.
+  /// Used once per install for the external-controller secret, then
+  /// persisted via SettingsService.setClashApiSecret.
+  static String _generateApiSecret() {
+    final rng = math.Random.secure();
+    final bytes = List<int>.generate(32, (_) => rng.nextInt(256));
+    return base64UrlEncode(bytes).replaceAll('=', '');
+  }
 
   Future<bool> _shouldUseDesktopServiceMode(String connectionMode) async {
     if (!ServiceManager.isSupported || isMockMode) return false;

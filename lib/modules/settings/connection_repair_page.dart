@@ -132,103 +132,6 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
     }
   }
 
-  /// Rule-match debug tool: user types a host → we dry-run it against the
-  /// loaded mihomo rule set (DOMAIN / DOMAIN-SUFFIX / DOMAIN-KEYWORD /
-  /// DOMAIN-REGEX / MATCH). Rules that need a resolved IP or rule-provider
-  /// (IP-CIDR / GEOIP / GEOSITE / RULE-SET) are marked "need live probe".
-  /// Inspired by CVR / FlClash Connection Test but without opening a real
-  /// connection.
-  Future<void> _showRuleMatchDialog() async {
-    if (!CoreManager.instance.isRunning) {
-      AppNotifier.warning('核心未运行，无法查询规则');
-      return;
-    }
-    final ctrl = TextEditingController(text: 'www.google.com');
-    String? matchSummary;
-    bool querying = false;
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setDialog) {
-            return AlertDialog(
-              title: const Text('规则匹配调试'),
-              content: SizedBox(
-                width: 420,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextField(
-                      controller: ctrl,
-                      autofocus: true,
-                      decoration: const InputDecoration(
-                        labelText: '域名',
-                        hintText: 'example.com',
-                        border: OutlineInputBorder(),
-                      ),
-                      onSubmitted: (_) async {
-                        setDialog(() => querying = true);
-                        final host = ctrl.text.trim();
-                        try {
-                          final m = await CoreManager.instance.api
-                              .matchHost(host);
-                          setDialog(() {
-                            matchSummary = m == null
-                                ? '未命中任何本地可判定规则。\n可能由 GEOIP / '
-                                    'GEOSITE / RULE-SET 命中（需实际连接才能判断）。'
-                                : '命中：${m.type},${m.payload}\n出口：${m.proxy}';
-                          });
-                        } catch (e) {
-                          setDialog(() {
-                            matchSummary = '查询失败：$e';
-                          });
-                        } finally {
-                          setDialog(() => querying = false);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    if (querying)
-                      const Center(
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      ),
-                    if (matchSummary != null)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Theme.of(ctx)
-                              .colorScheme
-                              .surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          matchSummary!,
-                          style: Theme.of(ctx).textTheme.bodyMedium,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('关闭'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-    ctrl.dispose();
-  }
-
   Future<void> _run(String label, Future<bool> Function() action) async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -424,15 +327,6 @@ class _ConnectionRepairPageState extends ConsumerState<ConnectionRepairPage> {
                 }),
               ),
             ],
-            Divider(height: 1, color: divColor),
-            _ActionRow(
-              icon: Icons.rule_rounded,
-              label: '规则匹配调试',
-              subtitle: '输入域名，看它会走哪条规则、哪个代理',
-              isDark: isDark,
-              busy: _busy,
-              onTap: _showRuleMatchDialog,
-            ),
           ]),
           const SizedBox(height: 8),
 

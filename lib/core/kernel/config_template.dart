@@ -1,7 +1,5 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -1185,17 +1183,16 @@ class ConfigTemplate {
     return '$config\nmixed-port: $port\n';
   }
 
-  /// Ensure the config has external-controller set AND is authenticated.
-  ///
-  /// Secret hardening (matches Clash Verge Rev):
-  ///   - If caller supplies one, use it.
-  ///   - Else if subscription config already has one, keep it (caller will
-  ///     read it back via getSecret + stash in CoreManager._apiSecret).
-  ///   - Else generate a cryptographically random token and inject it.
-  /// Rationale: `external-controller: 127.0.0.1:9090` is NOT a trust
-  /// boundary — any process on the machine (malware, browser extensions,
-  /// other LAN tooling when allow-lan=true) can POST /configs and reroute
-  /// all traffic. A secret is the cheapest mitigation.
+  /// Ensure the config has external-controller set. Secret resolution:
+  ///   - If the subscription config already declares one, leave it.
+  ///   - Else if [secret] is supplied (a persisted value from
+  ///     SettingsService, owned by CoreManager), inject it.
+  ///   - Else emit no `secret:` line — the external-controller runs
+  ///     unauthenticated, same as mihomo's upstream default.
+  /// Secret generation / persistence is CoreManager's responsibility, not
+  /// this template's — it must survive process restarts to stay compatible
+  /// with external tooling like yacd / metacubexd that persists the secret
+  /// in browser localStorage.
   static String _ensureExternalController(
       String config, int port, String? secret) {
     if (_hasKey(config, 'external-controller')) {
@@ -1207,19 +1204,11 @@ class ConfigTemplate {
       config += '\nexternal-controller: 127.0.0.1:$port\n';
     }
 
-    if (!_hasKey(config, 'secret')) {
-      final effective = secret ?? _randomSecret();
-      config += 'secret: $effective\n';
+    if (secret != null && secret.isNotEmpty && !_hasKey(config, 'secret')) {
+      config += 'secret: $secret\n';
     }
 
     return config;
-  }
-
-  /// Cryptographically random 256-bit secret, URL-safe base64, no padding.
-  static String _randomSecret() {
-    final rng = math.Random.secure();
-    final bytes = List<int>.generate(32, (_) => rng.nextInt(256));
-    return base64UrlEncode(bytes).replaceAll('=', '');
   }
 
   /// Check if a top-level YAML key exists.

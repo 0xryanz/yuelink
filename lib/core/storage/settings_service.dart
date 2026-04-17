@@ -201,16 +201,19 @@ class SettingsService {
     await set('subSyncInterval', hours);
   }
 
-  // ── Subscription User-Agent override ────────────────────────────────────
-  // Some CDNs / machine-learning WAF layers drop requests with UA
-  // "clash.meta". Users who hit this need to override to e.g. "ClashX Meta"
-  // or a browser UA. Empty string ⇒ use AppConstants.userAgent (default).
-  static Future<String> getSubscriptionUserAgent() async {
-    return (await get<String>('subscriptionUserAgent')) ?? '';
+  // ── Clash RESTful API secret ────────────────────────────────────────────
+  // Mihomo's external-controller secret. Persisted once on first launch so
+  // external tooling (yacd / metacubexd, both of which save the secret in
+  // browser localStorage) doesn't need re-configuring every restart. If
+  // the subscription YAML already declares a `secret:`, that value wins
+  // — CoreManager reads it back via ConfigTemplate.getSecret and won't
+  // overwrite the stored one.
+  static Future<String?> getClashApiSecret() async {
+    return get<String>('clashApiSecret');
   }
 
-  static Future<void> setSubscriptionUserAgent(String ua) async {
-    await set('subscriptionUserAgent', ua);
+  static Future<void> setClashApiSecret(String secret) async {
+    await set('clashApiSecret', secret);
   }
 
   // ── Background delay re-test interval ───────────────────────────────────

@@ -242,84 +242,6 @@ class MihomoApi {
     return _get('/rules');
   }
 
-  /// Dry-run match a host against the loaded rules. Returns the first
-  /// matching rule or null for rules that require runtime evaluation
-  /// (GEOIP / GEOSITE / RULE-SET / IP-* matching an unresolvable host).
-  ///
-  /// Purpose: let the user answer "which rule sends this domain where?"
-  /// without actually opening a connection. Inspired by CVR's
-  /// Connection Test tool. Limitation: rules needing remote evaluation
-  /// are marked "runtime-only" — the caller can suggest an actual
-  /// connection test if the user wants a definitive answer.
-  Future<RuleMatch?> matchHost(String host) async {
-    if (host.isEmpty) return null;
-    final data = await getRules();
-    final rules = (data['rules'] as List?) ?? const [];
-
-    final lowered = host.toLowerCase();
-    for (final raw in rules) {
-      if (raw is! Map) continue;
-      final type = (raw['type'] as String? ?? '').toUpperCase();
-      final payload = (raw['payload'] as String? ?? '');
-      final proxy = (raw['proxy'] as String? ?? '');
-
-      bool matches = false;
-      bool runtimeOnly = false;
-
-      switch (type) {
-        case 'MATCH':
-          matches = true;
-        case 'DOMAIN':
-          matches = lowered == payload.toLowerCase();
-        case 'DOMAIN-SUFFIX':
-          final suffix = payload.toLowerCase();
-          matches = lowered == suffix || lowered.endsWith('.$suffix');
-        case 'DOMAIN-KEYWORD':
-          matches = lowered.contains(payload.toLowerCase());
-        case 'DOMAIN-REGEX':
-          try {
-            matches = RegExp(payload).hasMatch(host);
-          } catch (_) {
-            matches = false;
-          }
-        case 'PROCESS-NAME':
-        case 'PROCESS-PATH':
-        case 'SRC-IP-CIDR':
-        case 'SRC-PORT':
-        case 'DST-PORT':
-        case 'NETWORK':
-        case 'IN-TYPE':
-        case 'USER-AGENT':
-          // Can't evaluate from "host alone" — skip silently.
-          matches = false;
-        case 'IP-CIDR':
-        case 'IP-CIDR6':
-        case 'GEOIP':
-        case 'GEOSITE':
-        case 'RULE-SET':
-          // Need a resolved IP or an external provider. Mark runtime-only
-          // so the UI can hint at it if no earlier rule matches.
-          runtimeOnly = true;
-      }
-
-      if (matches) {
-        return RuleMatch(
-          type: type,
-          payload: payload,
-          proxy: proxy,
-          runtimeOnly: false,
-        );
-      }
-      if (runtimeOnly) {
-        // Remember the first runtime-only rule so the caller can surface
-        // "rule #N requires resolved IP/provider — definitive answer needs
-        // a live probe". We don't break — continue scanning for concrete
-        // domain matches first.
-      }
-    }
-    return null;
-  }
-
   // ------------------------------------------------------------------
   // Providers
   // ------------------------------------------------------------------
@@ -473,24 +395,6 @@ class MihomoApi {
         )
         .timeout(_kTimeout);
   }
-}
-
-/// Result of a dry-run rule match (no live connection opened).
-class RuleMatch {
-  final String type;
-  final String payload;
-  final String proxy;
-  final bool runtimeOnly;
-  const RuleMatch({
-    required this.type,
-    required this.payload,
-    required this.proxy,
-    required this.runtimeOnly,
-  });
-
-  @override
-  String toString() =>
-      '$type,$payload → $proxy${runtimeOnly ? " (runtime-only)" : ""}';
 }
 
 /// Exception from mihomo API.

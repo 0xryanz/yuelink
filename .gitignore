@@ -63,6 +63,7 @@ ios/Frameworks/libclash.*
 ios/Frameworks/sim/
 macos/Frameworks/
 windows/libs/
+windows/vc_redist.x64.exe
 linux/libs/
 
 # Platform generated

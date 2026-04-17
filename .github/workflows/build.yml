@@ -427,6 +427,17 @@ jobs:
             Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/Unofficial/ChineseSimplified.isl" -OutFile $isl
           }
 
+      - name: Download VC++ 2015-2022 Redistributable (bundled into installer)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $vcRedist = "windows\vc_redist.x64.exe"
+          if (-not (Test-Path $vcRedist)) {
+            Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" `
+              -OutFile $vcRedist -UseBasicParsing
+          }
+          Get-Item $vcRedist | Select-Object Name, Length
+
       - name: Build Windows installer + portable zip
         if: matrix.platform == 'windows'
         shell: pwsh

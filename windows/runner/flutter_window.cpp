@@ -1,8 +1,29 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <windows.h>
 
 #include "flutter/generated_plugin_registrant.h"
+
+namespace {
+// Native safety net for Windows shutdown / logoff. Dart's ProcessSignal
+// doesn't exist on Windows, so when WM_ENDSESSION arrives the Flutter
+// engine is about to be killed mid-await. We flip ProxyEnable=0 inline
+// via the Win32 registry API — faster than spawning reg.exe, no subprocess,
+// completes in microseconds so the OS never truncates us. Idempotent.
+void ClearSystemProxyFromRegistry() {
+  HKEY hKey = nullptr;
+  const LSTATUS open = RegOpenKeyExW(
+      HKEY_CURRENT_USER,
+      L"Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
+      0, KEY_SET_VALUE, &hKey);
+  if (open != ERROR_SUCCESS) return;
+  DWORD zero = 0;
+  RegSetValueExW(hKey, L"ProxyEnable", 0, REG_DWORD,
+                 reinterpret_cast<const BYTE*>(&zero), sizeof(zero));
+  RegCloseKey(hKey);
+}
+}  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -64,6 +85,13 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   switch (message) {
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
+      break;
+    case WM_QUERYENDSESSION:
+    case WM_ENDSESSION:
+      // System is shutting down / user is logging off — we have a brief
+      // window before the OS force-kills the process. The Dart quit handler
+      // won't fire (Flutter engine is torn down), so clear the proxy inline.
+      ClearSystemProxyFromRegistry();
       break;
   }
 

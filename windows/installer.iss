@@ -89,15 +89,20 @@ chinesesimplified.FinishedHeading=YueLink 安装完成
 chinesesimplified.FinishedLabel=YueLink 已成功安装到您的电脑。点击「完成」立即体验。
 chinesesimplified.RunDescription=立即启动 YueLink
 chinesesimplified.UninstalledMsg=YueLink 已从您的电脑卸载。
+chinesesimplified.InstallingVCRedist=正在安装 Visual C++ 运行库（首次安装需要，约 20 秒）…
 english.WelcomeTitle=Welcome to YueLink Setup
 english.WelcomeMsg=This wizard will guide you through the installation of YueLink.%n%nYueLink is a cross-platform proxy client built on the mihomo core, supporting system proxy and TUN modes.%n%nPlease make sure YueLink is closed before continuing. Click Next to proceed.
 english.FinishedHeading=YueLink Installation Complete
 english.FinishedLabel=YueLink has been successfully installed on your computer. Click Finish to launch it.
 english.RunDescription=Launch YueLink now
 english.UninstalledMsg=YueLink has been removed from your computer.
+english.InstallingVCRedist=Installing Visual C++ Redistributable (first-time only, ~20s)…
 
 [Files]
 Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+; VC++ 2015-2022 x64 runtime — CI downloads vc_redist.x64.exe next to this .iss
+; from aka.ms/vs/17/release/vc_redist.x64.exe. Check gates both packaging and run.
+Source: "vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Check: VCRedistNeedsInstall
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -111,11 +116,18 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startupicon"; Description: "开机自动启动 YueLink"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 ; ── Post-install runs ──────────────────────────────────────────────────────
-; 1. Auto-allow yuelink.exe through Windows Firewall (in + out, all profiles)
+; 1. Silently install VC++ 2015-2022 Redistributable if missing. Flutter's
+;    Windows embedder links MSVC /MD, so VCRUNTIME140*.dll must be present.
+;    Check gate skips this on machines that already have it.
+; 2. Auto-allow yuelink.exe through Windows Firewall (in + out, all profiles)
 ;    so the user doesn't see "Windows Defender wants to block" on first launch.
-;    Silent — runs hidden, no UAC prompt (we already have admin from perMachine).
-; 2. Launch the app from the Finish page (user can opt out via checkbox).
+; 3. Launch the app from the Finish page (user can opt out via checkbox).
 [Run]
+Filename: "{tmp}\vc_redist.x64.exe"; \
+  Parameters: "/install /quiet /norestart"; \
+  StatusMsg: "{cm:InstallingVCRedist}"; \
+  Check: VCRedistNeedsInstall; \
+  Flags: waituntilterminated
 Filename: "netsh"; \
   Parameters: "advfirewall firewall delete rule name=""YueLink"""; \
   Flags: runhidden
@@ -159,6 +171,32 @@ begin
   // Force-quit any running YueLink instance so the install can overwrite files.
   Exec('taskkill', '/F /IM yuelink.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := True;
+end;
+
+// Install VC++ Redist when HKLM\...\VC\Runtimes\x64 is missing or Bld < 30000
+// (14.30). Flutter's VS2022-built binaries need >= 14.32; older upgrades in-place.
+function VCRedistNeedsInstall: Boolean;
+var
+  Installed, Bld: Cardinal;
+begin
+  if not RegQueryDWordValue(HKEY_LOCAL_MACHINE,
+    'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', 'Installed', Installed) then
+  begin
+    Result := True;
+    Exit;
+  end;
+  if Installed <> 1 then
+  begin
+    Result := True;
+    Exit;
+  end;
+  if not RegQueryDWordValue(HKEY_LOCAL_MACHINE,
+    'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', 'Bld', Bld) then
+  begin
+    Result := True;
+    Exit;
+  end;
+  Result := Bld < 30000;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

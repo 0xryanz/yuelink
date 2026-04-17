@@ -278,10 +278,13 @@ class CarrierNotifier extends Notifier<CarrierState> {
     final api = ref.read(yueOpsApiProvider);
     try {
       final config = await api.getConfig();
+      // Guard BEFORE touching state — Notifier.state getter throws on a
+      // disposed notifier, so the previous `if (_disposed) return` that
+      // sat between state reads and writes was already too late.
+      if (_disposed) return false;
       final oldDomain = state.sniDomain;
       final newDomain = config.sniDomain;
 
-      if (_disposed) return false;
       state = state.copyWith(
         sniDomain: newDomain,
         sniStatus: config.sniStatus,

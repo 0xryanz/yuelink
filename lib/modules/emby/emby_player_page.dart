@@ -256,7 +256,12 @@ class _EmbyPlayerPageState extends State<EmbyPlayerPage> with WidgetsBindingObse
       }
     });
     // Report progress every 10 s.
+    // `mounted` guard: `_progressTimer.cancel()` runs in dispose() before
+    // `_player.dispose()`, but a tick already scheduled on the event loop
+    // can still fire after the State is gone. `_reportProgress()` touches
+    // `_player.state.playing`, which throws on a disposed player.
     _progressTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!mounted) return;
       if (_playbackStarted) _reportProgress();
     });
   }

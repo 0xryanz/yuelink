@@ -40,11 +40,29 @@ class XBoardHttpClient {
   /// Build an [http.Client] backed by [dart:io]'s [HttpClient]. Ensures
   /// SNI is always sent (required by CloudFront), explicit timeouts, and
   /// works on all Flutter platforms.
+  ///
+  /// ⚠ Bypasses the system proxy via explicit `findProxy = DIRECT`.
+  ///
+  /// Why: YueLink's own TUN / system-proxy mode sets the OS proxy to
+  /// `127.0.0.1:mixedPort`, which means Dart's HttpClient (that respects
+  /// the system proxy by default) would route XBoard API calls THROUGH our
+  /// own mihomo. When a subscription's nodes are stale after an app
+  /// update, the VPN connects but traffic blackholes — and so does every
+  /// subsequent `getSubscribeData` / `userInfo` call, because they're now
+  /// dependent on the very VPN they're trying to refresh. Users reported
+  /// having to open a second VPN app first "until the username loads" to
+  /// break the loop. Direct CloudFront/origin gets us out of this.
+  ///
+  /// Using separate statements instead of cascade (`..findProxy = ...`)
+  /// because Dart's arrow-function + cascade parser has a known bug
+  /// documented in CLAUDE.md — mis-typing the assignment on some Dart
+  /// versions.
   static http.Client buildClient() {
     if (testClientFactory != null) return testClientFactory!();
-    final inner = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 20)
-      ..idleTimeout = const Duration(seconds: 30);
+    final inner = HttpClient();
+    inner.findProxy = (uri) => 'DIRECT';
+    inner.connectionTimeout = const Duration(seconds: 20);
+    inner.idleTimeout = const Duration(seconds: 30);
     return IOClient(inner);
   }
 

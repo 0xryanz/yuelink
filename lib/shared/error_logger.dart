@@ -161,7 +161,7 @@ class ErrorLogger {
     final typeName = _typeFromError(typeHint);
     final isNetwork = _isNetworkError(typeName);
     Telemetry.event(
-      isNetwork ? 'network_error' : TelemetryEvents.crash,
+      isNetwork ? TelemetryEvents.networkError : TelemetryEvents.crash,
       priority: !isNetwork,
       props: {
         'src': source ?? 'unknown',

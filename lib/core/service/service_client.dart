@@ -167,7 +167,14 @@ class ServiceClient {
     }
     final port = await SettingsService.getServicePort() ??
         AppConstants.serviceListenPort;
+    // Bypass system proxy for the same reason XBoardApi.buildClient does:
+    // YueLink may set its OWN system proxy to 127.0.0.1:mixedPort, and
+    // default Dart HttpClient behaviour is to respect system proxy
+    // settings. Even 127.0.0.1 isn't guaranteed to be in the bypass list
+    // on every OS / user config (Windows ProxyOverride is user-editable).
+    // `DIRECT` makes this transport immune to whatever mihomo state is.
     final client = HttpClient();
+    client.findProxy = (uri) => 'DIRECT';
 
     try {
       final request = await client

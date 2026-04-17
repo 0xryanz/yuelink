@@ -64,6 +64,7 @@ class TelemetryEvents {
 
   // Errors
   static const crash = 'crash';
+  static const networkError = 'network_error';
 }
 
 /// Anonymous, opt-in telemetry for understanding feature usage.

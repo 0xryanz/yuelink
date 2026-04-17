@@ -57,7 +57,10 @@ final connectionModeProvider = StateProvider<String>((ref) => 'systemProxy');
 final desktopTunStackProvider = StateProvider<String>((ref) => 'mixed');
 
 /// Log level: "info" | "debug" | "warning" | "error" | "silent"
-final logLevelProvider = StateProvider<String>((ref) => 'info');
+/// Default is `error` to match SettingsService.getLogLevel(). mihomo logs
+/// every L4 connection at warn, so anything below `error` produces tens of
+/// thousands of lines per session and buries real failures.
+final logLevelProvider = StateProvider<String>((ref) => 'error');
 
 /// Whether to auto-set system proxy on connect (desktop only)
 final systemProxyOnConnectProvider = StateProvider<bool>((ref) => true);

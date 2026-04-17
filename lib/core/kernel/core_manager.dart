@@ -47,6 +47,12 @@ class CoreManager {
     _instance?._serviceModeActive = false;
     _instance?._pendingOperation = null;
     _instance?.lastReport = null;
+    // Clear cached secret + API clients so tests can observe a clean
+    // cold-start resolution path (persisted-read → generate → persist).
+    _instance?._apiSecret = null;
+    _instance?._api = null;
+    _instance?._stream = null;
+    _instance?._clashCore = null;
   }
 
   late final CoreController _core;

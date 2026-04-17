@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:yuelink/constants.dart';
 import 'package:yuelink/core/kernel/core_manager.dart';
+import 'package:yuelink/core/storage/settings_service.dart';
 
 /// CoreManager tests run in **mock mode** (no native library / FFI).
 ///
@@ -266,6 +267,77 @@ rules:
       cm.configure(mode: CoreMode.mock);
       expect(cm.mode, CoreMode.mock);
       expect(cm.isMockMode, true);
+    });
+  });
+
+  // ════════════════════════════════════════════════════════════════════
+  // Clash API secret persistence (v1.0.18)
+  //
+  // Regressions guarded:
+  //   1. Cold start without a persisted secret must generate one and
+  //      write it back to SettingsService — without this yacd /
+  //      metacubexd get a fresh secret on every launch.
+  //   2. Cold start with a persisted secret must reuse it verbatim —
+  //      regenerating would break external tooling that remembers the
+  //      value in browser localStorage.
+  //   3. `configure(secret: null)` must not wipe the cached secret —
+  //      previously an unconditional assignment did, breaking the API
+  //      client for the rest of the session.
+  // ════════════════════════════════════════════════════════════════════
+
+  group('clash api secret persistence', () {
+    // SettingsService uses a coalesced flush; wrap set + flush so the
+    // next start() observes the value we just wrote.
+    Future<void> writePersistedSecret(String s) async {
+      await SettingsService.setClashApiSecret(s);
+      await SettingsService.flush();
+    }
+
+    test('cold start without persisted secret generates and persists one',
+        () async {
+      // Simulate "no persisted secret" — resetForTesting clears the
+      // in-memory cache, and empty string on disk forces the null-or-empty
+      // branch inside start().
+      await writePersistedSecret('');
+      CoreManager.resetForTesting();
+      final fresh = CoreManager.instance;
+
+      await fresh.start(_minimalConfig());
+
+      final runtime = fresh.api.secret;
+      expect(runtime, isNotNull);
+      expect(runtime!.isNotEmpty, isTrue,
+          reason: 'start() must have generated a secret');
+
+      final onDisk = await SettingsService.getClashApiSecret();
+      expect(onDisk, equals(runtime),
+          reason: 'generated secret must be persisted for next launch');
+    });
+
+    test('cold start with persisted secret reuses it verbatim', () async {
+      const stable = 'persisted-secret-abc-def-123';
+      await writePersistedSecret(stable);
+      CoreManager.resetForTesting();
+      final fresh = CoreManager.instance;
+
+      await fresh.start(_minimalConfig());
+
+      expect(fresh.api.secret, equals(stable),
+          reason: 'start() must reuse persisted secret, not regenerate');
+    });
+
+    test('configure(secret: null) does not wipe cached secret', () async {
+      await cm.start(_minimalConfig());
+      final cached = cm.api.secret;
+      expect(cached, isNotNull);
+      expect(cached!.isNotEmpty, isTrue);
+
+      // Previous bug: this line unconditionally assigned `_apiSecret = secret`
+      // which wiped the cached value when called with null. Fix: no-op on null.
+      cm.configure(secret: null);
+
+      expect(cm.api.secret, equals(cached),
+          reason: 'configure(null) must leave cached secret untouched');
     });
   });
 }

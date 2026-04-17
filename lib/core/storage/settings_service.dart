@@ -216,18 +216,6 @@ class SettingsService {
     await set('clashApiSecret', secret);
   }
 
-  // ── Background delay re-test interval ───────────────────────────────────
-  // Minutes between automatic group-delay re-tests while the Nodes tab
-  // is foreground + core is running. 0 = disabled. Supported: 0, 5, 10,
-  // 15, 30 (UI picker lives in Settings → Nodes).
-  static Future<int> getAutoDelayTestInterval() async {
-    return (await get<int>('autoDelayTestInterval')) ?? 0;
-  }
-
-  static Future<void> setAutoDelayTestInterval(int minutes) async {
-    await set('autoDelayTestInterval', minutes);
-  }
-
   // ── Theme ────────────────────────────────────────────────────────────────
 
   static Future<ThemeMode> getThemeMode() async {

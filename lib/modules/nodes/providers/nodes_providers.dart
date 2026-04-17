@@ -328,45 +328,52 @@ class DelayTestActions {
   ProxyRepository get _repo => ref.read(proxyRepositoryProvider);
 
   /// Test delay for a single proxy node.
+  ///
+  /// The unmark step is wrapped in `try/finally` so the node doesn't stay
+  /// stuck showing "testing…" in the UI when the await below throws
+  /// (network error, core restart, timeout). Previously the unmark was
+  /// unreachable on the error path and the user had to refresh the page
+  /// to clear the stale state.
   Future<int> testDelay(String proxyName) async {
     final testing = Set<String>.from(ref.read(delayTestingProvider));
     testing.add(proxyName);
     ref.read(delayTestingProvider.notifier).state = testing;
 
-    final manager = CoreManager.instance;
-    final testUrl = ref.read(testUrlProvider);
-    int delay;
+    try {
+      final manager = CoreManager.instance;
+      final testUrl = ref.read(testUrlProvider);
+      int delay;
 
-    // Accumulate results in a single map — write state once at the end.
-    final results = Map<String, int>.from(ref.read(delayResultsProvider));
+      // Accumulate results in a single map — write state once at the end.
+      final results = Map<String, int>.from(ref.read(delayResultsProvider));
 
-    if (manager.isMockMode) {
-      delay = await manager.core.testDelay(proxyName);
-    } else {
-      delay = await _repo.testDelayWithBatch(
-        proxyName,
-        url: testUrl,
-        onResult: (name, d) {
-          results[name] = d;
-          ref.read(delayResultsProvider.notifier).state =
-              Map<String, int>.from(results);
-        },
-      );
+      if (manager.isMockMode) {
+        delay = await manager.core.testDelay(proxyName);
+      } else {
+        delay = await _repo.testDelayWithBatch(
+          proxyName,
+          url: testUrl,
+          onResult: (name, d) {
+            results[name] = d;
+            ref.read(delayResultsProvider.notifier).state =
+                Map<String, int>.from(results);
+          },
+        );
+      }
+
+      results[proxyName] = delay;
+      ref.read(delayResultsProvider.notifier).state = results;
+      SettingsService.setDelayResults(results);
+
+      // Opt-in telemetry — anonymous fingerprint + latency only.
+      NodeTelemetry.recordUrlTestByName(name: proxyName, delayMs: delay);
+
+      return delay;
+    } finally {
+      final doneSet = Set<String>.from(ref.read(delayTestingProvider));
+      doneSet.remove(proxyName);
+      ref.read(delayTestingProvider.notifier).state = doneSet;
     }
-
-    results[proxyName] = delay;
-    ref.read(delayResultsProvider.notifier).state = results;
-    SettingsService.setDelayResults(results);
-
-    // Opt-in telemetry — anonymous fingerprint + latency only.
-    NodeTelemetry.recordUrlTestByName(name: proxyName, delayMs: delay);
-
-    // Unmark testing
-    final doneSet = Set<String>.from(ref.read(delayTestingProvider));
-    doneSet.remove(proxyName);
-    ref.read(delayTestingProvider.notifier).state = doneSet;
-
-    return delay;
   }
 
   /// Test all proxies in a group.

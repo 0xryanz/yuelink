@@ -23,13 +23,17 @@ import 'errors.dart';
 /// `xboard/` module so the endpoint methods in `api.dart` are pure
 /// "compose path → call _get → wrap result", with no transport noise.
 class XBoardHttpClient {
-  XBoardHttpClient({required this.baseUrl, this.fallbackUrl});
+  XBoardHttpClient({required this.baseUrl, List<String>? fallbackUrls})
+      : fallbackUrls = fallbackUrls ?? const [];
 
   final String baseUrl;
 
-  /// Direct origin URL used when CloudFront (baseUrl) returns 502/503.
-  /// Set via AuthTokenService / provider — typically `http://origin:port`.
-  final String? fallbackUrl;
+  /// Ordered fallback hosts tried one-by-one (single-attempt, no retry
+  /// per URL) after baseUrl exhausts its retries with a "host-unreachable"
+  /// class error (502/503/504 / timeout / socket / TLS handshake).
+  /// Non-transient errors (401/403/404/business-level) never trigger
+  /// fallback — they'd fail the same way on every host.
+  final List<String> fallbackUrls;
 
   static const _kTimeout = Duration(seconds: 20);
 
@@ -87,8 +91,11 @@ class XBoardHttpClient {
   /// Execute [fn] with automatic retry on transient errors.
   /// Non-retryable errors (auth, business logic) propagate immediately.
   ///
-  /// When [fallbackUrl] is set, a CloudFront 502/503 after all retries
-  /// triggers one final attempt against the direct origin.
+  /// Host fallback: after baseUrl exhausts its retries with a transport-
+  /// level error (502/503/504 / timeout / socket / TLS handshake), each
+  /// URL in [fallbackUrls] is tried once in order. Single-attempt per
+  /// fallback — already 3 × retry on primary; adding more retries per
+  /// fallback would push the worst-case latency past user patience.
   Future<T> _withRetry<T>(Future<T> Function(String url) fn) async {
     Object? lastError;
     for (var attempt = 0; attempt < _maxRetries; attempt++) {
@@ -104,20 +111,38 @@ class XBoardHttpClient {
       }
     }
 
-    if (fallbackUrl != null &&
-        lastError is XBoardApiException &&
-        (lastError.statusCode == 502 || lastError.statusCode == 503)) {
-      debugPrint('[XBoardApi] CDN down, trying direct origin: $fallbackUrl');
-      try {
-        return await fn(fallbackUrl!);
-      } catch (e) {
-        debugPrint('[XBoardApi] Direct origin also failed: $e');
-        rethrow;
+    if (_isHostUnreachable(lastError) && fallbackUrls.isNotEmpty) {
+      for (final url in fallbackUrls) {
+        debugPrint('[XBoardApi] Primary unreachable, trying fallback: $url');
+        try {
+          return await fn(url);
+        } catch (e) {
+          lastError = e;
+          if (!_isHostUnreachable(e)) {
+            // Got a non-transport error (4xx/business) — same answer on
+            // any host, don't bother with more fallbacks.
+            break;
+          }
+        }
       }
     }
 
-    debugPrint('[XBoardApi] All $_maxRetries retries exhausted: $lastError');
+    debugPrint('[XBoardApi] All hosts exhausted: $lastError');
     throw lastError!;
+  }
+
+  /// "This host isn't reachable on this network" — the canonical trigger
+  /// for falling back to another origin. Anything else (4xx, business
+  /// `status:fail`) would produce identical results on every host.
+  static bool _isHostUnreachable(Object? e) {
+    if (e is TimeoutException) return true;
+    if (e is SocketException) return true;
+    if (e is HandshakeException) return true;
+    if (e is XBoardApiException) {
+      final c = e.statusCode;
+      return c == 502 || c == 503 || c == 504;
+    }
+    return false;
   }
 
   // ── Headers + business-level error check ────────────────────────────────

@@ -25,13 +25,14 @@ import 'models.dart';
 /// The endpoint methods are now ~3 lines each ("compose path → call client →
 /// wrap result") and the file fits comfortably under 350 lines.
 class XBoardApi {
-  XBoardApi({required this.baseUrl, this.fallbackUrl})
-      : _http = XBoardHttpClient(baseUrl: baseUrl, fallbackUrl: fallbackUrl);
+  XBoardApi({required this.baseUrl, this.fallbackUrls = const <String>[]})
+      : _http =
+            XBoardHttpClient(baseUrl: baseUrl, fallbackUrls: fallbackUrls);
 
   final String baseUrl;
 
-  /// Direct origin URL used when CloudFront (baseUrl) returns 502/503.
-  final String? fallbackUrl;
+  /// Ordered fallback hosts — see [XBoardHttpClient.fallbackUrls].
+  final List<String> fallbackUrls;
 
   final XBoardHttpClient _http;
 

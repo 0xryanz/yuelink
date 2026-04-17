@@ -70,19 +70,31 @@ class AuthState {
 
 /// Default XBoard panel URL — override via AuthTokenService.saveApiHost().
 /// Uses yue.yuebao.website (direct to 23.80.91.14) as primary — most reliable
-/// for API calls from China. CloudFront (yuetong.app) is better for web browsers
-/// but less stable for native app API calls in some Chinese ISPs.
+/// for API calls from China. CloudFront is fallback-only: better for web
+/// browsers but less stable for native app API calls on some Chinese ISPs.
 const _kDefaultApiHost = 'https://yue.yuebao.website';
 
-/// CloudFront CDN fallback — used when the direct origin is unreachable.
-const String? _kDirectOriginUrl = 'https://yuetong.app';
+/// Ordered fallback hosts tried when the primary returns a
+/// transport-level error (502/503/504 / timeout / socket / TLS).
+///
+/// - `d7ccm19ki90mg.cloudfront.net` — CloudFront native domain; DNS is
+///   owned by AWS and never depends on our registrar / alias chain, so
+///   it stays resolvable even when yuetong.app's CNAME or DNS host
+///   flakes. Tried first.
+/// - `yuetong.app` — CloudFront alias; kept as a last resort because
+///   edges may still have cached responses even if the alias's DNS
+///   misbehaves.
+const _kFallbackHosts = <String>[
+  'https://d7ccm19ki90mg.cloudfront.net',
+  'https://yuetong.app',
+];
 
 /// Tracks the current API host — updated on login and restored from storage.
 final _apiHostProvider = StateProvider<String>((ref) => _kDefaultApiHost);
 
 final xboardApiProvider = Provider<XBoardApi>((ref) {
   final host = ref.watch(_apiHostProvider);
-  return XBoardApi(baseUrl: host, fallbackUrl: _kDirectOriginUrl);
+  return XBoardApi(baseUrl: host, fallbackUrls: _kFallbackHosts);
 });
 
 // ------------------------------------------------------------------
@@ -157,7 +169,7 @@ class AuthNotifier extends Notifier<AuthState> {
     try {
       // Resolve API host
       final host = apiHost ?? _kDefaultApiHost;
-      final api = XBoardApi(baseUrl: host, fallbackUrl: _kDirectOriginUrl);
+      final api = XBoardApi(baseUrl: host, fallbackUrls: _kFallbackHosts);
 
       // 1. Login
       final loginResp = await api.login(email, password);
@@ -320,7 +332,7 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<void> _refreshUserInfo(String token) async {
     try {
       final host = await _authService.getApiHost() ?? _kDefaultApiHost;
-      final api = XBoardApi(baseUrl: host, fallbackUrl: _kDirectOriginUrl);
+      final api = XBoardApi(baseUrl: host, fallbackUrls: _kFallbackHosts);
       final sub = await api.getSubscribeData(token);
       await _authService.cacheProfile(sub.profile);
       // Also update subscribe URL in case it changed
@@ -342,7 +354,7 @@ class AuthNotifier extends Notifier<AuthState> {
     if (token == null) return;
     try {
       final host = await _authService.getApiHost() ?? _kDefaultApiHost;
-      final api = XBoardApi(baseUrl: host, fallbackUrl: _kDirectOriginUrl);
+      final api = XBoardApi(baseUrl: host, fallbackUrls: _kFallbackHosts);
       // Always fetch fresh from server — also updates profile data
       final sub = await api.getSubscribeData(token);
       await _authService.cacheProfile(sub.profile);

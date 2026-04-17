@@ -77,11 +77,19 @@ class ServiceManager {
           File(_linuxInstalledMihomoPath).existsSync();
     }
 
+    // Windows: SCM must have the service AND the Dart side must have the
+    // auth token. A stale SCM entry without a token (e.g. uninstall script
+    // failed mid-way but the finally block still ran setServiceAuthToken
+    // null) used to surface as startService throwing "auth token is
+    // missing" 4ms into the startup pipeline. Treating that state as "not
+    // installed" lets the UI offer a fresh install that recreates both.
     final result = await Process.run(
       'sc',
       ['query', AppConstants.desktopServiceName],
     );
-    return result.exitCode == 0;
+    if (result.exitCode != 0) return false;
+    final token = await SettingsService.getServiceAuthToken();
+    return token != null && token.isNotEmpty;
   }
 
   static Future<void> install() async {
@@ -507,54 +515,79 @@ Start-Service -Name $serviceName
   }
 
   static Future<void> _runWindowsElevated(String scriptPath) async {
-    // `Start-Process -Verb RunAs` spawns a fresh elevated PowerShell whose
-    // stdout/stderr are NOT piped back to the parent. Without redirection,
-    // every install failure silently looked like success (the "service
-    // installed but nothing works" bug reported by users). We redirect both
-    // streams to temp files and read them back after the elevated process
-    // exits, then mirror them into event.log for diagnosis.
-    final outFile = '${Directory.systemTemp.path}\\yuelink_elev_out_${DateTime.now().millisecondsSinceEpoch}.log';
-    final errFile = '${Directory.systemTemp.path}\\yuelink_elev_err_${DateTime.now().millisecondsSinceEpoch}.log';
+    // `Start-Process -Verb RunAs` cannot be combined with
+    // `-RedirectStandardOutput` / `-RedirectStandardError` — PowerShell
+    // rejects that parameter set, which is why an earlier attempt at
+    // capturing elevated output ended up with every install exiting 1
+    // with empty stdout/stderr (the "auth token is missing" cascade users
+    // reported). Instead we make the elevated child record itself via
+    // Start-Transcript into a well-known path and read it back here.
+    final transcriptPath =
+        '${Directory.systemTemp.path}\\yuelink_elev_${DateTime.now().millisecondsSinceEpoch}.log';
+
     final launcher = r'''
 $ErrorActionPreference = "Stop"
 $scriptPath = __SCRIPT__
-$outFile = __OUT__
-$errFile = __ERR__
-$process = Start-Process PowerShell -Verb RunAs -Wait -PassThru `
-  -RedirectStandardOutput $outFile `
-  -RedirectStandardError $errFile `
-  -ArgumentList @(
+$transcriptPath = __TRANSCRIPT__
+
+$inner = @"
+try {
+  Start-Transcript -Path `"$transcriptPath`" -Force | Out-Null
+  & `"$scriptPath`"
+  `$code = 0
+} catch {
+  Write-Error `$_.Exception.Message
+  `$code = 1
+} finally {
+  try { Stop-Transcript | Out-Null } catch {}
+}
+exit `$code
+"@
+
+try {
+  $process = Start-Process PowerShell -Verb RunAs -Wait -PassThru -ArgumentList @(
     '-NoProfile',
     '-ExecutionPolicy', 'Bypass',
-    '-File', $scriptPath
+    '-Command', $inner
   )
-exit $process.ExitCode
+  exit $process.ExitCode
+} catch {
+  Write-Error $_.Exception.Message
+  exit 1
+}
 '''
         .replaceAll('__SCRIPT__', _powershellQuoted(scriptPath))
-        .replaceAll('__OUT__', _powershellQuoted(outFile))
-        .replaceAll('__ERR__', _powershellQuoted(errFile));
+        .replaceAll('__TRANSCRIPT__', _powershellQuoted(transcriptPath));
 
     final result = await Process.run(
       'powershell',
       ['-NoProfile', '-Command', launcher],
     );
 
-    // Read back what the elevated child actually printed, then clean up.
-    final childOut = _readAndDelete(outFile);
-    final childErr = _readAndDelete(errFile);
+    // Read back transcript then delete it. Both launcher's own
+    // stdout/stderr AND the elevated child's transcript go into event.log
+    // for diagnosis — the launcher captures UAC-denial / parameter
+    // mistakes, the transcript captures what happened inside the elevated
+    // session.
+    final transcript = _readAndDelete(transcriptPath);
+    final launcherOut = '${result.stdout}';
+    final launcherErr = '${result.stderr}';
     EventLog.write('[Service] elevated exit=${result.exitCode} '
-        'stdout=${_truncateForLog(childOut)} '
-        'stderr=${_truncateForLog(childErr)}');
+        'launcher_err=${_truncateForLog(launcherErr)} '
+        'launcher_out=${_truncateForLog(launcherOut)} '
+        'transcript=${_truncateForLog(transcript)}');
 
     if (result.exitCode != 0) {
+      final detail = launcherErr.trim().isNotEmpty
+          ? launcherErr.trim()
+          : (transcript.trim().isNotEmpty
+              ? transcript.trim()
+              : 'Elevated PowerShell exited ${result.exitCode} '
+                  '(no transcript — UAC may have been cancelled)');
       throw ProcessException(
         'powershell',
         ['-NoProfile', '-Command', launcher],
-        childErr.trim().isNotEmpty
-            ? childErr.trim()
-            : (childOut.trim().isNotEmpty
-                ? childOut.trim()
-                : 'Elevated PowerShell exited ${result.exitCode} without output'),
+        detail,
         result.exitCode,
       );
     }

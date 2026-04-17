@@ -103,10 +103,17 @@ class TrafficHistory {
   /// Returns the last [seconds] raw samples in chronological order (oldest first).
   ///
   /// Writes directly in forward order to avoid reversing the list.
+  ///
+  /// Defensive: `seconds.clamp(1, c)` throws "Invalid argument(s): 1" when
+  /// `c < 1`. Historical crash reports (~17 entries per user) hit this path
+  /// with what looks like a `c == 0` slip past the early return — maybe a
+  /// stale cached reference or a race between `add()` and `_slice()` during
+  /// hot-reload / isolate restart. Avoid `clamp` entirely — compute `n`
+  /// directly so a bad `seconds` can never raise.
   List<double> _slice(List<double> buf, int seconds) {
     final c = count;
-    if (c == 0) return const [];
-    final n = seconds.clamp(1, c);
+    if (c <= 0 || seconds <= 0) return const [];
+    final n = seconds > c ? c : seconds;
     final result = List<double>.filled(n, 0.0);
     // Start index: the oldest sample we want
     final startOffset = _index - n;

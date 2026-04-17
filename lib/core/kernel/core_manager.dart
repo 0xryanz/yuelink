@@ -362,11 +362,16 @@ class CoreManager {
       });
 
       // ── Step 7: waitApi ────────────────────────────────────────────
+      // Progressive backoff: fast polling (50ms) for the first second to
+      // catch the common ~200-500ms startup, then slower (100-200ms) to
+      // avoid burning CPU on laggy devices / large subscriptions where the
+      // API can take 5-10s to bind. Total ceiling 14s — covers the 2-user
+      // startup_fail cases observed at the original 5s cap.
       await _step(steps, 'waitApi', StartupError.apiTimeout, () async {
         if (isMockMode) return 'skip (mock)';
-        for (var i = 1; i <= 50; i++) {
+        for (var i = 1; i <= 100; i++) {
           // Fast-fail: if Go core died (panic / crash after StartCore returned),
-          // stop polling immediately instead of waiting the full 5s.
+          // stop polling immediately instead of waiting the full timeout.
           if (!_core.isRunning) {
             throw Exception(
                 'Core is no longer running at attempt $i — check core.log for crash/parse details');
@@ -374,9 +379,10 @@ class CoreManager {
           if (await api.isAvailable()) {
             return 'ready after $i attempts';
           }
-          await Future.delayed(const Duration(milliseconds: 100));
+          final waitMs = i <= 20 ? 50 : (i <= 50 ? 100 : 200);
+          await Future.delayed(Duration(milliseconds: waitMs));
         }
-        // All 50 attempts exhausted. Gather diagnostics before throwing.
+        // All 100 attempts exhausted (~14s). Gather diagnostics before throwing.
         final goRunning = _core.isRunning;
         String portState;
         try {
@@ -397,7 +403,7 @@ class CoreManager {
         }
         _running = false;
         _core.stop();
-        throw Exception('API not available after 50 attempts (5s): '
+        throw Exception('API not available after 100 attempts (~14s): '
             'isRunning=$goRunning, $portState');
       });
 
@@ -540,14 +546,17 @@ class CoreManager {
       // Its REST API on 127.0.0.1:apiPort may take a moment to bind
       // after the VPN reports .connected. Poll until reachable.
       await _step(steps, 'waitApi', StartupError.apiTimeout, () async {
-        for (var i = 1; i <= 50; i++) {
+        // Same progressive backoff as the Android/desktop path — caps at
+        // ~14s to accommodate slow extension starts on older iPhones.
+        for (var i = 1; i <= 100; i++) {
           if (await api.isAvailable()) {
             return 'ready after $i attempts';
           }
-          await Future.delayed(const Duration(milliseconds: 100));
+          final waitMs = i <= 20 ? 50 : (i <= 50 ? 100 : 200);
+          await Future.delayed(Duration(milliseconds: waitMs));
         }
         _running = false;
-        throw Exception('API not available after 50 attempts (5s)');
+        throw Exception('API not available after 100 attempts (~14s)');
       });
 
       await _persistPorts();

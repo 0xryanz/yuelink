@@ -68,17 +68,17 @@ class LogExportService {
         final downloads = await getDownloadsDirectory();
         initialDir = downloads?.path;
       } catch (_) {}
+      // Desktop `file_picker` only returns the chosen path — passing `bytes`
+      // throws "Bytes are not supported on macOS/Windows/Linux". We always
+      // write the file ourselves from the returned path.
       final path = await FilePicker.platform.saveFile(
         fileName: fileName,
         dialogTitle: dialogTitle,
         initialDirectory: initialDir,
-        bytes: bytes,
       );
       if (path == null) return LogExportResult.userCancelled();
       final file = File(path);
-      if (!file.existsSync() || file.lengthSync() == 0) {
-        await file.writeAsBytes(bytes, flush: true);
-      }
+      await file.writeAsBytes(bytes, flush: true);
       return LogExportResult.savedAt(path);
     } catch (e) {
       return LogExportResult.failed(e.toString());

@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 
 import '../../constants.dart';
+import '../../shared/event_log.dart';
 import '../storage/settings_service.dart';
 import 'service_client.dart';
 import 'service_models.dart';
@@ -15,9 +17,20 @@ class ServiceManager {
   static bool get isSupported =>
       Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
-  /// Expected service version — must match the Go binary's Version variable.
-  /// Updated together with the Go build (set via -ldflags).
-  static const expectedVersion = '1.0.14';
+  /// Expected service protocol version — loaded from the same file the Go
+  /// helper embeds (`service/protocol_version.txt`). This is the IPC
+  /// protocol revision, NOT the app version: bump it only on breaking
+  /// changes to the endpoint contract so app upgrades don't force a
+  /// service reinstall on every release.
+  ///
+  /// Cached after first read — the asset never changes at runtime.
+  static String? _cachedExpectedVersion;
+  static Future<String> expectedVersion() async {
+    final cached = _cachedExpectedVersion;
+    if (cached != null) return cached;
+    final raw = await rootBundle.loadString('service/protocol_version.txt');
+    return _cachedExpectedVersion = raw.trim();
+  }
 
   static Future<DesktopServiceInfo> getInfo() async {
     if (!isSupported) {
@@ -33,8 +46,9 @@ class ServiceManager {
       final status = await ServiceClient.status();
       // Version check: detect stale service binary after app update
       final remoteVersion = await ServiceClient.version();
+      final expected = await expectedVersion();
       final versionMismatch =
-          remoteVersion != null && remoteVersion != expectedVersion;
+          remoteVersion != null && remoteVersion != expected;
       return status.copyWith(
         serviceVersion: remoteVersion,
         needsReinstall: versionMismatch,
@@ -354,9 +368,19 @@ Start-Service -Name $serviceName
     );
 
     if (helperPath.isEmpty || mihomoPath.isEmpty) {
-      throw const FileSystemException(
-        'Desktop service binaries are missing. '
-        'Build and bundle yuelink-service-helper and yuelink-mihomo first.',
+      // Log every candidate path we checked so next-time diagnosis doesn't
+      // rely on the user guessing. Most common failures: Intel Mac DMG
+      // shipped without amd64 build, or `flutter build macos` skipped the
+      // "Bundle native libs" Xcode phase.
+      EventLog.write('[Service] binaries missing. helper_tried=${helperCandidates.join("|")} '
+          'mihomo_tried=${mihomoCandidates.join("|")}');
+      final helperHint = helperPath.isEmpty ? 'yuelink-service-helper' : null;
+      final mihomoHint = mihomoPath.isEmpty ? 'yuelink-mihomo' : null;
+      final missing = [helperHint, mihomoHint].whereType<String>().join(' + ');
+      throw FileSystemException(
+        'Desktop service binary missing: $missing. '
+        'This build was not packaged with desktop-service support — '
+        'check Settings → Connection Repair → Export Diagnostic Logs.',
       );
     }
 
@@ -367,15 +391,90 @@ Start-Service -Name $serviceName
   }
 
   static Future<void> _waitUntilReachable() async {
+    // 20 × 500ms = 10s. Helper binaries typically ping within ~1s; the long
+    // cap covers slow Windows Service startup (driver init, AV scan) and
+    // macOS launchd kickstart lag on first install.
     for (var i = 0; i < 20; i++) {
       if (await ServiceClient.ping()) return;
       await Future.delayed(const Duration(milliseconds: 500));
     }
-    throw const ProcessException(
+    // Ping never succeeded. Gather whatever we can so the user (and future
+    // us) can tell "service failed to start" apart from "service started
+    // but IPC auth / socket path wrong".
+    final diag = await _collectUnreachableDiagnostics();
+    EventLog.write('[Service] _waitUntilReachable timed out: $diag');
+    throw ProcessException(
       'service',
-      [],
-      'Desktop service installed but helper did not become reachable in time',
+      const [],
+      'Service installed but IPC never came up (10s). $diag',
     );
+  }
+
+  /// Best-effort inspection of why the service isn't answering — runs after
+  /// 10s of ping failures, just before we throw. Each probe has its own
+  /// timeout so a stuck helper can't block the error path.
+  static Future<String> _collectUnreachableDiagnostics() async {
+    final parts = <String>[];
+
+    // Is the service/daemon even registered?
+    if (Platform.isWindows) {
+      try {
+        final r = await Process.run(
+          'sc', ['query', AppConstants.desktopServiceName],
+        ).timeout(const Duration(seconds: 2));
+        final line = r.stdout.toString().split('\n')
+            .firstWhere((l) => l.toUpperCase().contains('STATE'),
+                orElse: () => '<no STATE line>');
+        parts.add('sc=${line.trim()}');
+      } catch (e) {
+        parts.add('sc_probe_err=$e');
+      }
+    } else if (Platform.isMacOS) {
+      try {
+        final r = await Process.run('launchctl', [
+          'print', 'system/${AppConstants.desktopServiceLabel}',
+        ]).timeout(const Duration(seconds: 2));
+        final state = r.stdout.toString().split('\n')
+            .firstWhere((l) => l.contains('state ='),
+                orElse: () => '<no state line>');
+        parts.add('launchctl=${state.trim()}');
+      } catch (e) {
+        parts.add('launchctl_probe_err=$e');
+      }
+    } else if (Platform.isLinux) {
+      try {
+        final r = await Process.run('systemctl', [
+          'is-active', AppConstants.desktopServiceName,
+        ]).timeout(const Duration(seconds: 2));
+        parts.add('systemctl=${r.stdout.toString().trim()}');
+      } catch (e) {
+        parts.add('systemctl_probe_err=$e');
+      }
+    }
+
+    // Does the helper log file exist? If so, the tail tells us what
+    // happened at startup.
+    final logPath = Platform.isWindows
+        ? _windowsInstalledHelperLogPath
+        : Platform.isMacOS
+            ? _macInstalledHelperLogPath
+            : _linuxInstalledHelperLogPath;
+    try {
+      final logFile = File(logPath);
+      if (logFile.existsSync()) {
+        final content = await logFile.readAsString();
+        final tail = content.length > 300
+            ? content.substring(content.length - 300)
+            : content;
+        parts.add('helper_log_tail=${_truncateForLog(tail)}');
+      } else {
+        parts.add('helper_log=<missing>');
+      }
+    } catch (e) {
+      parts.add('helper_log_err=$e');
+    }
+
+    return parts.join(' | ');
   }
 
   static String _generateToken() {
@@ -392,6 +491,9 @@ Start-Service -Name $serviceName
     final command =
         'do shell script "${_appleScriptEscape('/bin/sh ${_shellQuote(scriptPath)}')}" with administrator privileges';
     final result = await Process.run('osascript', ['-e', command]);
+    EventLog.write('[Service] osascript exit=${result.exitCode} '
+        'stdout=${_truncateForLog('${result.stdout}')} '
+        'stderr=${_truncateForLog('${result.stderr}')}');
     if (result.exitCode != 0) {
       throw ProcessException(
         'osascript',
@@ -405,29 +507,54 @@ Start-Service -Name $serviceName
   }
 
   static Future<void> _runWindowsElevated(String scriptPath) async {
+    // `Start-Process -Verb RunAs` spawns a fresh elevated PowerShell whose
+    // stdout/stderr are NOT piped back to the parent. Without redirection,
+    // every install failure silently looked like success (the "service
+    // installed but nothing works" bug reported by users). We redirect both
+    // streams to temp files and read them back after the elevated process
+    // exits, then mirror them into event.log for diagnosis.
+    final outFile = '${Directory.systemTemp.path}\\yuelink_elev_out_${DateTime.now().millisecondsSinceEpoch}.log';
+    final errFile = '${Directory.systemTemp.path}\\yuelink_elev_err_${DateTime.now().millisecondsSinceEpoch}.log';
     final launcher = r'''
 $ErrorActionPreference = "Stop"
 $scriptPath = __SCRIPT__
-$process = Start-Process PowerShell -Verb RunAs -Wait -PassThru -ArgumentList @(
-  '-NoProfile',
-  '-ExecutionPolicy', 'Bypass',
-  '-File', $scriptPath
-)
+$outFile = __OUT__
+$errFile = __ERR__
+$process = Start-Process PowerShell -Verb RunAs -Wait -PassThru `
+  -RedirectStandardOutput $outFile `
+  -RedirectStandardError $errFile `
+  -ArgumentList @(
+    '-NoProfile',
+    '-ExecutionPolicy', 'Bypass',
+    '-File', $scriptPath
+  )
 exit $process.ExitCode
 '''
-        .replaceAll('__SCRIPT__', _powershellQuoted(scriptPath));
+        .replaceAll('__SCRIPT__', _powershellQuoted(scriptPath))
+        .replaceAll('__OUT__', _powershellQuoted(outFile))
+        .replaceAll('__ERR__', _powershellQuoted(errFile));
 
     final result = await Process.run(
       'powershell',
       ['-NoProfile', '-Command', launcher],
     );
+
+    // Read back what the elevated child actually printed, then clean up.
+    final childOut = _readAndDelete(outFile);
+    final childErr = _readAndDelete(errFile);
+    EventLog.write('[Service] elevated exit=${result.exitCode} '
+        'stdout=${_truncateForLog(childOut)} '
+        'stderr=${_truncateForLog(childErr)}');
+
     if (result.exitCode != 0) {
       throw ProcessException(
         'powershell',
         ['-NoProfile', '-Command', launcher],
-        '${result.stderr}'.trim().isEmpty
-            ? '${result.stdout}'.trim()
-            : '${result.stderr}'.trim(),
+        childErr.trim().isNotEmpty
+            ? childErr.trim()
+            : (childOut.trim().isNotEmpty
+                ? childOut.trim()
+                : 'Elevated PowerShell exited ${result.exitCode} without output'),
         result.exitCode,
       );
     }
@@ -727,12 +854,38 @@ rm -rf ${_shellQuote(_linuxServiceDir)}
 ''';
   }
 
+  /// Read a file's contents then delete it. Returns empty string on any
+  /// failure — callers treat "no output" as a diagnostic signal in itself.
+  static String _readAndDelete(String path) {
+    try {
+      final f = File(path);
+      if (!f.existsSync()) return '';
+      final content = f.readAsStringSync();
+      try { f.deleteSync(); } catch (_) {}
+      return content;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// Cap a potentially long subprocess output for event.log entries.
+  /// Full content is still visible via the elevated child's own log path
+  /// ($helperLogPath) once service is running.
+  static String _truncateForLog(String s) {
+    final one = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (one.isEmpty) return '<empty>';
+    return one.length > 200 ? '${one.substring(0, 200)}…' : one;
+  }
+
   static Future<void> _runLinuxElevated(String scriptPath) async {
     // Try pkexec first (graphical sudo), fallback to sudo
     for (final elevator in ['pkexec', 'sudo']) {
       try {
         final result =
             await Process.run(elevator, ['/bin/sh', scriptPath]);
+        EventLog.write('[Service] $elevator exit=${result.exitCode} '
+            'stdout=${_truncateForLog('${result.stdout}')} '
+            'stderr=${_truncateForLog('${result.stderr}')}');
         if (result.exitCode == 0) return;
         if (elevator == 'pkexec') continue; // try sudo next
         throw ProcessException(

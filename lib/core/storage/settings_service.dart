@@ -59,23 +59,58 @@ class SettingsService {
 
   /// Internal: actually write the current cache to disk. Atomic via
   /// tmp+rename. Chained on `_saveGuard` so concurrent flushes serialise.
+  ///
+  /// Windows note: rename fails with errno 32 ("file in use") when antivirus
+  /// or another YueLink process is reading settings.json, and fails with
+  /// errno 2 when the tmp has already been consumed by a previous flush
+  /// (historical race before `_saveGuard` was chained). Both cases were
+  /// responsible for ~55% of crash.log entries from Windows users. We now
+  /// swallow the error locally, retry up to 3× with backoff, and never let
+  /// a save failure propagate to UI callers — settings are best-effort and
+  /// the next flush will pick up the same snapshot.
   static Future<void> _flushNow() async {
     _flushPending = false;
     final snapshot = _cache;
     if (snapshot == null) return;
-    _saveGuard = _saveGuard.then((_) async {
-      final file = await _getFile();
-      final dir = file.parent;
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
-      final tmp = File('${file.path}.tmp');
-      await tmp.writeAsString(json.encode(snapshot));
-      await tmp.rename(file.path);
-    }, onError: (e) {
-      debugPrint('[SettingsService] save failed: $e');
+    _saveGuard = _saveGuard
+        .then((_) => _writeWithRetry(snapshot))
+        .catchError((e) {
+      debugPrint('[SettingsService] save failed (swallowed): $e');
     });
     return _saveGuard;
+  }
+
+  static Future<void> _writeWithRetry(Map<String, dynamic> snapshot) async {
+    final file = await _getFile();
+    final dir = file.parent;
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    final encoded = json.encode(snapshot);
+    Object? lastError;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        final tmp = File('${file.path}.tmp');
+        await tmp.writeAsString(encoded);
+        await tmp.rename(file.path);
+        return;
+      } on FileSystemException catch (e) {
+        lastError = e;
+        // errno 2 (tmp missing) → previous flush already consumed it, retry
+        // errno 32 (file in use) → antivirus/indexer has a handle, backoff
+        await Future<void>.delayed(Duration(milliseconds: 100 * (attempt + 1)));
+      }
+    }
+    // Last-resort fallback: writeAsString directly. Loses atomicity on crash
+    // but is better than silently losing user settings across successive
+    // flushes. Also bypasses the rename lock completely.
+    try {
+      await file.writeAsString(encoded, flush: true);
+      debugPrint('[SettingsService] rename retries exhausted; direct write OK');
+    } catch (e) {
+      debugPrint('[SettingsService] rename + direct-write both failed: '
+          'last_rename=$lastError direct=$e');
+    }
   }
 
   /// Schedule a coalesced flush. Multiple set() calls within
@@ -295,7 +330,13 @@ class SettingsService {
   // ── Log level ────────────────────────────────────────────────────────────
 
   static Future<String> getLogLevel() async {
-    return (await get<String>('logLevel')) ?? 'info';
+    // Default `error` — mihomo's `info` / `warning` log every L4 connection
+    // with `log.Warn(...)`, producing tens of thousands of lines per session.
+    // A real user diag dump observed 13k+ warnings vs 1 actual crash, making
+    // the real signal impossible to find. `error` keeps panics / startup
+    // failures / CGO crashes visible while dropping the routing chatter.
+    // Users who need verbose logs can switch via Settings → Log Level.
+    return (await get<String>('logLevel')) ?? 'error';
   }
 
   static Future<void> setLogLevel(String level) async {

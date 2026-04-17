@@ -1,16 +1,32 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"strings"
 )
 
-// Version is set at build time via -ldflags "-X main.Version=..."
-// Falls back to "dev" for local builds.
-var Version = "dev"
+// protocolVersion is the single source of truth for the service IPC protocol
+// version. Both this Go helper AND the Dart side (via Flutter asset) load
+// the exact same file at startup, so there's no way for the two sides to
+// drift out of sync.
+//
+// Bump this file only on BREAKING changes to the IPC contract (endpoint
+// signatures, auth flow, request/response schemas). App version bumps do
+// NOT require changing this — an app update that ships a compatible helper
+// can keep protocol v1 and avoid forcing every user to reinstall.
+//
+//go:embed protocol_version.txt
+var protocolVersion string
+
+// Version is derived at package init time from the embedded protocol_version.txt.
+// Exposed via /v1/version so the Dart client can compare against its own
+// copy of the same file (bundled as a Flutter asset).
+var Version = strings.TrimSpace(protocolVersion)
 
 const (
 	// Legacy HTTP defaults — only used by the Windows transport now;

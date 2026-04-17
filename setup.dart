@@ -35,6 +35,10 @@ const String outputDir = 'core/build';
 const String servicePath = 'service';
 const String serviceOutputDir = 'service/build';
 
+// Service protocol version now lives in `service/protocol_version.txt` —
+// Go embeds it via `//go:embed`, Dart reads it as a Flutter asset. Neither
+// setup.dart nor anything else needs to care about the value.
+
 /// Android API level for the NDK toolchain.
 const String androidApiLevel = '21';
 

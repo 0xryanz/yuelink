@@ -133,7 +133,7 @@ MethodChannel name: `com.yueto.yuelink/vpn`.
 ### Startup & diagnostics
 `CoreManager.start()` runs 8 steps recorded in `StartupReport` with errorCode (E002–E009). On failure, dashboard `_StartupErrorBanner` shows `[Exx] step: error` (expandable: all steps + last 20 lines of `core.log`). Saved to `startup_report.json`. Go logs tagged `[BOOT]`/`[CORE]` via logrus → `core.log`.
 
-Steps: `ensureGeo`(E009) → `initCore`(E002) → `vpnPermission`(E003, Android) → `startVpn`(E004, Android) → `buildConfig`(E005, port check + overwrite + template) → `startCore`(E006) → `waitApi`(E007, 50×100ms) → `verify`(E008).
+Steps: `ensureGeo`(E009) → `initCore`(E002) → `vpnPermission`(E003, Android) → `startVpn`(E004, Android) → `buildConfig`(E005, port check + overwrite + template) → `startCore`(E006) → `waitApi`(E007, progressive 50→100→200ms × 100, ~14s cap) → `verify`(E008).
 
 ### Lifecycle / heartbeat
 - `_YueLinkAppState` implements `WidgetsBindingObserver`. On `resumed`, `_onAppResumed()` immediately checks `CoreManager.isRunning` + `api.isAvailable()` — do NOT wait for the 10s heartbeat.

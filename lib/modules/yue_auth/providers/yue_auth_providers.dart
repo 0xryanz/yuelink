@@ -118,15 +118,26 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   /// Check if user has a saved token on app startup.
+  ///
+  /// Fire-and-forget from build(). Each `await` below returns into a
+  /// `state = ...` assignment; on a disposed Notifier that throws. The
+  /// guard pattern here is the same as in checkin_provider: check
+  /// `_disposed` after every await and bail out before touching state
+  /// (or any other provider's state). Also covers the `_apiHostProvider`
+  /// write so a dispose-after-token doesn't reach through into unrelated
+  /// providers.
   Future<void> _init() async {
     final token = await _authService.getToken();
+    if (_disposed) return;
     if (token != null && token.isNotEmpty) {
       // Restore saved API host so all providers use the correct endpoint
       final savedHost = await _authService.getApiHost();
+      if (_disposed) return;
       if (savedHost != null && savedHost.isNotEmpty) {
         ref.read(_apiHostProvider.notifier).state = savedHost;
       }
       final cachedProfile = await _authService.getCachedProfile();
+      if (_disposed) return;
       state = AuthState(
         status: AuthStatus.loggedIn,
         token: token,

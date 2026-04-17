@@ -99,6 +99,13 @@ final trafficStreamProvider = Provider<void>((ref) {
   final inBackground = ref.watch(appInBackgroundProvider);
   if (inBackground) return;
 
+  // Closure-local dispose flag. `timer.cancel()` doesn't interrupt a tick
+  // already past its `await`; broadcast streams may still dispatch a
+  // queued event to a just-cancelled subscriber. Each callback below
+  // early-returns on this flag before touching any provider state.
+  bool disposed = false;
+  ref.onDispose(() => disposed = true);
+
   final manager = CoreManager.instance;
   // Shared history instance — mutated in-place, version bump triggers rebuilds.
   final history = ref.read(trafficHistoryProvider);
@@ -106,6 +113,7 @@ final trafficStreamProvider = Provider<void>((ref) {
   if (manager.isMockMode) {
     final timer = Timer.periodic(const Duration(seconds: 1), (_) async {
       final t = await manager.core.getTraffic();
+      if (disposed) return;
       final traffic = Traffic(up: t.up, down: t.down);
       ref.read(trafficProvider.notifier).state = traffic;
       history.add(t.up, t.down);
@@ -120,6 +128,7 @@ final trafficStreamProvider = Provider<void>((ref) {
     // is unreliable — mihomo may silently drop the second connection, leaving
     // trafficHistoryProvider empty and the chart blank.
     final trafficSub = repo.trafficStream().listen((t) {
+      if (disposed) return;
       ref.read(trafficProvider.notifier).state = t;
       ref.read(dailyTrafficProvider.notifier).add(t.up, t.down);
       history.add(t.up, t.down);
@@ -144,9 +153,13 @@ final memoryStreamProvider = Provider<void>((ref) {
   final manager = CoreManager.instance;
   if (manager.isMockMode) return;
 
+  bool disposed = false;
+  ref.onDispose(() => disposed = true);
+
   // Throttle is handled inside TrafficRepository.memoryStream() (5 s window)
   final repo = ref.watch(trafficRepositoryProvider);
   final sub = repo.memoryStream().listen((bytes) {
+    if (disposed) return;
     ref.read(memoryUsageProvider.notifier).state = bytes;
   });
   ref.onDispose(() => sub.cancel());

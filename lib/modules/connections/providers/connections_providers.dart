@@ -25,10 +25,19 @@ final connectionsStreamProvider = Provider<void>((ref) {
   // Battery optimization: pause connections WebSocket when app is in background.
   final inBackground = ref.watch(appInBackgroundProvider);
 
+  // Closure-local dispose flag. `timer.cancel()` / `sub.cancel()` only stop
+  // NEW ticks; a callback already past its `await` (mock poll) or a
+  // broadcast-stream event already queued (real listener) can still land
+  // `ref.read(...).state = ...` on a disposed provider and throw. Every
+  // callback below early-returns on this flag.
+  bool disposed = false;
+  ref.onDispose(() => disposed = true);
+
   if (status != CoreStatus.running || inBackground) {
     // Defer state writes to after this provider's build phase — Riverpod
     // forbids modifying other providers synchronously during initialization.
     Future.microtask(() {
+      if (disposed) return;
       ref.read(connectionsSnapshotProvider.notifier).state =
           const ConnectionsSnapshot(
               connections: [], downloadTotal: 0, uploadTotal: 0);
@@ -44,6 +53,7 @@ final connectionsStreamProvider = Provider<void>((ref) {
     Future<void> poll() async {
       try {
         final data = await manager.core.getConnections();
+        if (disposed) return;
         final snapshot = ConnectionsSnapshot.fromJson(data);
         ref.read(connectionsSnapshotProvider.notifier).state = snapshot;
       } catch (e) {
@@ -60,6 +70,7 @@ final connectionsStreamProvider = Provider<void>((ref) {
   // Real mode: use ConnectionRepository's throttled stream
   final repo = ref.watch(connectionRepositoryProvider);
   final sub = repo.connectionsStream().listen((snap) {
+    if (disposed) return;
     ref.read(connectionsSnapshotProvider.notifier).state = snap;
   });
   ref.onDispose(() => sub.cancel());

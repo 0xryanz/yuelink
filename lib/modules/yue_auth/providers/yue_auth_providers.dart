@@ -185,6 +185,7 @@ class AuthNotifier extends Notifier<AuthState> {
         debugPrint('[Auth] Failed to fetch subscribe data: $e');
       }
 
+      if (_disposed) return false;
       state = AuthState(
         status: AuthStatus.loggedIn,
         token: token,
@@ -206,6 +207,7 @@ class AuthNotifier extends Notifier<AuthState> {
         priority: true,
         props: {'status': e.statusCode},
       );
+      if (_disposed) return false;
       state = state.copyWith(
         isLoading: false,
         error: _friendlyLoginError(e),
@@ -218,6 +220,7 @@ class AuthNotifier extends Notifier<AuthState> {
         priority: true,
         props: {'error': e.runtimeType.toString()},
       );
+      if (_disposed) return false;
       state = state.copyWith(
         isLoading: false,
         error: _friendlyNetworkError(e),
@@ -294,6 +297,7 @@ class AuthNotifier extends Notifier<AuthState> {
     }
 
     await _authService.clearAll();
+    if (_disposed) return;
     state = const AuthState(status: AuthStatus.loggedOut);
   }
 

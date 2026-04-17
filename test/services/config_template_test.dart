@@ -411,4 +411,84 @@ proxy-groups:
       expect(result, isNot(contains('dialer-proxy: "SomeNode"')));
     });
   });
+
+  group('ConfigTemplate video QUIC fallback', () {
+    const quicRejectRule =
+        'AND,((DOMAIN-SUFFIX,googlevideo.com),(NETWORK,UDP)),REJECT-DROP';
+
+    test('injects QUIC reject rule at top of rules section', () {
+      const config = '''
+mixed-port: 7890
+proxy-groups:
+  - name: YueLink
+    type: select
+    proxies: [DIRECT]
+rules:
+  - DOMAIN-SUFFIX,googlevideo.com,YueLink
+  - MATCH,YueLink
+''';
+      final result = ConfigTemplate.process(config);
+      expect(result, contains(quicRejectRule));
+
+      final rulesStart = result.indexOf('rules:');
+      final rejectIdx = result.indexOf(quicRejectRule, rulesStart);
+      final proxyIdx =
+          result.indexOf('DOMAIN-SUFFIX,googlevideo.com,YueLink', rulesStart);
+      expect(rejectIdx, greaterThan(0));
+      expect(proxyIdx, greaterThan(0));
+      expect(rejectIdx, lessThan(proxyIdx),
+          reason: 'reject rule must precede the proxy rule');
+    });
+
+    test('is idempotent — double-processing does not duplicate', () {
+      const config = '''
+mixed-port: 7890
+proxy-groups:
+  - name: YueLink
+    type: select
+    proxies: [DIRECT]
+rules:
+  - DOMAIN-SUFFIX,googlevideo.com,YueLink
+  - MATCH,YueLink
+''';
+      final once = ConfigTemplate.process(config);
+      final twice = ConfigTemplate.process(once);
+      final occurrences = RegExp(RegExp.escape(quicRejectRule))
+          .allMatches(twice)
+          .length;
+      expect(occurrences, 1);
+    });
+
+    test('skips injection when subscription already has a googlevideo REJECT',
+        () {
+      const config = '''
+mixed-port: 7890
+rules:
+  - DOMAIN-SUFFIX,googlevideo.com,REJECT
+  - MATCH,DIRECT
+''';
+      final result = ConfigTemplate.process(config);
+      // Should NOT inject our AND/NETWORK,UDP variant — subscription handles it
+      expect(result, isNot(contains('(NETWORK,UDP)')));
+      // Original REJECT preserved
+      expect(result, contains('DOMAIN-SUFFIX,googlevideo.com,REJECT'));
+    });
+
+    test('does nothing when config has no rules section', () {
+      const config = 'mixed-port: 7890\nproxies: []\n';
+      final result = ConfigTemplate.process(config);
+      expect(result, isNot(contains('googlevideo.com')));
+    });
+
+    test('preserves indentation of existing rules (4-space)', () {
+      const config = '''
+mixed-port: 7890
+rules:
+    - DOMAIN-SUFFIX,example.com,DIRECT
+    - MATCH,DIRECT
+''';
+      final result = ConfigTemplate.process(config);
+      expect(result, contains('    - "AND,((DOMAIN-SUFFIX,googlevideo.com'));
+    });
+  });
 }

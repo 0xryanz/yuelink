@@ -179,6 +179,9 @@ class ConfigTemplate {
     config = _ensureConnectivityRules(config);
     debugPrint('[Config] 10b connectivityRules done');
 
+    config = _ensureVideoQuicFallback(config);
+    debugPrint('[Config] 10c videoQuicFallback done');
+
     if (!_hasKey(config, 'mode')) {
       config += '\nmode: rule\n';
     }
@@ -1296,6 +1299,46 @@ class ConfigTemplate {
     if (injection.isEmpty) return config;
 
     // Insert right after "rules:\n"
+    return config.substring(0, rulesMatch.end) +
+        injection +
+        config.substring(rulesMatch.end);
+  }
+
+  /// Reject UDP/QUIC to YouTube video CDN so clients fall back to TCP/HTTP/2.
+  ///
+  /// Symptom it fixes: "封面加载很快，视频播放很卡" — thumbnails (`ytimg.com`,
+  /// small HTTPS/TCP) stream fine while video bytes (`*.googlevideo.com`,
+  /// HTTPS+QUIC/UDP 443, 20+Mbps bursts) stall. Root cause on Android is
+  /// gVisor's userspace UDP path: TUN's `stack: gvisor` + `file-descriptor`
+  /// caps UDP conntrack at a few Mbps, while TCP through the same tunnel
+  /// gets kernel offload and handles 4K. The CN-ISP UDP 443 throttling /
+  /// QUIC-path instability on some proxies compounds this.
+  ///
+  /// YouTube clients (web + mobile app) transparently fall back to HTTP/2
+  /// when QUIC handshake times out, so dropping UDP to `googlevideo.com`
+  /// yields a slight first-stream delay then smooth playback at TCP speed.
+  /// Matches the canonical fix in ACL4SSR / Loyalsoldier / mihomo-party
+  /// default rulesets. Skipped when the subscription already ships an
+  /// equivalent REJECT for googlevideo (idempotent).
+  static String _ensureVideoQuicFallback(String config) {
+    final rulesMatch =
+        RegExp(r'^rules:\s*\n', multiLine: true).firstMatch(config);
+    if (rulesMatch == null) return config;
+
+    final rulesBody = config.substring(rulesMatch.end);
+    final alreadyHandled = RegExp(
+      r'googlevideo\.com[^\n]*REJECT',
+      caseSensitive: false,
+    ).hasMatch(rulesBody);
+    if (alreadyHandled) return config;
+
+    final firstRule =
+        RegExp(r'^([ \t]*)-\s', multiLine: true).firstMatch(rulesBody);
+    final ruleIndent = firstRule?.group(1) ?? '  ';
+
+    final injection =
+        '$ruleIndent- "AND,((DOMAIN-SUFFIX,googlevideo.com),(NETWORK,UDP)),REJECT-DROP"\n';
+
     return config.substring(0, rulesMatch.end) +
         injection +
         config.substring(rulesMatch.end);

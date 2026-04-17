@@ -93,9 +93,12 @@ provider-heavy；运行时流、Timer、WebSocket、缓存、登录/登出后的
 - carrier `_pollSni()` 的 `_disposed` guard 位置上移到 state 读写块之前 — `8756d10`
 - emby player `_progressTimer` tick 回调增加 `mounted` 前置判断 — `8756d10`
 
+### 本轮 P1 小修（续）
+
+- auth `login()` / `logout()` 的 state 写入点在 await 后补 `_disposed` guard（4 处：login 成功、login XBoardApi 异常、login 通用异常、logout 末尾）— `e93e754 fix(auth): guard login/logout state updates after provider dispose`
+
 ### 刻意未做
 
-- auth `login()` / `logout()` dispose guard — pending evaluation; see addendum update if commit lands.
 - Telemetry `flush()` 与 `setEnabled(false)` 竞争窗口 — 仅 microtask 宽度，setEnabled 已同步清空 buffer，并非真实缺陷。
 - FeatureFlags 单例 timer 架构重排 — 需要 singleton→provider 重构，超出本轮范围。
 - Timer 全仓审计 — 2026-04-18 仅对 carrier / emby / telemetry / feature_flags / hero_banner / subscription_sync_service / emby_player_page 做抽样，完整扫荡延后。

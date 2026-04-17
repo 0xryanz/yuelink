@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/io.dart';
 
 import '../../domain/logs/log_entry.dart';
+import '../../shared/event_log.dart';
 export '../../domain/logs/log_entry.dart';
 
 /// Real-time WebSocket streaming from mihomo external-controller.
@@ -116,15 +118,30 @@ class MihomoStream {
             try {
               controller
                   .add(json.decode(event as String) as Map<String, dynamic>);
-            } catch (_) {
+            } catch (e) {
               // Malformed JSON — skip frame
+              final msg = e.toString();
+              debugPrint(
+                '[MihomoStream] decode_fail path=$path '
+                'err=${msg.substring(0, msg.length.clamp(0, 200))}',
+              );
             }
           }
           activeChannel = null;
           // Stream ended cleanly (server closed); fall through to reconnect
-        } catch (_) {
+        } catch (e) {
           activeChannel = null;
           // Connection failed or dropped
+          final msg = e.toString();
+          final shortMsg = msg.substring(0, msg.length.clamp(0, 200));
+          debugPrint(
+            '[MihomoStream] ws_fail path=$path type=${e.runtimeType} '
+            'retry_in=${retryDelay.inSeconds}s err=$shortMsg',
+          );
+          EventLog.write(
+            '[MihomoStream] ws_fail path=$path type=${e.runtimeType} '
+            'retry_in=${retryDelay.inSeconds}s',
+          );
         }
 
         if (!cancelled) {

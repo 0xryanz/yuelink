@@ -87,6 +87,12 @@ MethodChannel name: `com.yueto.yuelink/vpn`.
 - **App Group geo sync** (`AppDelegate.writeConfigToAppGroup`, called on every `startVpn`): writes `config.yaml` AND copies `GeoIP.dat`/`GeoSite.dat`/`country.mmdb`/`ASN.mmdb` from main app's Application Support to `AppGroup/mihomo/`. Without this, GEOIP/GEOSITE rules fail silently in the extension. Skipped when destination is up-to-date.
 - **TrollStore**: `ios/PacketTunnel/Info.plist` MUST have `CFBundleExecutable = $(EXECUTABLE_NAME)` — without it ldid fails (TrollStore error 175). Entitlements: `application-groups` + `networkextension: packet-tunnel-provider`. Do NOT add push, iCloud, or `keychain-access-groups`.
 
+### Privilege boundary probing (cross-platform principle)
+- **The OS saying a helper is "running" is not the same as the helper answering.** Always probe the endpoint you're about to call, never the administrative registration. Each platform has its own version of this race — SCM `RUNNING` vs socket `bind()`, `launchctl bootstrap` vs Unix socket listen, `systemctl active` vs `bind()`, `VpnService.prepare()` `RESULT_OK` vs `establish()`, `saveToPreferences` vs `configurationStale` — they all fix the same way.
+- Canonical pattern: `ServiceManager.isInstalled()` = administrative check (cheap, fast); `ServiceManager.isReady()` = installed + ping. Any code path about to use the helper (IPC, start, status) uses `isReady()`. `isInstalled()` is only for UI "should we show the install button?" decisions.
+- Startup steps must include an explicit `waitService` probe before `startService` (see `_startDesktopServiceMode`) — install-time `_waitUntilReachable` isn't enough because service can die between install and first use.
+- Retries: first-attempt failure after a permission grant / install is almost always a settle race. Retry once after a 1.5 s grace before surfacing the error. Applied in `startAndroidVpn`, iOS `configurationStale` retry, `ServiceClient.start`.
+
 ### Desktop
 - Connection mode UI hidden on mobile (`isDesktop = Platform.isMacOS || Platform.isWindows`).
 - **Port conflict**: Before `ConfigTemplate.process()`, `CoreManager` calls `_findAvailablePort(preferred)` for both `mixedPort` and `apiPort`, scanning `[preferred, preferred+20)`. `mixedPort` is patched into the config string via `ConfigTemplate.setMixedPort()`. Mobile skips this (handled at OS level).

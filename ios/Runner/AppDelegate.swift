@@ -167,9 +167,15 @@ import NetworkExtension
                         }
                     }
 
-                    do {
-                        try session.startTunnel()
-                    } catch {
+                    // configurationStale is iOS's "you saved but I haven't
+                    // synced yet" response. Documented workaround (used by
+                    // sing-box-for-apple, Streisand, Karing): reload the
+                    // preferences, then retry startTunnel once after a
+                    // short beat. Without this, users see "first connect
+                    // fails, second connect works" right after granting
+                    // the Settings pane prompt — the iOS analogue of the
+                    // Windows SCM "install OK but listener not bound" race.
+                    func finishWithError(_ error: Error) {
                         done = true
                         timeoutWork.cancel()
                         if let obs = self.vpnStatusObserver {
@@ -178,6 +184,25 @@ import NetworkExtension
                         }
                         result(FlutterError(code: "VPN_START_ERROR",
                                             message: error.localizedDescription, details: nil))
+                    }
+
+                    do {
+                        try session.startTunnel()
+                    } catch let nsError as NSError where
+                            nsError.domain == NEVPNErrorDomain &&
+                            nsError.code == NEVPNError.Code.configurationStale.rawValue {
+                        NSLog("[VPN] configurationStale on first startTunnel — reloading + retrying once")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            manager.loadFromPreferences { _ in
+                                do {
+                                    try session.startTunnel()
+                                } catch {
+                                    finishWithError(error)
+                                }
+                            }
+                        }
+                    } catch {
+                        finishWithError(error)
                     }
                 }
             }

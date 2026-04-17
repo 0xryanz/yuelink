@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/storage/auth_token_service.dart';
+import '../../../core/storage/settings_service.dart';
 import '../../../infrastructure/datasources/xboard/index.dart';
 // Re-export shared types so other modules import from auth, not datasources.
 export '../../../infrastructure/datasources/xboard/index.dart'
@@ -437,6 +438,68 @@ class AuthNotifier extends Notifier<AuthState> {
       AppNotifier.success(S.current.syncFirstSuccess);
     } else {
       EventLog.write('[Sync] sync_ok update=true');
+    }
+
+    // Fire subscription alerts — per-day deduped to avoid toast spam.
+    // SubscriptionInfo parses expire / usage from the HTTP header on every
+    // sync, but nothing was ever consuming it. Mainstream clients (CVR /
+    // FlClash / mihomo-party) all surface near-expiry / near-quota warnings
+    // because the user otherwise doesn't find out until the VPN silently
+    // stops working.
+    await _maybeFireSubscriptionAlerts();
+  }
+
+  /// Warn the user if the active profile's subscription is about to expire
+  /// or hit its traffic quota. Thresholds:
+  ///   - already expired           → error
+  ///   - ≤ 3 days until expiry     → warning
+  ///   - ≥ 90 % quota consumed     → warning
+  /// Deduped per calendar day via `SettingsService.lastSubscriptionAlertKey`
+  /// so a 6-hour auto-sync doesn't spam the same toast repeatedly.
+  Future<void> _maybeFireSubscriptionAlerts() async {
+    try {
+      final repo = ref.read(profileRepositoryProvider);
+      final profiles = await repo.loadProfiles();
+      final profile =
+          profiles.where((p) => p.name == '悦通').firstOrNull;
+      if (profile == null) return;
+      final info = profile.subInfo;
+      if (info == null) return; // panel didn't send subscription-userinfo header
+
+      final alerts = <String>[];
+      String? alertKey; // same-day dedup key per alert category
+
+      if (info.isExpired) {
+        alerts.add('订阅已过期，请尽快续费');
+        alertKey = 'expired';
+      } else if (info.daysRemaining != null && info.daysRemaining! <= 3) {
+        alerts.add('订阅将在 ${info.daysRemaining} 天后到期');
+        alertKey = 'expiry_soon';
+      }
+
+      final pct = info.usagePercent;
+      if (pct != null && pct >= 0.9) {
+        alerts.add('流量已使用 ${(pct * 100).toStringAsFixed(0)}%');
+        alertKey = alertKey == null ? 'quota_low' : '${alertKey}_quota_low';
+      }
+
+      if (alerts.isEmpty) return;
+
+      final today = DateTime.now().toUtc().toIso8601String().substring(0, 10);
+      final lastKey = '$today:$alertKey';
+      final last = await SettingsService.get<String>('lastSubscriptionAlert');
+      if (last == lastKey) return; // already shown today for this category
+
+      final message = alerts.join('；');
+      if (info.isExpired) {
+        AppNotifier.error(message);
+      } else {
+        AppNotifier.warning(message);
+      }
+      EventLog.write('[Sync] subscription_alert: $message');
+      await SettingsService.set('lastSubscriptionAlert', lastKey);
+    } catch (e) {
+      debugPrint('[Auth] subscription alert check threw: $e');
     }
   }
 }

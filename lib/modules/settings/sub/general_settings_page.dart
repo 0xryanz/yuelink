@@ -21,6 +21,7 @@ import '../../profiles/providers/profiles_providers.dart';
 import '../../updater/update_checker.dart';
 import '../providers/split_tunnel_provider.dart';
 import '../../../shared/app_notifier.dart';
+import '../../../shared/event_log.dart';
 import '../../../shared/telemetry.dart';
 import '../../../theme.dart';
 import '../settings_page.dart';
@@ -122,26 +123,60 @@ class _GeneralSettingsPageState extends ConsumerState<GeneralSettingsPage> {
   ///                       "I want TUN" intent)
   /// Only respected the user's explicit stop (userStoppedProvider) —
   /// if they manually disconnected in this session we leave them off.
-  /// All errors swallowed — install itself already succeeded.
+  ///
+  /// Errors used to be fully swallowed — users saw "install succeeded" but
+  /// the core was silently stopped, and they had to click connect on the
+  /// dashboard to find out. Windows TUN cold-start in particular (driver
+  /// init + AV scan) can push first-connect past the 5 s waitApi window,
+  /// even though a retry succeeds immediately. Now we:
+  ///   1. grace-pause 1.5 s to let the freshly-installed helper's child
+  ///      mihomo binary fully bind its API listener;
+  ///   2. retry once on failure (same rationale as heartbeat watchdog);
+  ///   3. surface the last error via AppNotifier so the user isn't left
+  ///      confused after "刷新一下" is all that fixes it.
   Future<void> _applyServiceModeImmediately() async {
     try {
       final activeId = ref.read(activeProfileIdProvider);
       if (activeId == null) return;
-      final status = ref.read(coreStatusProvider);
+      final initialStatus = ref.read(coreStatusProvider);
       final userStopped = ref.read(userStoppedProvider);
+      if (initialStatus == CoreStatus.stopped && userStopped) return;
 
       final config = await ProfileService.loadConfig(activeId);
       if (config == null) return;
 
+      // Grace: helper just returned from elevation — mihomo child may
+      // still be binding 127.0.0.1:9090.
+      await Future.delayed(const Duration(milliseconds: 1500));
+
       final actions = ref.read(coreActionsProvider);
-      if (status == CoreStatus.running) {
-        await actions.restart(config);
-      } else if (status == CoreStatus.stopped && !userStopped) {
-        await actions.start(config);
+      Future<bool> attempt() {
+        final status = ref.read(coreStatusProvider);
+        return status == CoreStatus.running
+            ? actions.restart(config)
+            : actions.start(config);
       }
-    } catch (_) {
-      // swallow — the install is the primary success; dashboard still
-      // has the connect button as a manual fallback.
+
+      bool ok = await attempt();
+      if (!ok) {
+        EventLog.write(
+            '[Service] post-install start failed once, retrying after 2 s');
+        await Future.delayed(const Duration(seconds: 2));
+        ok = await attempt();
+      }
+      if (!ok && mounted) {
+        AppNotifier.warning(
+          '服务已安装，但内核启动失败。请在主页点击"开始连接"重试。',
+        );
+        EventLog.write('[Service] post-install start failed after retry');
+      }
+    } catch (e) {
+      EventLog.write('[Service] post-install start threw: $e');
+      if (mounted) {
+        AppNotifier.warning(
+          '服务已安装，但内核启动失败：${e.toString().split('\n').first}',
+        );
+      }
     }
   }
 

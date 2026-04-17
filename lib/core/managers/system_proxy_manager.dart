@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../storage/settings_service.dart';
+
 /// Manages OS-level system proxy on macOS / Windows / Linux.
 ///
 /// Pure utility class — no Riverpod state, no app dependencies.
@@ -46,14 +48,54 @@ class SystemProxyManager {
 
   // ── Set system proxy ────────────────────────────────────────────────────
 
+  // ── Dirty flag ──────────────────────────────────────────────────────────
+  // Cross-session flag: set to true the moment we've asked the OS to point
+  // its system proxy at us; cleared only after a successful [clear]. If the
+  // app dies via SIGKILL / power loss without clearing, the OS is left with
+  // a dangling 127.0.0.1:7890 and every HTTP client on the machine looks
+  // broken. At next cold start [cleanupIfDirty] reasserts clear.
+  static const _kDirtyFlagKey = 'systemProxyDirty';
+
+  /// Persist the "system proxy is currently pointing at us" flag. Uses
+  /// `setImmediate` so the write survives a power loss that happens
+  /// microseconds after networksetup returns success.
+  static Future<void> _markDirty() async {
+    await SettingsService.setImmediate(_kDirtyFlagKey, true);
+  }
+
+  static Future<void> _markClean() async {
+    await SettingsService.set(_kDirtyFlagKey, false);
+  }
+
+  /// Call once at app cold start (before core starts). If we crashed while
+  /// holding the system proxy last session, wipe it now so the user's other
+  /// HTTP clients don't see a dead 127.0.0.1:7890.
+  static Future<void> cleanupIfDirty() async {
+    if (!(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) return;
+    final dirty = (await SettingsService.get<bool>(_kDirtyFlagKey)) ?? false;
+    if (!dirty) return;
+    debugPrint('[SystemProxy] dirty flag set at startup — '
+        'previous session did not cleanly clear proxy; clearing now');
+    await clear();
+    await _markClean();
+  }
+
   /// Configure the OS system proxy to point at 127.0.0.1:[mixedPort].
   /// Returns true on success. On macOS verifies via `scutil --proxy` after
   /// setting; on Windows updates the registry; on Linux uses gsettings/kde.
   static Future<bool> set(int mixedPort) async {
-    if (Platform.isMacOS) return _setMacOS(mixedPort);
-    if (Platform.isWindows) return _setWindows(mixedPort);
-    if (Platform.isLinux) return _setLinux(mixedPort);
-    return false;
+    bool ok;
+    if (Platform.isMacOS) {
+      ok = await _setMacOS(mixedPort);
+    } else if (Platform.isWindows) {
+      ok = await _setWindows(mixedPort);
+    } else if (Platform.isLinux) {
+      ok = await _setLinux(mixedPort);
+    } else {
+      return false;
+    }
+    if (ok) await _markDirty();
+    return ok;
   }
 
   static Future<bool> _setMacOS(int mixedPort) async {
@@ -215,7 +257,17 @@ class SystemProxyManager {
   // ── Clear system proxy ──────────────────────────────────────────────────
 
   /// Disable system proxy on macOS / Windows / Linux. Idempotent.
+  /// Always clears the dirty flag even if the underlying commands fail —
+  /// retry loops on a broken machine aren't useful here.
   static Future<void> clear() async {
+    try {
+      await _doClear();
+    } finally {
+      await _markClean();
+    }
+  }
+
+  static Future<void> _doClear() async {
     if (Platform.isMacOS) {
       final services = await _listNetworkServices();
       for (final svc in services) {

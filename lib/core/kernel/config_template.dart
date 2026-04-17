@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -62,6 +65,53 @@ class ConfigTemplate {
     }
   }
 
+  /// Async wrapper around [process] that offloads onto a background
+  /// isolate for large configs. Small configs are processed inline to avoid
+  /// isolate-spawn overhead (~1-5 ms on mobile).
+  ///
+  /// Threshold chosen at 200 KB: a typical Loyalsoldier-bundled
+  /// subscription runs 5-10 MB, producing ~300-500 ms of string-regex
+  /// work on the main isolate — enough to drop 8-30 frames. Below 200 KB
+  /// the inline path stays < 50 ms on mid-range phones.
+  static Future<String> processInIsolate(
+    String rawConfig, {
+    int apiPort = AppConstants.defaultApiPort,
+    int mixedPort = AppConstants.defaultMixedPort,
+    String? secret,
+    String connectionMode = 'systemProxy',
+    String desktopTunStack = AppConstants.defaultDesktopTunStack,
+    List<String> tunBypassAddresses = const [],
+    List<String> tunBypassProcesses = const [],
+    int? tunFd,
+  }) {
+    if (rawConfig.length < 200 * 1024) {
+      return Future.value(process(
+        rawConfig,
+        apiPort: apiPort,
+        mixedPort: mixedPort,
+        secret: secret,
+        connectionMode: connectionMode,
+        desktopTunStack: desktopTunStack,
+        tunBypassAddresses: tunBypassAddresses,
+        tunBypassProcesses: tunBypassProcesses,
+        tunFd: tunFd,
+      ));
+    }
+    // All closure captures are immutable value types — safe to send to a
+    // new isolate. tunFd staying null is fine; process handles that.
+    return Isolate.run(() => process(
+          rawConfig,
+          apiPort: apiPort,
+          mixedPort: mixedPort,
+          secret: secret,
+          connectionMode: connectionMode,
+          desktopTunStack: desktopTunStack,
+          tunBypassAddresses: tunBypassAddresses,
+          tunBypassProcesses: tunBypassProcesses,
+          tunFd: tunFd,
+        ));
+  }
+
   static String process(
     String rawConfig, {
     int apiPort = AppConstants.defaultApiPort,
@@ -112,6 +162,9 @@ class ConfigTemplate {
 
     config = _ensurePerformance(config);
     debugPrint('[Config] 8 performance done');
+
+    config = _ensureExperimental(config);
+    debugPrint('[Config] 8b experimental done');
 
     config = _ensureAllowLan(config);
     debugPrint('[Config] 9 allowLan done');
@@ -586,34 +639,63 @@ class ConfigTemplate {
       return '$config\ndns:\n'
           '  enable: true\n'
           '  prefer-h3: true\n'
-          // respect-rules: DNS lookups honour the routing table, so a
-          // Chinese domain that should be DIRECT doesn't get its DNS
-          // query tunneled through a proxy (which would add 200+ ms of
-          // cross-border RTT to every page load). Mihomo 0.9+ / Clash
-          // Verge Rev default this to true.
-          '  respect-rules: true\n'
           '  enhanced-mode: fake-ip\n'
           '  fake-ip-range: 198.18.0.1/16\n'
           '  fake-ip-filter:\n'
+          // ── LAN / mDNS / IETF reserved ─────────────────────────
           '    - "+.lan"\n'
           '    - "+.local"\n'
           '    - "+.direct"\n'
+          '    - "+.home"\n'
+          '    - "+.home.arpa"\n'
+          '    - "+.localdomain"\n'
+          '    - "+.invalid"\n'
+          '    - "+.localhost"\n'
+          '    - "+.test"\n'
+          '    - "+.in-addr.arpa"\n'
+          '    - "+.ip6.arpa"\n'
+          // ── Windows / NTP / STUN / games ───────────────────────
           '    - "+.msftconnecttest.com"\n'
           '    - "+.msftncsi.com"\n'
           '    - "localhost.ptlogin2.qq.com"\n'
+          '    - "localhost.work.weixin.qq.com"\n'
           '    - "+.srv.nintendo.net"\n'
           '    - "+.stun.playstation.net"\n'
           '    - "+.xboxlive.com"\n'
+          '    - "stun.*.*"\n'
+          '    - "stun.*.*.*"\n'
+          '    - "xbox.*.microsoft.com"\n'
           '    - "+.ntp.org"\n'
           '    - "+.pool.ntp.org"\n'
           '    - "+.time.edu.cn"\n'
+          '    - "time.*.com"\n'
+          '    - "time.*.gov"\n'
+          // ── Apple ecosystem ────────────────────────────────────
           '    - "+.apple.com"\n'
           '    - "+.icloud.com"\n'
           '    - "+.cdn-apple.com"\n'
           '    - "+.mzstatic.com"\n'
           '    - "+.push.apple.com"\n'
-          // Connectivity check domains — must resolve to real IPs to avoid
-          // "no internet" / WiFi exclamation mark on all platforms.
+          // ── Home router admin panels (CN-dominant brands) ──────
+          '    - "tplogin.cn"\n'
+          '    - "tplinklogin.net"\n'
+          '    - "+.router.asus.com"\n'
+          '    - "router.asus.com"\n'
+          '    - "+.miwifi.com"\n'
+          '    - "miwifi.com"\n'
+          '    - "router.miwifi.com"\n'
+          '    - "melogin.cn"\n'
+          '    - "falogin.cn"\n'
+          '    - "tendawifi.com"\n'
+          '    - "routerlogin.net"\n'
+          '    - "linksyssmartwifi.com"\n'
+          '    - "dlinkrouter.local"\n'
+          // ── NAS ────────────────────────────────────────────────
+          '    - "+.synology.me"\n'
+          '    - "+.quickconnect.to"\n'
+          '    - "+.qnap.com"\n'
+          '    - "+.myqnapcloud.com"\n'
+          // ── Connectivity checks (no "internet" icon false-alarms) ──
           // Google / Android
           '    - "connectivitycheck.gstatic.com"\n'
           '    - "www.gstatic.com"\n'
@@ -646,32 +728,42 @@ class ConfigTemplate {
           '  default-nameserver:\n'
           '    - 223.5.5.5\n'
           '    - 119.29.29.29\n'
-          '    - 8.8.8.8\n'
+          '    - 1.12.12.12\n'
+          // nameserver order: AliDNS first — it negotiates H3 properly
+          // against `prefer-h3: true` (doh.pub advertises no h3 Alt-Svc
+          // as of 2025 and silently falls back to H2).
           '  nameserver:\n'
-          '    - https://doh.pub/dns-query\n'
           '    - https://dns.alidns.com/dns-query\n'
+          '    - https://doh.pub/dns-query\n'
           '  direct-nameserver:\n'
-          '    - https://doh.pub/dns-query\n'
           '    - https://dns.alidns.com/dns-query\n'
+          '    - https://doh.pub/dns-query\n'
+          // proxy-server-nameserver: plain-IP UDP first to break the
+          // chicken-and-egg when the proxy isn't up yet.
           '  proxy-server-nameserver:\n'
           '    - 223.5.5.5\n'
           '    - 119.29.29.29\n'
-          '    - 8.8.8.8\n'
-          '    - https://doh.pub/dns-query\n'
+          '    - 1.12.12.12\n'
           '    - https://dns.alidns.com/dns-query\n'
+          '    - https://doh.pub/dns-query\n'
           '  nameserver-policy:\n'
-          '    "+.apple.com": ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"]\n'
-          '    "+.icloud.com": ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"]\n'
+          '    "+.apple.com": ["https://dns.alidns.com/dns-query", "https://doh.pub/dns-query"]\n'
+          '    "+.icloud.com": ["https://dns.alidns.com/dns-query", "https://doh.pub/dns-query"]\n'
+          // fallback: DoH only. `tls://...:853` is reliably blocked by
+          // the GFW (gfw.report USENIX'23 — TCP RST on 853). DoH on 443
+          // blends with normal HTTPS and survives. 0.0.0.0/32 + 240.0.0.0/4
+          // ipcidr filter catches DNS-poisoning answers.
           '  fallback:\n'
-          '    - "tls://8.8.4.4:853"\n'
-          '    - "tls://1.0.0.1:853"\n'
-          '    - "https://1.0.0.1/dns-query"\n'
-          '    - "https://8.8.4.4/dns-query"\n'
+          '    - "https://1.1.1.1/dns-query"\n'
+          '    - "https://dns.google/dns-query"\n'
           '  fallback-filter:\n'
           '    geoip: true\n'
           '    geoip-code: CN\n'
           '    geosite:\n'
           '      - gfw\n'
+          '    ipcidr:\n'
+          '      - 240.0.0.0/4\n'
+          '      - 0.0.0.0/32\n'
           '    domain:\n'
           '      - "+.google.com"\n'
           '      - "+.facebook.com"\n'
@@ -751,41 +843,27 @@ class ConfigTemplate {
         dnsSection = config.substring(dnsMatch.start, dnsEnd);
       }
 
-      // Fix 1c: inject respect-rules so DNS queries honour the routing
-      // table. Without this, a Chinese domain that's supposed to resolve
-      // via direct-nameserver may still go out through the proxy path if
-      // the DNS server is a proxy-routed resolver, adding cross-border
-      // RTT to every first page load. Ensure-only — subscription that
-      // explicitly sets it stays untouched.
-      if (!dnsSection.contains('respect-rules')) {
-        final injection = '${indent}respect-rules: true\n';
-        config = config.substring(0, afterDns) +
-            injection +
-            config.substring(afterDns);
-        dnsEnd += injection.length;
-        afterDns += injection.length;
-        dnsSection = config.substring(dnsMatch.start, dnsEnd);
-      }
-
       if (!dnsSection.contains('nameserver-policy:')) {
         final policy = '$indent'
             'nameserver-policy:\n'
             '$entryIndent'
-            '"+.apple.com": ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"]\n'
+            '"+.apple.com": ["https://dns.alidns.com/dns-query", "https://doh.pub/dns-query"]\n'
             '$entryIndent'
-            '"+.icloud.com": ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"]\n';
+            '"+.icloud.com": ["https://dns.alidns.com/dns-query", "https://doh.pub/dns-query"]\n';
         config =
             config.substring(0, dnsEnd) + policy + config.substring(dnsEnd);
         dnsEnd += policy.length;
       }
 
+      // AliDNS first: it negotiates HTTP/3 properly against `prefer-h3: true`.
+      // doh.pub is H2-only in 2025 and falls back silently if H3-preferred.
       if (!dnsSection.contains('direct-nameserver:')) {
         final directNs = '$indent'
             'direct-nameserver:\n'
             '$entryIndent'
-            '- https://doh.pub/dns-query\n'
+            '- https://dns.alidns.com/dns-query\n'
             '$entryIndent'
-            '- https://dns.alidns.com/dns-query\n';
+            '- https://doh.pub/dns-query\n';
         config =
             config.substring(0, dnsEnd) + directNs + config.substring(dnsEnd);
         dnsEnd += directNs.length;
@@ -796,24 +874,26 @@ class ConfigTemplate {
       // Problem: if proxy-server-nameserver only has DoH (HTTPS) servers,
       // mihomo can't resolve proxy server hostnames before connecting — the
       // DoH query itself requires the proxy to be up (chicken-and-egg).
-      // Plain UDP DNS (223.5.5.5 / 8.8.8.8) bypass the proxy and bootstrap
-      // resolution so the proxy can start in the first place.
+      // Plain UDP DNS (223.5.5.5 / 119.29.29.29) bypass the proxy and
+      // bootstrap resolution so the proxy can start in the first place.
       if (!dnsSection.contains('proxy-server-nameserver:')) {
         final proxyNs = '${indent}proxy-server-nameserver:\n'
             '$entryIndent- 223.5.5.5\n'
             '$entryIndent- 119.29.29.29\n'
-            '$entryIndent- 8.8.8.8\n'
-            '$entryIndent- https://doh.pub/dns-query\n'
-            '$entryIndent- https://dns.alidns.com/dns-query\n';
+            '$entryIndent- 1.12.12.12\n'
+            '$entryIndent- https://dns.alidns.com/dns-query\n'
+            '$entryIndent- https://doh.pub/dns-query\n';
         config =
             config.substring(0, dnsEnd) + proxyNs + config.substring(dnsEnd);
         dnsEnd += proxyNs.length;
         dnsSection = config.substring(dnsMatch.start, dnsEnd);
       }
 
-      // Fix 5: ensure connectivity-check domains are in fake-ip-filter.
-      // Without these, connectivity checks resolve to fake IPs, causing
-      // "no internet" / WiFi exclamation mark on Android, iOS, Windows, etc.
+      // Fix 5: ensure connectivity-check + LAN-device domains are in
+      // fake-ip-filter. Without these, captive-portal checks fail ("no
+      // internet" / WiFi exclamation mark) AND domain-addressed LAN
+      // appliances (home router panels, NAS, game consoles, NTP, STUN)
+      // resolve to 198.18.x.x and become unreachable.
       dnsSection = config.substring(dnsMatch.start, dnsEnd);
       const connectivityDomains = [
         // Google / Android
@@ -849,6 +929,43 @@ class ConfigTemplate {
         // Vivo / other
         'wifi.vivo.com.cn',
         'noisyfox.cn',
+        // ── LAN / mDNS / IETF reserved ────────────────────────────
+        '+.home',
+        '+.home.arpa',
+        '+.localdomain',
+        '+.invalid',
+        '+.localhost',
+        '+.test',
+        '+.in-addr.arpa',
+        '+.ip6.arpa',
+        // ── Home router admin panels (CN-dominant brands first) ───
+        'tplogin.cn',
+        'tplinklogin.net',
+        '+.router.asus.com',
+        'router.asus.com',
+        '+.miwifi.com',
+        'miwifi.com',
+        'router.miwifi.com',
+        'melogin.cn',
+        'falogin.cn',
+        'tendawifi.com',
+        'routerlogin.net',
+        'linksyssmartwifi.com',
+        'dlinkrouter.local',
+        // ── NAS ───────────────────────────────────────────────────
+        '+.synology.me',
+        '+.quickconnect.to',
+        '+.qnap.com',
+        '+.myqnapcloud.com',
+        // ── STUN / games (need real peer IP) ──────────────────────
+        'stun.*.*',
+        'stun.*.*.*',
+        'xbox.*.microsoft.com',
+        // ── NTP (time servers need real IP, not fake-ip) ──────────
+        'time.*.com',
+        'time.*.gov',
+        // ── QQ/WeChat localhost callbacks ─────────────────────────
+        'localhost.work.weixin.qq.com',
       ];
       if (dnsSection.contains('fake-ip-filter:')) {
         // Append missing domains to existing fake-ip-filter
@@ -922,10 +1039,9 @@ class ConfigTemplate {
       config += '\ngeodata-mode: true\n';
     }
     if (!_hasKey(config, 'geodata-loader')) {
-      // memconservative: lazy-loads GeoIP entries on first hit instead
-      // of slurping the whole .dat at startup. ~60% lower peak RSS,
-      // particularly important on iOS PacketTunnel (15 MB cap) and on
-      // low-RAM Android devices. Matches mihomo 1.19+ recommendation.
+      // memconservative matches mihomo wiki recommendation + FlClash default.
+      // Lazy-loads GeoIP on first hit (one-time first-match delay, then same
+      // as standard). Critical on iOS PacketTunnel's 15 MB memory cap.
       config += 'geodata-loader: memconservative\n';
     }
     if (!_hasKey(config, 'geo-auto-update')) {
@@ -944,11 +1060,17 @@ class ConfigTemplate {
   }
 
   /// Ensure profile persistence settings.
+  ///
+  /// store-fake-ip: **false** — YueLink subscriptions update daily; a persisted
+  /// fake-IP ↔ real-IP cache survives rule changes and causes the classic
+  /// "site unreachable until I clear cache.db" bug (mihomo discussions #1334,
+  /// #1629, #1816). Cost of false: the first request after each restart pays
+  /// one fake-IP allocation (microseconds). Cheap insurance.
   static String _ensureProfile(String config) {
     if (_hasKey(config, 'profile')) return config;
     return '$config\nprofile:\n'
         '  store-selected: true\n'
-        '  store-fake-ip: true\n';
+        '  store-fake-ip: false\n';
   }
 
   /// Ensure performance tuning defaults.
@@ -970,6 +1092,25 @@ class ConfigTemplate {
       config += 'keep-alive-interval: 30\n';
     }
     return config;
+  }
+
+  /// Ensure mihomo `experimental` tuning for cross-border QUIC/hy2.
+  ///
+  /// - `quic-go-disable-gso`: Windows 11 + some older Linux kernels have GSO
+  ///   (Generic Segmentation Offload) bugs that silently drop or duplicate
+  ///   UDP packets on high-throughput QUIC streams. Affects hy2 heavily.
+  /// - `quic-go-disable-ecn`: several Chinese ISPs (CM/CT/CU provincial links)
+  ///   clear or rewrite IP ECN bits on transit; quic-go interprets this as
+  ///   congestion and throttles itself to a crawl. Disabling ECN ends that.
+  ///
+  /// Cost: ~5-10% throughput on fully-compliant paths (uncommon in the
+  /// YueLink user population). Benefit: eliminates two well-documented
+  /// silent-slowness classes. Skip if user has set either key already.
+  static String _ensureExperimental(String config) {
+    if (_hasKey(config, 'experimental')) return config;
+    return '$config\nexperimental:\n'
+        '  quic-go-disable-gso: true\n'
+        '  quic-go-disable-ecn: true\n';
   }
 
   /// Ensure allow-lan for mixed-port to listen on all interfaces.
@@ -1044,27 +1185,41 @@ class ConfigTemplate {
     return '$config\nmixed-port: $port\n';
   }
 
-  /// Ensure the config has external-controller set.
+  /// Ensure the config has external-controller set AND is authenticated.
+  ///
+  /// Secret hardening (matches Clash Verge Rev):
+  ///   - If caller supplies one, use it.
+  ///   - Else if subscription config already has one, keep it (caller will
+  ///     read it back via getSecret + stash in CoreManager._apiSecret).
+  ///   - Else generate a cryptographically random token and inject it.
+  /// Rationale: `external-controller: 127.0.0.1:9090` is NOT a trust
+  /// boundary — any process on the machine (malware, browser extensions,
+  /// other LAN tooling when allow-lan=true) can POST /configs and reroute
+  /// all traffic. A secret is the cheapest mitigation.
   static String _ensureExternalController(
       String config, int port, String? secret) {
-    // Check if already has external-controller
     if (_hasKey(config, 'external-controller')) {
-      // Replace the existing value to ensure our port
       config = config.replaceAllMapped(
         _reExtController,
         (m) => '${m.group(1)}127.0.0.1:$port',
       );
     } else {
-      // Append at the end (before rules section if possible)
       config += '\nexternal-controller: 127.0.0.1:$port\n';
     }
 
-    // Handle secret
-    if (secret != null && !_hasKey(config, 'secret')) {
-      config += 'secret: $secret\n';
+    if (!_hasKey(config, 'secret')) {
+      final effective = secret ?? _randomSecret();
+      config += 'secret: $effective\n';
     }
 
     return config;
+  }
+
+  /// Cryptographically random 256-bit secret, URL-safe base64, no padding.
+  static String _randomSecret() {
+    final rng = math.Random.secure();
+    final bytes = List<int>.generate(32, (_) => rng.nextInt(256));
+    return base64UrlEncode(bytes).replaceAll('=', '');
   }
 
   /// Check if a top-level YAML key exists.

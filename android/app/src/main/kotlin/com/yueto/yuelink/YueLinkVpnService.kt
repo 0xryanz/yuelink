@@ -33,6 +33,13 @@ class YueLinkVpnService : VpnService() {
         /** Called when VPN is revoked by the system or another app. */
         var onVpnRevoked: (() -> Unit)? = null
 
+        /**
+         * Called when the primary underlying transport flips (e.g. Wi-Fi →
+         * cellular on elevator entry). Args: (oldTransport, newTransport),
+         * values ∈ {"none","wifi","cellular","ethernet","other"}.
+         */
+        var onTransportChanged: ((String, String) -> Unit)? = null
+
         // JNI bridge to Go core's protect_android.c
         @JvmStatic external fun nativeStartProtect(vpnService: VpnService)
         @JvmStatic external fun nativeStopProtect()
@@ -69,6 +76,10 @@ class YueLinkVpnService : VpnService() {
     // defaults to the last network that fired onLinkPropertiesChanged, which
     // is often cellular even when WiFi is active — causing the WiFi "!" icon.
     private val availableNetworks = mutableSetOf<Network>()
+    // Last-seen primary transport: "wifi" / "cellular" / "ethernet" / "none".
+    // When this flips (e.g. Wi-Fi dropped → cellular picked up), Dart is
+    // notified so it can flush fake-ip + close stale connections.
+    private var lastTransport: String = "none"
 
     override fun onCreate() {
         super.onCreate()
@@ -296,13 +307,59 @@ class YueLinkVpnService : VpnService() {
      * Push the current physical network set to VpnService.setUnderlyingNetworks().
      * Passing null lets the system decide; passing the explicit set makes
      * Android show the correct transport icon (WiFi instead of cellular "!" icon).
+     *
+     * Also computes the new primary transport — if it changed since last
+     * check, fires [onTransportChanged] so Dart can flush fake-ip cache and
+     * close stale TCP connections. Without this, Wi-Fi↔cellular transitions
+     * leave the connection pool pointing at the old interface for up to
+     * the TCP keep-alive timeout (~30 s), which the user perceives as
+     * "everything froze" right after walking into the elevator.
      */
     private fun applyUnderlyingNetworks() {
         try {
             val nets = synchronized(availableNetworks) { availableNetworks.toTypedArray() }
             setUnderlyingNetworks(if (nets.isEmpty()) null else nets)
             android.util.Log.d("YueLinkVpn", "underlyingNetworks: ${nets.size}")
+
+            val newTransport = computePrimaryTransport(nets)
+            if (newTransport != lastTransport) {
+                val prev = lastTransport
+                lastTransport = newTransport
+                android.util.Log.d("YueLinkVpn",
+                    "transport changed: $prev → $newTransport")
+                try {
+                    onTransportChanged?.invoke(prev, newTransport)
+                } catch (e: Exception) {
+                    android.util.Log.w("YueLinkVpn",
+                        "onTransportChanged threw: ${e.message}")
+                }
+            }
         } catch (_: Exception) {}
+    }
+
+    /** Reduce a set of underlying networks to one primary transport label. */
+    private fun computePrimaryTransport(nets: Array<Network>): String {
+        if (nets.isEmpty()) return "none"
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return "none"
+        // Priority: wifi > ethernet > cellular > other. Wi-Fi is cheapest and
+        // preferred; ethernet is implicit on Android TV / Chromebook boxes.
+        var hasWifi = false
+        var hasEthernet = false
+        var hasCellular = false
+        for (n in nets) {
+            val caps = cm.getNetworkCapabilities(n) ?: continue
+            when {
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> hasWifi = true
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> hasEthernet = true
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> hasCellular = true
+            }
+        }
+        return when {
+            hasWifi -> "wifi"
+            hasEthernet -> "ethernet"
+            hasCellular -> "cellular"
+            else -> "other"
+        }
     }
 
     private fun stopNetworkMonitor() {

@@ -123,12 +123,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             + "  dns-hijack:\n"
             + "    - any:53\n"
 
-        // Keep-alive interval: prevents NAT from dropping idle QUIC (hy2)
-        // and TLS (anytls) sessions. 15s is safe for mobile carrier NATs.
-        // Dart _ensurePerformance may have already injected this — guard with contains().
-        if !result.contains("keep-alive-interval:") {
-            result += "\nkeep-alive-interval: 15\n"
-        }
+        // keep-alive-interval is owned by Dart's _ensurePerformance (30s — mihomo
+        // upstream default). Do NOT inject here — would silently diverge from
+        // Android/desktop if that ever changes.
 
         // ── DNS handling ──
         // DNS config is fully handled by Dart's ConfigTemplate._ensureDns() BEFORE

@@ -16,6 +16,7 @@ import '../../infrastructure/datasources/mihomo_api.dart';
 import '../../infrastructure/datasources/mihomo_stream.dart';
 import '../service/service_client.dart';
 import '../service/service_manager.dart';
+import '../service/service_models.dart';
 import 'overwrite_service.dart';
 import 'process_manager.dart';
 import '../storage/settings_service.dart';
@@ -280,14 +281,14 @@ class CoreManager {
         await _step(steps, 'buildConfig', StartupError.configBuildFailed,
             () async {
           final withOverwrite = await configFuture;
-          processed = ConfigTemplate.process(
+          processed = await ConfigTemplate.processInIsolate(
             withOverwrite,
             apiPort: _apiPort,
             secret: _apiSecret,
             connectionMode: connectionMode,
             desktopTunStack: desktopTunStack,
-          tunBypassAddresses: tunBypassAddresses,
-          tunBypassProcesses: tunBypassProcesses,
+            tunBypassAddresses: tunBypassAddresses,
+            tunBypassProcesses: tunBypassProcesses,
             tunFd: tunFd,
           );
           _apiPort = ConfigTemplate.getApiPort(processed);
@@ -303,14 +304,14 @@ class CoreManager {
         await _step(steps, 'buildConfig', StartupError.configBuildFailed,
             () async {
           final withOverwrite = await prepareConfig();
-          processed = ConfigTemplate.process(
+          processed = await ConfigTemplate.processInIsolate(
             withOverwrite,
             apiPort: _apiPort,
             secret: _apiSecret,
             connectionMode: connectionMode,
             desktopTunStack: desktopTunStack,
-          tunBypassAddresses: tunBypassAddresses,
-          tunBypassProcesses: tunBypassProcesses,
+            tunBypassAddresses: tunBypassAddresses,
+            tunBypassProcesses: tunBypassProcesses,
             tunFd: tunFd,
           );
           _apiPort = ConfigTemplate.getApiPort(processed);
@@ -511,7 +512,7 @@ class CoreManager {
           );
         }
 
-        processed = ConfigTemplate.process(
+        processed = await ConfigTemplate.processInIsolate(
           withOverwrite,
           apiPort: _apiPort,
           secret: _apiSecret,
@@ -536,9 +537,17 @@ class CoreManager {
 
       await _step(steps, 'startIosVpn', StartupError.coreStartFailed, () async {
         final ok = await vpn.VpnService.startIosVpn(configYaml: processed);
+        // iOS 15 MB PacketTunnel cap: a 5 MB subscription becomes ~10 MB of
+        // UTF-16 Dart heap plus a Swift copy plus a Go parse arena. Once the
+        // extension has written its App Group file, the Dart-side string is
+        // redundant — drop it immediately so the next Isolate.run / YAML
+        // reparse doesn't re-amplify. length-report captured for logs before
+        // clearing.
+        final len = processed.length;
+        processed = '';
         if (!ok) throw Exception('startIosVpn returned false');
         _running = true;
-        return 'ok';
+        return 'ok (freed ${len}B dart heap)';
       });
 
       // ── Step 3: waitApi (iOS) ──────────────────────────────────────
@@ -607,7 +616,7 @@ class CoreManager {
         homeDir = appDir.path;
 
         final withOverwrite = await _prepareConfig(configYaml);
-        processed = ConfigTemplate.process(
+        processed = await ConfigTemplate.processInIsolate(
           withOverwrite,
           apiPort: _apiPort,
           secret: _apiSecret,
@@ -625,6 +634,26 @@ class CoreManager {
         return 'output=${processed.length}b, apiPort=$_apiPort, mixedPort=$_mixedPort, homeDir=$homeDir';
       });
 
+      // Two-factor readiness: SCM registered (isInstalled) + HTTP listener
+      // actually answering. Without the second factor, install() can return
+      // success while the helper's listener is still binding, causing the
+      // subsequent POST /v1/start to race and fail — the classic "user has
+      // to refresh once before it connects" symptom. Matches FlClash's
+      // `sc query RUNNING && ping` and CVR's `wait_for_service_ipc`.
+      await _step(steps, 'waitService', StartupError.coreStartFailed,
+          () async {
+        for (var i = 0; i < 50; i++) {
+          if (await ServiceClient.ping()) {
+            return 'ready after ${i + 1} ping(s)';
+          }
+          await Future.delayed(const Duration(milliseconds: 200));
+        }
+        throw Exception(
+            'service helper not answering ping after 10s — likely a cold '
+            'install + Windows Defender / TUN driver init. Retry usually '
+            'works once the helper has bound its listener.');
+      });
+
       await _step(steps, 'startService', StartupError.coreStartFailed,
           () async {
         // Write the processed config to a file in homeDir BEFORE calling
@@ -636,17 +665,38 @@ class CoreManager {
         await configFile.parent.create(recursive: true);
         await configFile.writeAsString(processed);
 
-        final status = await ServiceClient.start(
-          configPath: configFile.path,
-          homeDir: homeDir!,
-        );
+        // One silent retry on first start — the helper may have passed
+        // ping but mihomo subprocess spawn can still lose a race against
+        // Windows' TUN driver registration on the very first connect.
+        DesktopServiceInfo status;
+        try {
+          status = await ServiceClient.start(
+            configPath: configFile.path,
+            homeDir: homeDir!,
+          );
+        } catch (e) {
+          debugPrint('[CoreManager] startService attempt-1 failed: $e — '
+              'retrying once after 1.5 s warmup');
+          await Future.delayed(const Duration(milliseconds: 1500));
+          status = await ServiceClient.start(
+            configPath: configFile.path,
+            homeDir: homeDir!,
+          );
+        }
         _running = true;
         _serviceModeActive = true;
         return 'service OK, pid=${status.pid ?? 0}';
       });
 
       await _step(steps, 'waitApi', StartupError.apiTimeout, () async {
-        for (var i = 1; i <= 50; i++) {
+        // Windows cold-start budget: wintun.dll first-load + Defender scan
+        // + mihomo process start + external-controller bind can push past
+        // 10 s on older machines. Previous 5 s cap caused "install OK,
+        // first connect fails, second connect works" — users had to click
+        // twice because the app was racing the TUN driver. 150 × 100 ms
+        // = 15 s matches the service install _waitUntilReachable ceiling
+        // so the whole install→run flow has a consistent window.
+        for (var i = 1; i <= 150; i++) {
           if (await api.isAvailable()) {
             return 'ready after $i attempts';
           }
@@ -661,7 +711,7 @@ class CoreManager {
           }
           await Future.delayed(const Duration(milliseconds: 100));
         }
-        throw Exception('API not available after 50 attempts (5s)');
+        throw Exception('API not available after 150 attempts (15s)');
       });
 
       await _step(steps, 'verify', StartupError.coreDiedAfterStart, () async {

@@ -84,8 +84,13 @@ func InitCore(homeDir *C.char) (result *C.char) {
 
 	// Redirect logrus output to core.log so Dart can read Go-side logs.
 	// Also tee to stdout for adb logcat / Xcode console.
+	// Log rotation: keep at most `core.log` + `.1` + `.2` (~15 MB total).
+	// Was: O_TRUNC on every InitCore — correct for disk cap, wrong for
+	// diagnosability (a crash's Go panic got wiped on auto-restart).
+	// Now: rotate if current size exceeds 5 MB, append otherwise.
 	logPath := filepath.Join(dir, "core.log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	rotateLogFile(logPath, 5*1024*1024, 3)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err == nil {
 		state.logFile = logFile
 		logrus.SetOutput(io.MultiWriter(os.Stdout, logFile))
@@ -97,6 +102,28 @@ func InitCore(homeDir *C.char) (result *C.char) {
 	state.isInit = true
 
 	return C.CString("")
+}
+
+// rotateLogFile rotates `path` → `path.1` → `path.2` … → `path.(backups-1)`
+// when the current file exceeds maxBytes. Older ones get discarded by the
+// shift. No-op if the file is missing or still small enough.
+//
+// Tiny hand-rolled rotation so we don't pull lumberjack (would bloat the
+// static library 1 MB+ on mobile for a single feature). Rotation only
+// happens at InitCore time; within a single long session the live file
+// can grow past maxBytes until the next restart — acceptable because
+// the VPN core typically churns on Wi-Fi switches / OS sleeps anyway.
+func rotateLogFile(path string, maxBytes int64, backups int) {
+	info, err := os.Stat(path)
+	if err != nil || info.Size() <= maxBytes {
+		return
+	}
+	for i := backups - 1; i >= 1; i-- {
+		src := fmt.Sprintf("%s.%d", path, i)
+		dst := fmt.Sprintf("%s.%d", path, i+1)
+		_ = os.Rename(src, dst) // silent if src is missing; overwrite dst
+	}
+	_ = os.Rename(path, path+".1")
 }
 
 // StartCore starts the mihomo core with the given YAML configuration.

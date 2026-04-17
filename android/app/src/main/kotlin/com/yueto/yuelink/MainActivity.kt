@@ -12,6 +12,8 @@ import android.net.Uri
 import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.provider.Settings
 import android.service.quicksettings.TileService
 import androidx.core.content.FileProvider
 import java.io.File
@@ -167,6 +169,44 @@ class MainActivity : FlutterActivity() {
                             result.error("INVALID_PATH", "APK path is null", null)
                         }
                     }
+                    // Xiaomi/Huawei/OPPO Doze kills VpnService after ~30min idle.
+                    // Users who grant the whitelist keep the VPN alive.
+                    "isBatteryOptimizationIgnored" -> {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                            result.success(true) // pre-M: no doze, nothing to ignore
+                        } else {
+                            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                            result.success(pm.isIgnoringBatteryOptimizations(packageName))
+                        }
+                    }
+                    "requestIgnoreBatteryOptimization" -> {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                            result.success(true)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            val intent = Intent(
+                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                            ).apply {
+                                data = Uri.parse("package:$packageName")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            // Some OEM ROMs block the direct intent; fall back to
+                            // the generic battery-optimization settings list.
+                            try {
+                                val fallback = Intent(
+                                    Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+                                ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                                startActivity(fallback)
+                                result.success(true)
+                            } catch (_: Exception) {
+                                result.error("NO_SETTINGS", e.message, null)
+                            }
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -178,6 +218,19 @@ class MainActivity : FlutterActivity() {
                     .invokeMethod("vpnRevoked", null)
             } catch (e: Exception) {
                 android.util.Log.w("YueLinkVpn", "Failed to notify Dart of VPN revoke: ${e.message}")
+            }
+        }
+
+        // Notify Dart on Wi-Fi↔cellular transition so it can flush fake-ip
+        // and drop stale TCP connections bound to the old interface.
+        YueLinkVpnService.onTransportChanged = { prev, now ->
+            try {
+                MethodChannel(flutterEngine.dartExecutor.binaryMessenger, VPN_CHANNEL)
+                    .invokeMethod("transportChanged",
+                        mapOf("prev" to prev, "now" to now))
+            } catch (e: Exception) {
+                android.util.Log.w("YueLinkVpn",
+                    "Failed to notify Dart of transport change: ${e.message}")
             }
         }
 
@@ -432,7 +485,29 @@ class MainActivity : FlutterActivity() {
             putExtra(YueLinkVpnService.EXTRA_SPLIT_MODE, splitMode)
             putStringArrayListExtra(YueLinkVpnService.EXTRA_SPLIT_APPS, ArrayList(splitApps))
         }
-        startForegroundService(serviceIntent)
+        // Android 12+ (API 31+) throws ForegroundServiceStartNotAllowedException
+        // if the Activity slipped into onStop between the RESULT_OK from the
+        // VpnService permission dialog and this call (common on low-RAM
+        // Xiaomi / Huawei ROMs where the permission dialog pushes us
+        // background). Catch it and tell Dart so the UI can show an
+        // actionable retry button instead of a silent failure.
+        try {
+            startForegroundService(serviceIntent)
+        } catch (e: Exception) {
+            val kind = e::class.simpleName ?: "Exception"
+            android.util.Log.e("YueLinkVpn",
+                "startForegroundService failed ($kind): ${e.message}")
+            // The equivalent of Windows "install OK but listener unreachable" —
+            // the Dart side surfaces this through its normal failure path.
+            try {
+                result.error(
+                    "FOREGROUND_SERVICE_BLOCKED",
+                    "系统不允许启动前台服务：${e.message ?: kind}。请将 YueLink 切到前台后重试。",
+                    null,
+                )
+            } catch (_: Exception) {}
+            return
+        }
 
         if (!serviceBound) {
             val bindIntent = Intent(this, YueLinkVpnService::class.java)

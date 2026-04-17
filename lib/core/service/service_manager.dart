@@ -62,6 +62,14 @@ class ServiceManager {
     }
   }
 
+  /// Fast, static check: is the helper **registered** (SCM / plist / unit +
+  /// token/socket path recorded). Does NOT verify the listener is up — that
+  /// check belongs in [isReady] because it requires an IPC round-trip.
+  ///
+  /// Two-factor readiness (installed + reachable) is how CVR / FlClash avoid
+  /// the "install succeeded, first connect fails, refresh and it works"
+  /// race: SCM reports RUNNING the moment the service process is spawned,
+  /// but the HTTP/pipe listener binds later inside `main()`.
   static Future<bool> isInstalled() async {
     if (!isSupported) return false;
 
@@ -107,10 +115,60 @@ class ServiceManager {
     return token != null && token.isNotEmpty;
   }
 
+  /// Detect Linux runtime confinement. Returns human-readable label or null
+  /// if running native. Mirrors CVR's `utils/linux/workarounds.rs` probes.
+  static String? _detectLinuxConfinement() {
+    // Flatpak: official marker file mounted read-only by the flatpak runtime.
+    if (File('/.flatpak-info').existsSync()) return 'Flatpak';
+    // Snap: env is always set for snap-wrapped processes.
+    if (Platform.environment['SNAP']?.isNotEmpty ?? false) return 'Snap';
+    // AppImage: env set by the runtime loader.
+    if (Platform.environment['APPIMAGE']?.isNotEmpty ?? false) {
+      return 'AppImage';
+    }
+    return null;
+  }
+
+  /// Installed **and** the IPC listener actually answers within [deadline].
+  /// Use this wherever code needs to *act* on the service (start the core,
+  /// fetch status) rather than just report installed/not installed.
+  ///
+  /// Burst-retries ping at 200 ms intervals — matches CVR's `wait_for_
+  /// service_ipc` 250 ms constant backoff. The helper may be registered
+  /// but its socket listener still binding (cold start, AV scan, SCM
+  /// dispatcher lag on Windows).
+  static Future<bool> isReady({
+    Duration deadline = const Duration(seconds: 3),
+  }) async {
+    if (!await isInstalled()) return false;
+    final end = DateTime.now().add(deadline);
+    while (DateTime.now().isBefore(end)) {
+      if (await ServiceClient.ping()) return true;
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+    return false;
+  }
+
   static Future<void> install() async {
     if (!isSupported) {
       throw UnsupportedError(
           'Desktop service mode is only available on macOS, Windows and Linux');
+    }
+
+    // Confined Linux runtimes (Flatpak / Snap / AppImage) either forbid or
+    // actively subvert pkexec — the install script either fails silently or
+    // the helper ends up unable to open the TUN device. Refuse early with a
+    // clear message pointing the user at the native deb/rpm build so they
+    // don't file bug reports at 2 AM.
+    if (Platform.isLinux) {
+      final confinement = _detectLinuxConfinement();
+      if (confinement != null) {
+        throw UnsupportedError(
+          '检测到 YueLink 正在 $confinement 沙盒中运行，无法安装需要 root '
+          '权限的服务模式。请改用 deb / rpm 原生安装包，或在 VPN 应用里选择'
+          '"系统代理"连接模式（无需服务模式即可工作）。',
+        );
+      }
     }
 
     // Resolve identity / paths captured at install time. The helper will

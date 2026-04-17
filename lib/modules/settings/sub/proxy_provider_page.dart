@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/kernel/core_manager.dart';
 import '../../../i18n/app_strings.dart';
 import '../../../domain/models/proxy_provider.dart';
 import '../providers/proxy_providers_provider.dart';
@@ -34,6 +35,11 @@ class _ProxyProviderPageState extends ConsumerState<ProxyProviderPage> {
         leading: const BackButton(),
         title: Text(s.proxyProviderTitle),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.rule_folder_outlined),
+            tooltip: '刷新所有规则集',
+            onPressed: _refreshAllRuleProviders,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: s.retry,
@@ -84,6 +90,32 @@ class _ProxyProviderPageState extends ConsumerState<ProxyProviderPage> {
       }
     } finally {
       if (mounted) setState(() => _updatingSet.remove(name));
+    }
+  }
+
+  /// Refresh every rule-provider in parallel via mihomo's
+  /// `PUT /providers/rules/{name}`. Rule sets (geosite, ad-block lists,
+  /// custom domain groups) tend to drift faster than proxy providers —
+  /// CVR exposes this; YueLink previously required a full core restart.
+  Future<void> _refreshAllRuleProviders() async {
+    try {
+      final api = CoreManager.instance.api;
+      if (!await api.isAvailable()) {
+        AppNotifier.error('核心未运行，无法刷新规则集');
+        return;
+      }
+      final result = await api.refreshAllRuleProviders();
+      if (result.ok == 0 && result.failed == 0) {
+        AppNotifier.warning('未找到任何规则集');
+      } else if (result.failed == 0) {
+        AppNotifier.success('已刷新 ${result.ok} 个规则集');
+      } else {
+        AppNotifier.warning(
+          '刷新完成：成功 ${result.ok}，失败 ${result.failed}',
+        );
+      }
+    } catch (e) {
+      AppNotifier.error('刷新规则集失败：$e');
     }
   }
 

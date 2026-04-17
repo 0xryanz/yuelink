@@ -29,6 +29,7 @@ import 'modules/yue_auth/providers/yue_auth_providers.dart';
 import 'modules/connections/providers/connections_providers.dart';
 import 'modules/dashboard/providers/dashboard_providers.dart';
 import 'modules/nodes/favorites/node_favorites_providers.dart';
+import 'core/managers/system_proxy_manager.dart';
 import 'core/providers/core_provider.dart';
 import 'modules/profiles/providers/profiles_providers.dart';
 import 'shared/app_notifier.dart';
@@ -237,6 +238,16 @@ Future<void> _bootstrap() async {
     if (!isFirst) {
       exit(0);
     }
+  }
+
+  // ── Orphaned system-proxy cleanup ───────────────────────────────────────
+  // If the last session crashed / was SIGKILLed / lost power while holding
+  // the system proxy, the OS is left pointing at a dead 127.0.0.1:7890 and
+  // every HTTP client on the machine looks "offline". The dirty flag lives
+  // in SettingsService across sessions; if it's set and core isn't running
+  // yet (we haven't started it), unconditionally reassert clear.
+  if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+    await SystemProxyManager.cleanupIfDirty();
   }
 
   // ── Signal-driven shutdown cleanup (macOS / Linux) ──────────────────────
@@ -513,20 +524,46 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
   /// bool, so it stays in sync with the provider-level guard that heartbeat
   /// also respects. This prevents VPN revocation from racing with recovery.
   void _setupVpnRevocationListener() {
-    VpnService.listenForRevocation(() {
-      // Skip if recovery is in progress — the recovery logic will handle
-      // state correctly. Without this guard, onVpnRevoked races with
-      // _onAppResumed() on engine recreate and resets state prematurely.
-      if (ref.read(recoveryInProgressProvider)) {
-        debugPrint('[App] VPN revoked during recovery — ignoring');
-        return;
-      }
-      debugPrint('[App] VPN revoked — resetting state');
-      resetCoreToStopped(ref);
-      ref.read(delayResultsProvider.notifier).state = {};
-      ref.read(delayTestingProvider.notifier).state = {};
-      AppNotifier.warning(S.current.disconnectedUnexpected);
-    });
+    VpnService.listenForRevocation(
+      () {
+        // Skip if recovery is in progress — the recovery logic will handle
+        // state correctly. Without this guard, onVpnRevoked races with
+        // _onAppResumed() on engine recreate and resets state prematurely.
+        if (ref.read(recoveryInProgressProvider)) {
+          debugPrint('[App] VPN revoked during recovery — ignoring');
+          return;
+        }
+        debugPrint('[App] VPN revoked — resetting state');
+        resetCoreToStopped(ref);
+        ref.read(delayResultsProvider.notifier).state = {};
+        ref.read(delayTestingProvider.notifier).state = {};
+        AppNotifier.warning(S.current.disconnectedUnexpected);
+      },
+      onTransportChanged: (prev, now) async {
+        // Wi-Fi → cellular / cellular → Wi-Fi: stale TCP pool + polluted
+        // fake-ip mappings kill perceived responsiveness for ~30 s after
+        // the switch. Flush both.  Skip the initial "none → wifi" transition
+        // at cold start — there's nothing to flush yet.
+        if (prev == 'none') return;
+        if (CoreManager.instance.isMockMode) return;
+        try {
+          final api = CoreManager.instance.api;
+          if (!await api.isAvailable()) return;
+          debugPrint('[App] transport $prev→$now — flushing fake-ip + '
+              'closing connections');
+          // Fire both in parallel; either one failing isn't fatal.
+          await Future.wait<void>([
+            api.flushFakeIpCache().then((_) {}).catchError((_) {}),
+            api.closeAllConnections().then((_) {}).catchError((_) {}),
+          ]);
+          // Invalidate cached delay results — proxies that were fast on
+          // Wi-Fi may be slow on cellular and vice versa.
+          ref.read(delayResultsProvider.notifier).state = {};
+        } catch (e) {
+          debugPrint('[App] transport-change flush threw: $e');
+        }
+      },
+    );
   }
 
   /// Set up Android Quick Settings tile integration.

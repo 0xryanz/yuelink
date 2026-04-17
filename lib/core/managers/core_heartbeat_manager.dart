@@ -7,9 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/ffi/core_controller.dart';
 import '../../core/kernel/core_manager.dart';
 import '../../core/kernel/recovery_manager.dart';
+import '../../core/profile/profile_service.dart';
 import '../../i18n/app_strings.dart';
 import '../providers/core_provider.dart';
 import '../../modules/nodes/providers/nodes_providers.dart';
+import '../../modules/profiles/providers/profiles_providers.dart';
 import '../../shared/app_notifier.dart';
 import 'system_proxy_manager.dart';
 
@@ -35,6 +37,13 @@ class CoreHeartbeatManager {
   Timer? _timer;
   int _failures = 0;
   int _proxyCheckTick = 0;
+  // One-shot retry gate: the first time we hit the "3 failures" threshold we
+  // try a silent restart before giving up. This survives things like cell
+  // tower flap / brief Wi-Fi lapse / transient DNS failure — cases where a
+  // single `stop + start` fixes the core faster than the user could even
+  // notice. Reset on any successful heartbeat OR after a hard giveup.
+  bool _retriedThisOutage = false;
+  bool _restartInFlight = false;
 
   /// Start the heartbeat. Idempotent — repeated calls reset the timer
   /// (used when [appInBackgroundProvider] flips and the interval changes).
@@ -50,6 +59,8 @@ class CoreHeartbeatManager {
     _timer = null;
     _failures = 0;
     _proxyCheckTick = 0;
+    _retriedThisOutage = false;
+    _restartInFlight = false;
   }
 
   Future<void> _tick({required bool inBackground}) async {
@@ -58,6 +69,12 @@ class CoreHeartbeatManager {
     // failures during recovery and reset state prematurely.
     if (ref.read(recoveryInProgressProvider)) {
       debugPrint('[Heartbeat] skipped — recovery in progress');
+      return;
+    }
+    // Don't pile ticks on top of an in-flight silent restart. The restart
+    // itself takes 500-2000 ms and we'd rather wait one interval than race.
+    if (_restartInFlight) {
+      debugPrint('[Heartbeat] skipped — silent restart in flight');
       return;
     }
 
@@ -71,18 +88,55 @@ class CoreHeartbeatManager {
 
     if (apiOk && ffiRunning) {
       _failures = 0;
+      _retriedThisOutage = false;
       await _maybeProxyGuard(inBackground: inBackground);
-    } else {
-      _failures++;
-      debugPrint('[Heartbeat] failure #$_failures — '
-          'ffi.isRunning=$ffiRunning, api=$apiOk');
-      if (_failures >= 3) {
-        debugPrint('[Heartbeat] core dead, cleaning up');
-        resetCoreToStopped(ref);
-        ref.read(delayResultsProvider.notifier).state = {};
-        ref.read(delayTestingProvider.notifier).state = {};
-        _failures = 0;
+      return;
+    }
+
+    _failures++;
+    debugPrint('[Heartbeat] failure #$_failures — '
+        'ffi.isRunning=$ffiRunning, api=$apiOk');
+    if (_failures < 3) return;
+
+    if (!_retriedThisOutage) {
+      _retriedThisOutage = true;
+      _failures = 0; // give the restart a clean window to prove recovery
+      await _silentRestart();
+      return;
+    }
+
+    // Second round of 3 failures after a restart attempt — give up.
+    debugPrint('[Heartbeat] core dead after retry, cleaning up');
+    resetCoreToStopped(ref);
+    ref.read(delayResultsProvider.notifier).state = {};
+    ref.read(delayTestingProvider.notifier).state = {};
+    _failures = 0;
+    _retriedThisOutage = false;
+  }
+
+  /// Last-chance silent restart before declaring the core dead. Matches CVR
+  /// `restart_core` behaviour — avoids dropping the user's session for a
+  /// one-off hiccup (e.g. cell tower flap, transient DNS failure).
+  Future<void> _silentRestart() async {
+    _restartInFlight = true;
+    try {
+      final activeId = ref.read(activeProfileIdProvider);
+      if (activeId == null) {
+        debugPrint('[Heartbeat] silent restart skipped — no active profile');
+        return;
       }
+      final config = await ProfileService.loadConfig(activeId);
+      if (config == null) {
+        debugPrint('[Heartbeat] silent restart skipped — config not found');
+        return;
+      }
+      debugPrint('[Heartbeat] attempting silent core restart');
+      final ok = await ref.read(coreActionsProvider).restart(config);
+      debugPrint('[Heartbeat] silent restart ok=$ok');
+    } catch (e) {
+      debugPrint('[Heartbeat] silent restart threw: $e');
+    } finally {
+      _restartInFlight = false;
     }
   }
 

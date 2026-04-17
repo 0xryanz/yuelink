@@ -15,6 +15,7 @@ import '../../shared/app_notifier.dart';
 import '../../shared/event_log.dart';
 import '../../shared/nps_service.dart';
 import '../../shared/telemetry.dart';
+import '../service/service_manager.dart';
 import 'system_proxy_manager.dart';
 
 /// Owns the connect / disconnect / hot-switch lifecycle.
@@ -40,13 +41,46 @@ class CoreLifecycleManager {
 
     final manager = CoreManager.instance;
 
+    // Pre-flight: desktop TUN mode REQUIRES the service helper (it's the
+    // only process with enough privilege to hand the core a utun fd).
+    //
+    // Two-factor check (matches FlClash / CVR):
+    //   1. installed — SCM / launchd / systemd registered + token present
+    //   2. reachable — IPC listener actually answers within 3 s
+    // Catching both here distinguishes "user never installed the helper"
+    // (go install it) from "helper is registered but its listener hasn't
+    // bound yet" (wait + retry — the post-install race that used to force
+    // users to 'refresh once then click connect').
+    final connMode = ref.read(connectionModeProvider);
+    if (connMode == 'tun' &&
+        (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+      final installed = await ServiceManager.isInstalled();
+      if (!installed) {
+        ref.read(coreStatusProvider.notifier).state = CoreStatus.stopped;
+        const detail = 'TUN 模式需要安装"服务模式"辅助程序。\n'
+            '请前往设置 → 连接修复 → 安装服务模式，然后再连接。';
+        ref.read(coreStartupErrorProvider.notifier).state = detail;
+        AppNotifier.error(detail);
+        EventLog.write('[Core] connect_fail reason=service_not_installed');
+        Telemetry.event(
+          TelemetryEvents.connectFailed,
+          priority: true,
+          props: {'step': 'preflight_service_check'},
+        );
+        return false;
+      }
+      // Reachability is enforced downstream by the `waitService` step
+      // inside _startDesktopServiceMode (10 s budget — sized for Windows
+      // cold start + Defender scan). No need to double-gate here.
+    }
+
     try {
       final bypassAddrs = await SettingsService.getTunBypassAddresses();
       final bypassProcs = await SettingsService.getTunBypassProcesses();
 
       final ok = await manager.start(
         configYaml,
-        connectionMode: ref.read(connectionModeProvider),
+        connectionMode: connMode,
         desktopTunStack: ref.read(desktopTunStackProvider),
         tunBypassAddresses: bypassAddrs,
         tunBypassProcesses: bypassProcs,
@@ -84,8 +118,9 @@ class CoreLifecycleManager {
       // the only consequence is noisier logs, not a broken connection.
       unawaited(_applyLogLevel(manager));
 
-      // System proxy or TUN DNS (desktop only)
-      final connMode = ref.read(connectionModeProvider);
+      // System proxy or TUN DNS (desktop only). `connMode` was captured
+      // at the top of start() — re-reading here would risk a race if the
+      // user flipped the setting mid-connect.
       if (!manager.isMockMode &&
           (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
         if (connMode == 'tun' && Platform.isMacOS) {

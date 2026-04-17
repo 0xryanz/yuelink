@@ -201,6 +201,30 @@ class SettingsService {
     await set('subSyncInterval', hours);
   }
 
+  // ── Subscription User-Agent override ────────────────────────────────────
+  // Some CDNs / machine-learning WAF layers drop requests with UA
+  // "clash.meta". Users who hit this need to override to e.g. "ClashX Meta"
+  // or a browser UA. Empty string ⇒ use AppConstants.userAgent (default).
+  static Future<String> getSubscriptionUserAgent() async {
+    return (await get<String>('subscriptionUserAgent')) ?? '';
+  }
+
+  static Future<void> setSubscriptionUserAgent(String ua) async {
+    await set('subscriptionUserAgent', ua);
+  }
+
+  // ── Background delay re-test interval ───────────────────────────────────
+  // Minutes between automatic group-delay re-tests while the Nodes tab
+  // is foreground + core is running. 0 = disabled. Supported: 0, 5, 10,
+  // 15, 30 (UI picker lives in Settings → Nodes).
+  static Future<int> getAutoDelayTestInterval() async {
+    return (await get<int>('autoDelayTestInterval')) ?? 0;
+  }
+
+  static Future<void> setAutoDelayTestInterval(int minutes) async {
+    await set('autoDelayTestInterval', minutes);
+  }
+
   // ── Theme ────────────────────────────────────────────────────────────────
 
   static Future<ThemeMode> getThemeMode() async {

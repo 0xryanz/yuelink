@@ -12,7 +12,9 @@ log-level: info
 ipv6: false
 
 geodata-mode: true
-geodata-loader: standard
+# memconservative: mihomo wiki recommendation; lazy-loads GeoIP on first hit.
+# Critical on iOS PacketTunnel (15 MB memory cap).
+geodata-loader: memconservative
 geo-auto-update: true
 geo-update-interval: 24
 geox-url:
@@ -24,10 +26,20 @@ tcp-concurrent: true
 unified-delay: true
 global-client-fingerprint: chrome
 find-process-mode: always
+keep-alive-interval: 30
+
+# Cross-border QUIC/hy2 tuning. quic-go-disable-gso works around Win11 +
+# older-kernel GSO bugs; quic-go-disable-ecn avoids Chinese ISP ECN rewrites
+# that quic-go misinterprets as congestion.
+experimental:
+  quic-go-disable-gso: true
+  quic-go-disable-ecn: true
 
 profile:
+  # store-fake-ip: false — subscriptions refresh daily and persisted fake-IP
+  # mappings survive rule changes (mihomo discussions #1334 / #1629 / #1816).
   store-selected: true
-  store-fake-ip: true
+  store-fake-ip: false
 
 external-controller: 127.0.0.1:9090
 
@@ -56,42 +68,93 @@ dns:
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
   fake-ip-filter:
+    # LAN / mDNS / IETF reserved
     - "+.lan"
     - "+.local"
     - "+.direct"
+    - "+.home"
+    - "+.home.arpa"
+    - "+.localdomain"
+    - "+.invalid"
+    - "+.localhost"
+    - "+.test"
+    - "+.in-addr.arpa"
+    - "+.ip6.arpa"
+    # Windows / NTP / STUN / games
     - "+.msftconnecttest.com"
     - "+.msftncsi.com"
     - "localhost.ptlogin2.qq.com"
+    - "localhost.work.weixin.qq.com"
     - "+.srv.nintendo.net"
     - "+.stun.playstation.net"
     - "+.xboxlive.com"
+    - "stun.*.*"
+    - "stun.*.*.*"
+    - "xbox.*.microsoft.com"
     - "+.ntp.org"
     - "+.pool.ntp.org"
     - "+.time.edu.cn"
+    - "time.*.com"
+    - "time.*.gov"
+    # Apple ecosystem
     - "+.push.apple.com"
+    # Home router admin panels (CN-dominant brands)
+    - "tplogin.cn"
+    - "tplinklogin.net"
+    - "+.router.asus.com"
+    - "router.asus.com"
+    - "+.miwifi.com"
+    - "miwifi.com"
+    - "router.miwifi.com"
+    - "melogin.cn"
+    - "falogin.cn"
+    - "tendawifi.com"
+    - "routerlogin.net"
+    - "linksyssmartwifi.com"
+    - "dlinkrouter.local"
+    # NAS
+    - "+.synology.me"
+    - "+.quickconnect.to"
+    - "+.qnap.com"
+    - "+.myqnapcloud.com"
   default-nameserver:
     - 223.5.5.5
     - 119.29.29.29
-    - 8.8.8.8
+    - 1.12.12.12
+  # nameserver order: AliDNS first — it negotiates HTTP/3 properly
+  # against prefer-h3: true (doh.pub is H2-only in 2025 and falls back
+  # silently, so ordering it second means only a graceful degradation).
   nameserver:
-    - https://doh.pub/dns-query
     - https://dns.alidns.com/dns-query
+    - https://doh.pub/dns-query
   direct-nameserver:
-    - https://doh.pub/dns-query
     - https://dns.alidns.com/dns-query
+    - https://doh.pub/dns-query
+  # Bootstrap DNS for proxy server hostname resolution. MUST lead with plain
+  # UDP IPs — DoH URLs here create a chicken-and-egg: resolving doh.pub itself
+  # needs proxy-server-nameserver, which needs doh.pub... Plain UDP bypasses
+  # the loop and gets the proxy up before fancy DoH connections are built.
   proxy-server-nameserver:
-    - https://doh.pub/dns-query
+    - 223.5.5.5
+    - 119.29.29.29
+    - 1.12.12.12
     - https://dns.alidns.com/dns-query
+    - https://doh.pub/dns-query
+  # fallback: DoH-only (port 443). tls://...:853 is reliably blocked by the
+  # GFW (gfw.report USENIX'23 documents TCP RST on 853). DoH on 443 blends
+  # with normal HTTPS traffic and survives.
   fallback:
-    - "tls://8.8.4.4:853"
-    - "tls://1.0.0.1:853"
-    - "https://1.0.0.1/dns-query"
-    - "https://8.8.4.4/dns-query"
+    - "https://1.1.1.1/dns-query"
+    - "https://dns.google/dns-query"
   fallback-filter:
     geoip: true
     geoip-code: CN
     geosite:
       - gfw
+    # ipcidr: drop DNS-poisoning answers that return reserved ranges.
+    ipcidr:
+      - 240.0.0.0/4
+      - 0.0.0.0/32
     domain:
       - "+.google.com"
       - "+.facebook.com"

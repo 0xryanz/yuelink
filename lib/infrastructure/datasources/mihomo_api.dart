@@ -129,6 +129,55 @@ class MihomoApi {
     return resp.statusCode == 204 || resp.statusCode == 200;
   }
 
+  /// Flush fake-ip cache. Call on network-change so stale fake-IP → real-IP
+  /// mappings from the previous network (with its own DNS pollution pattern)
+  /// don't poison the new network's request-routing decisions. Matches FlClash's
+  /// behaviour on Wi-Fi ↔ cellular transitions.
+  Future<bool> flushFakeIpCache() async {
+    final resp = await _post('/cache/fakeip/flush');
+    return resp.statusCode == 204 || resp.statusCode == 200;
+  }
+
+  /// Update a rule-provider on demand (mihomo /providers/rules/{name}).
+  /// Refreshes the rule set without requiring a full core restart.
+  Future<bool> updateRuleProvider(String name) async {
+    final resp = await _put('/providers/rules/${Uri.encodeComponent(name)}');
+    return resp.statusCode == 204 || resp.statusCode == 200;
+  }
+
+  /// List all rule providers (name → info map). Empty if the config has
+  /// no `rule-providers` section.
+  Future<Map<String, dynamic>> listRuleProviders() async {
+    try {
+      final data = await _get('/providers/rules');
+      final raw = data['providers'];
+      if (raw is Map<String, dynamic>) return raw;
+      return <String, dynamic>{};
+    } catch (_) {
+      return <String, dynamic>{};
+    }
+  }
+
+  /// Refresh all rule providers in parallel. Returns (succeeded, failed)
+  /// counts.
+  Future<({int ok, int failed})> refreshAllRuleProviders() async {
+    final list = await listRuleProviders();
+    if (list.isEmpty) return (ok: 0, failed: 0);
+    final results = await Future.wait(
+      list.keys.map((name) => updateRuleProvider(name).catchError((_) => false)),
+    );
+    var ok = 0;
+    var failed = 0;
+    for (final r in results) {
+      if (r) {
+        ok++;
+      } else {
+        failed++;
+      }
+    }
+    return (ok: ok, failed: failed);
+  }
+
   // ------------------------------------------------------------------
   // Config
   // ------------------------------------------------------------------
@@ -191,6 +240,84 @@ class MihomoApi {
   /// Get all rules.
   Future<Map<String, dynamic>> getRules() async {
     return _get('/rules');
+  }
+
+  /// Dry-run match a host against the loaded rules. Returns the first
+  /// matching rule or null for rules that require runtime evaluation
+  /// (GEOIP / GEOSITE / RULE-SET / IP-* matching an unresolvable host).
+  ///
+  /// Purpose: let the user answer "which rule sends this domain where?"
+  /// without actually opening a connection. Inspired by CVR's
+  /// Connection Test tool. Limitation: rules needing remote evaluation
+  /// are marked "runtime-only" — the caller can suggest an actual
+  /// connection test if the user wants a definitive answer.
+  Future<RuleMatch?> matchHost(String host) async {
+    if (host.isEmpty) return null;
+    final data = await getRules();
+    final rules = (data['rules'] as List?) ?? const [];
+
+    final lowered = host.toLowerCase();
+    for (final raw in rules) {
+      if (raw is! Map) continue;
+      final type = (raw['type'] as String? ?? '').toUpperCase();
+      final payload = (raw['payload'] as String? ?? '');
+      final proxy = (raw['proxy'] as String? ?? '');
+
+      bool matches = false;
+      bool runtimeOnly = false;
+
+      switch (type) {
+        case 'MATCH':
+          matches = true;
+        case 'DOMAIN':
+          matches = lowered == payload.toLowerCase();
+        case 'DOMAIN-SUFFIX':
+          final suffix = payload.toLowerCase();
+          matches = lowered == suffix || lowered.endsWith('.$suffix');
+        case 'DOMAIN-KEYWORD':
+          matches = lowered.contains(payload.toLowerCase());
+        case 'DOMAIN-REGEX':
+          try {
+            matches = RegExp(payload).hasMatch(host);
+          } catch (_) {
+            matches = false;
+          }
+        case 'PROCESS-NAME':
+        case 'PROCESS-PATH':
+        case 'SRC-IP-CIDR':
+        case 'SRC-PORT':
+        case 'DST-PORT':
+        case 'NETWORK':
+        case 'IN-TYPE':
+        case 'USER-AGENT':
+          // Can't evaluate from "host alone" — skip silently.
+          matches = false;
+        case 'IP-CIDR':
+        case 'IP-CIDR6':
+        case 'GEOIP':
+        case 'GEOSITE':
+        case 'RULE-SET':
+          // Need a resolved IP or an external provider. Mark runtime-only
+          // so the UI can hint at it if no earlier rule matches.
+          runtimeOnly = true;
+      }
+
+      if (matches) {
+        return RuleMatch(
+          type: type,
+          payload: payload,
+          proxy: proxy,
+          runtimeOnly: false,
+        );
+      }
+      if (runtimeOnly) {
+        // Remember the first runtime-only rule so the caller can surface
+        // "rule #N requires resolved IP/provider — definitive answer needs
+        // a live probe". We don't break — continue scanning for concrete
+        // domain matches first.
+      }
+    }
+    return null;
   }
 
   // ------------------------------------------------------------------
@@ -335,6 +462,35 @@ class MihomoApi {
         .delete(Uri.parse('$_baseUrl$path'), headers: _headers)
         .timeout(_kTimeout);
   }
+
+  Future<http.Response> _post(String path,
+      {Map<String, dynamic>? body}) async {
+    return http
+        .post(
+          Uri.parse('$_baseUrl$path'),
+          headers: _headers,
+          body: body != null ? json.encode(body) : null,
+        )
+        .timeout(_kTimeout);
+  }
+}
+
+/// Result of a dry-run rule match (no live connection opened).
+class RuleMatch {
+  final String type;
+  final String payload;
+  final String proxy;
+  final bool runtimeOnly;
+  const RuleMatch({
+    required this.type,
+    required this.payload,
+    required this.proxy,
+    required this.runtimeOnly,
+  });
+
+  @override
+  String toString() =>
+      '$type,$payload → $proxy${runtimeOnly ? " (runtime-only)" : ""}';
 }
 
 /// Exception from mihomo API.

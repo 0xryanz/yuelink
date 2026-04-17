@@ -11,6 +11,7 @@ import 'package:yaml/yaml.dart';
 
 import '../../constants.dart';
 import '../../core/kernel/config_template.dart';
+import '../../core/storage/settings_service.dart';
 import '../../core/util/ulid.dart';
 import '../../domain/models/profile.dart';
 import '../../i18n/app_strings.dart';
@@ -293,7 +294,10 @@ class ProfileRepository {
       client.connectionTimeout = const Duration(seconds: 10);
       try {
         final request = await client.getUrl(Uri.parse(url));
-        request.headers.set('User-Agent', AppConstants.userAgent);
+        final uaOverride =
+            await SettingsService.getSubscriptionUserAgent();
+        request.headers.set('User-Agent',
+            uaOverride.isNotEmpty ? uaOverride : AppConstants.userAgent);
         final response =
             await request.close().timeout(const Duration(seconds: 10));
         final headers = <String, String>{};
@@ -372,21 +376,58 @@ class ProfileRepository {
   }
 
   /// Download directly (no proxy).
+  ///
+  /// If the primary URL fails with a network error (timeout / DNS / 5xx),
+  /// retries each host listed in [AppConstants.subscriptionFallbackHosts]
+  /// with the URL's host swapped. Only kicks in for apex-blocked scenarios
+  /// common in China when the user's ISP nulls out a specific CDN edge.
+  ///
+  /// User-Agent: reads the user override from SettingsService (empty →
+  /// fall back to `AppConstants.userAgent = "clash.meta"`). Some CDN /
+  /// WAF configurations filter the default mihomo UA and require a more
+  /// browser-looking string.
   static Future<http.Response> _downloadDirect(String url) async {
-    try {
-      return await http
-          .get(
-            Uri.parse(url),
-            headers: {'User-Agent': AppConstants.userAgent},
-          )
-          .timeout(const Duration(seconds: 30));
-    } on TimeoutException {
-      throw Exception(S.current.errDownloadTimeout);
-    } on SocketException catch (e) {
-      final detail =
-          e.message.isNotEmpty ? e.message : (e.address?.host ?? 'unknown');
-      throw Exception(S.current.errNetworkError(detail));
+    final primaryUri = Uri.parse(url);
+    final candidates = <Uri>[
+      primaryUri,
+      for (final host in AppConstants.subscriptionFallbackHosts)
+        primaryUri.replace(host: host),
+    ];
+
+    final uaOverride = await SettingsService.getSubscriptionUserAgent();
+    final ua = uaOverride.isNotEmpty ? uaOverride : AppConstants.userAgent;
+
+    TimeoutException? lastTimeout;
+    SocketException? lastSocket;
+    http.Response? lastBadResponse;
+
+    for (var i = 0; i < candidates.length; i++) {
+      final uri = candidates[i];
+      try {
+        final resp = await http
+            .get(uri, headers: {'User-Agent': ua})
+            .timeout(const Duration(seconds: 30));
+        // 2xx → done. 4xx is an auth / path error, not a CDN problem;
+        // trying another mirror would show the same 4xx. Only retry on 5xx.
+        if (resp.statusCode < 500) return resp;
+        lastBadResponse = resp;
+        debugPrint('[ProfileRepository] ${uri.host} returned '
+            '${resp.statusCode}; trying next mirror');
+      } on TimeoutException catch (e) {
+        lastTimeout = e;
+        debugPrint(
+            '[ProfileRepository] ${uri.host} timed out; trying next mirror');
+      } on SocketException catch (e) {
+        lastSocket = e;
+        debugPrint('[ProfileRepository] ${uri.host} socket error '
+            '(${e.message}); trying next mirror');
+      }
     }
+
+    if (lastBadResponse != null) return lastBadResponse; // caller maps status
+    if (lastTimeout != null) throw Exception(S.current.errDownloadTimeout);
+    final detail = lastSocket?.message ?? 'unknown';
+    throw Exception(S.current.errNetworkError(detail));
   }
 
   /// Fallback name from URL hostname when headers don't provide a name.

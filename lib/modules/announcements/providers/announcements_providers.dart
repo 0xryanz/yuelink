@@ -8,8 +8,9 @@ import '../../yue_auth/providers/yue_auth_providers.dart';
 // ── DI: Infrastructure instances ────────────────────────────────────────────
 
 /// Single [AnnouncementsRepository] wired to the shared [XBoardApi].
-final announcementsRepositoryProvider = Provider<AnnouncementsRepository>((ref) {
-  final api = ref.watch(xboardApiProvider);
+final announcementsRepositoryProvider =
+    Provider<AnnouncementsRepository>((ref) {
+  final api = ref.watch(businessXboardApiProvider);
   return AnnouncementsRepository(api: api);
 });
 
@@ -22,8 +23,7 @@ final announcementsLocalDatasourceProvider =
 // ── Data providers ──────────────────────────────────────────────────────────
 
 /// Fetches announcements from XBoard. Returns empty list when not logged in.
-final announcementsProvider =
-    FutureProvider<List<Announcement>>((ref) async {
+final announcementsProvider = FutureProvider<List<Announcement>>((ref) async {
   final token = ref.watch(authProvider.select((s) => s.token));
   if (token == null) return [];
 
@@ -40,8 +40,7 @@ final announcementsProvider =
 });
 
 /// Locally-read announcement IDs (`Set<int>`), notifier for invalidation.
-final readAnnouncementIdsProvider =
-    NotifierProvider<ReadIdsNotifier, Set<int>>(
+final readAnnouncementIdsProvider = NotifierProvider<ReadIdsNotifier, Set<int>>(
   ReadIdsNotifier.new,
 );
 

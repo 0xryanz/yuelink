@@ -117,16 +117,13 @@ class _ProfileContent extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: isDark
-                            ? YLColors.zinc700
-                            : YLColors.zinc100,
+                        color: isDark ? YLColors.zinc700 : YLColors.zinc100,
                         borderRadius: BorderRadius.circular(YLRadius.sm),
                       ),
                       child: Text(
                         profile.planName!,
                         style: YLText.caption.copyWith(
-                          color:
-                              isDark ? YLColors.zinc300 : YLColors.zinc600,
+                          color: isDark ? YLColors.zinc300 : YLColors.zinc600,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -177,8 +174,7 @@ class _ProfileContent extends ConsumerWidget {
             child: LinearProgressIndicator(
               value: percent.clamp(0.0, 1.0),
               minHeight: 7,
-              backgroundColor:
-                  isDark ? YLColors.zinc700 : YLColors.zinc200,
+              backgroundColor: isDark ? YLColors.zinc700 : YLColors.zinc200,
               valueColor: AlwaysStoppedAnimation<Color>(
                 _progressColor(percent),
               ),
@@ -195,8 +191,8 @@ class _ProfileContent extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(s.mineRemaining,
-                        style: YLText.caption
-                            .copyWith(color: YLColors.zinc500)),
+                        style:
+                            YLText.caption.copyWith(color: YLColors.zinc500)),
                     const SizedBox(height: 2),
                     Text(
                       remaining != null ? formatBytes(remaining) : '—',
@@ -219,8 +215,8 @@ class _ProfileContent extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Text(s.mineDevices,
-                        style: YLText.caption
-                            .copyWith(color: YLColors.zinc500)),
+                        style:
+                            YLText.caption.copyWith(color: YLColors.zinc500)),
                     const SizedBox(height: 2),
                     Text(
                       _deviceText(profile),
@@ -238,8 +234,7 @@ class _ProfileContent extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(s.authExpiry,
-                      style: YLText.caption
-                          .copyWith(color: YLColors.zinc500)),
+                      style: YLText.caption.copyWith(color: YLColors.zinc500)),
                   const SizedBox(height: 2),
                   Text(
                     _expiryText(s, profile),
@@ -260,8 +255,7 @@ class _ProfileContent extends ConsumerWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(s.authExpiry,
-                    style:
-                        YLText.body.copyWith(color: YLColors.zinc500)),
+                    style: YLText.body.copyWith(color: YLColors.zinc500)),
                 Text(
                   _expiryText(s, profile),
                   style: YLText.body.copyWith(
@@ -360,11 +354,12 @@ class _ProfileContent extends ConsumerWidget {
     });
   }
 
-  Future<void> _doChangePassword(String oldPassword, String newPassword, WidgetRef ref) async {
+  Future<void> _doChangePassword(
+      String oldPassword, String newPassword, WidgetRef ref) async {
     final token = ref.read(authProvider).token;
     if (token == null) return;
     try {
-      final api = ref.read(xboardApiProvider);
+      final api = ref.read(businessXboardApiProvider);
       await api.changePassword(
         token: token,
         oldPassword: oldPassword,

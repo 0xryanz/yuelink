@@ -13,7 +13,8 @@ import '../state/checkin_state.dart';
 // ── DI: Infrastructure instances ────────────────────────────────────────────
 
 final checkinRepositoryProvider = Provider<CheckinRepository>((ref) {
-  return CheckinRepository();
+  final proxyPort = ref.watch(businessProxyPortProvider);
+  return CheckinRepository(proxyPort: proxyPort);
 });
 
 final checkinLocalDatasourceProvider = Provider<CheckinLocalDatasource>((ref) {

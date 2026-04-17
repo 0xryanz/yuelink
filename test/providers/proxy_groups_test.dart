@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:yuelink/core/providers/core_provider.dart';
 import 'package:yuelink/domain/models/proxy.dart';
+import 'package:yuelink/modules/nodes/providers/nodes_providers.dart';
 
 void main() {
   group('ProxyGroup', () {
@@ -81,8 +83,7 @@ void main() {
       }
 
       // Order by GLOBAL's all, excluding GLOBAL itself
-      final globalAll =
-          (proxiesMap['GLOBAL']?['all'] as List?)?.cast<String>();
+      final globalAll = (proxiesMap['GLOBAL']?['all'] as List?)?.cast<String>();
       final groups = <ProxyGroup>[];
       if (globalAll != null) {
         for (final name in globalAll) {
@@ -137,8 +138,7 @@ void main() {
         }
       }
 
-      final globalAll =
-          (proxiesMap['GLOBAL']?['all'] as List?)?.cast<String>();
+      final globalAll = (proxiesMap['GLOBAL']?['all'] as List?)?.cast<String>();
       final groups = <ProxyGroup>[];
       if (globalAll != null) {
         for (final name in globalAll) {
@@ -176,8 +176,7 @@ void main() {
         }
       }
 
-      final globalAll =
-          (proxiesMap['GLOBAL']?['all'] as List?)?.cast<String>();
+      final globalAll = (proxiesMap['GLOBAL']?['all'] as List?)?.cast<String>();
       final groups = <ProxyGroup>[];
       if (globalAll != null) {
         for (final name in globalAll) {
@@ -224,6 +223,42 @@ void main() {
       final results = <String, int>{'Node1': -1, 'Node2': 100};
       expect(results['Node1'], -1);
       expect(results['Node2']! > 0, isTrue);
+    });
+  });
+
+  group('live refresh gating', () {
+    test('real core only fetches proxies while running', () {
+      expect(
+        shouldFetchLiveProxyGroups(
+          status: CoreStatus.running,
+          isMockMode: false,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldFetchLiveProxyGroups(
+          status: CoreStatus.stopped,
+          isMockMode: false,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldFetchLiveProxyGroups(
+          status: CoreStatus.starting,
+          isMockMode: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('mock mode still allows refresh while stopped', () {
+      expect(
+        shouldFetchLiveProxyGroups(
+          status: CoreStatus.stopped,
+          isMockMode: true,
+        ),
+        isTrue,
+      );
     });
   });
 }

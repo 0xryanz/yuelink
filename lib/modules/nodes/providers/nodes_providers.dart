@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yaml/yaml.dart';
 
+import '../../../core/providers/core_provider.dart';
 import '../../../core/storage/settings_service.dart';
 import '../../../domain/models/proxy.dart';
 import '../../profiles/providers/profiles_providers.dart';
@@ -17,7 +18,13 @@ import '../../../shared/telemetry.dart';
 // Node sort / view mode
 // ------------------------------------------------------------------
 
-enum NodeSortMode { defaultOrder, latencyAsc, latencyDesc, nameAsc, smartRecommend }
+enum NodeSortMode {
+  defaultOrder,
+  latencyAsc,
+  latencyDesc,
+  nameAsc,
+  smartRecommend
+}
 
 final nodeSortModeProvider =
     StateProvider<NodeSortMode>((ref) => NodeSortMode.defaultOrder);
@@ -33,13 +40,19 @@ final nodeSearchQueryProvider = StateProvider<String>((ref) => '');
 /// Derived: the "main" proxy group (PROXIES/GLOBAL/节点选择/Proxy) + its
 /// currently selected node. HeroCard watches this instead of the full
 /// proxyGroupsProvider, so it only rebuilds when the active selection changes.
-final activeProxyInfoProvider = Provider<({String nodeName, String groupName})?>((ref) {
+final activeProxyInfoProvider =
+    Provider<({String nodeName, String groupName})?>((ref) {
   final groups = ref.watch(proxyGroupsProvider);
   if (groups.isEmpty) return null;
   try {
     final g = groups.firstWhere(
-      (g) => g.name == 'PROXIES' || g.name == 'GLOBAL' || g.name == '节点选择' || g.name == 'Proxy',
-      orElse: () => groups.firstWhere((g) => g.type == 'Selector', orElse: () => groups.first),
+      (g) =>
+          g.name == 'PROXIES' ||
+          g.name == 'GLOBAL' ||
+          g.name == '节点选择' ||
+          g.name == 'Proxy',
+      orElse: () => groups.firstWhere((g) => g.type == 'Selector',
+          orElse: () => groups.first),
     );
     return (nodeName: g.now, groupName: g.name);
   } catch (_) {
@@ -55,11 +68,11 @@ final nodeTypeMapProvider = StateProvider<Map<String, String>>((ref) => {});
 // Offline proxy groups (parsed from active profile YAML)
 // ------------------------------------------------------------------
 
-final offlineProxyGroupsProvider = FutureProvider<List<ProxyGroup>>((ref) async {
+final offlineProxyGroupsProvider =
+    FutureProvider<List<ProxyGroup>>((ref) async {
   final activeId = ref.watch(activeProfileIdProvider);
   if (activeId == null) return [];
-  final config =
-      await ref.read(profileRepositoryProvider).loadConfig(activeId);
+  final config = await ref.read(profileRepositoryProvider).loadConfig(activeId);
   if (config == null || config.isEmpty) return [];
   try {
     final yaml = loadYaml(config);
@@ -101,6 +114,15 @@ final proxyGroupsProvider =
 /// null until the first refresh completes.
 final globalGroupProvider = StateProvider<ProxyGroup?>((ref) => null);
 
+@visibleForTesting
+bool shouldFetchLiveProxyGroups({
+  required CoreStatus status,
+  required bool isMockMode,
+}) {
+  if (isMockMode) return true;
+  return status == CoreStatus.running;
+}
+
 class ProxyGroupsNotifier extends Notifier<List<ProxyGroup>> {
   @override
   List<ProxyGroup> build() => [];
@@ -112,6 +134,7 @@ class ProxyGroupsNotifier extends Notifier<List<ProxyGroup>> {
   /// Uses REST API in real mode, direct FFI in mock mode.
   Future<void> refresh() async {
     final manager = CoreManager.instance;
+    final status = ref.read(coreStatusProvider);
 
     Map<String, dynamic> data;
     if (manager.isMockMode) {
@@ -122,6 +145,12 @@ class ProxyGroupsNotifier extends Notifier<List<ProxyGroup>> {
         data = await manager.core.getProxies();
       }
     } else {
+      if (!shouldFetchLiveProxyGroups(
+        status: status,
+        isMockMode: manager.isMockMode,
+      )) {
+        return;
+      }
       try {
         data = await _repo.getProxies();
       } catch (_) {
@@ -135,7 +164,13 @@ class ProxyGroupsNotifier extends Notifier<List<ProxyGroup>> {
     final groupsMap = <String, ProxyGroup>{};
     final nodeTypes = <String, String>{};
     // Group types that should be treated as proxy groups even if `all` is null
-    const groupTypes = {'Selector', 'URLTest', 'Fallback', 'LoadBalance', 'Relay'};
+    const groupTypes = {
+      'Selector',
+      'URLTest',
+      'Fallback',
+      'LoadBalance',
+      'Relay'
+    };
     for (final entry in proxiesMap.entries) {
       final info = entry.value as Map<String, dynamic>;
       final type = info['type'] as String? ?? '';
@@ -159,9 +194,8 @@ class ProxyGroupsNotifier extends Notifier<List<ProxyGroup>> {
     if (globalInfo != null) {
       // Filter GLOBAL's `all` list to only real user groups (exclude DIRECT/REJECT/built-ins)
       final allNames = (globalInfo['all'] as List?)?.cast<String>() ?? [];
-      final filteredAll = allNames
-          .where((n) => groupsMap.containsKey(n))
-          .toList();
+      final filteredAll =
+          allNames.where((n) => groupsMap.containsKey(n)).toList();
       final globalGroup = ProxyGroup(
         name: 'GLOBAL',
         type: globalInfo['type'] as String? ?? 'Selector',
@@ -191,7 +225,8 @@ class ProxyGroupsNotifier extends Notifier<List<ProxyGroup>> {
     try {
       final activeId = ref.read(activeProfileIdProvider);
       if (activeId == null) return {};
-      final config = await ref.read(profileRepositoryProvider).loadConfig(activeId);
+      final config =
+          await ref.read(profileRepositoryProvider).loadConfig(activeId);
       if (config == null || config.isEmpty) return {};
 
       final yaml = loadYaml(config);
@@ -310,8 +345,8 @@ class ProxyGroupsNotifier extends Notifier<List<ProxyGroup>> {
 // ------------------------------------------------------------------
 
 /// Custom URL used for latency testing. Defaults to the standard gstatic URL.
-final testUrlProvider = StateProvider<String>(
-    (ref) => 'https://www.gstatic.com/generate_204');
+final testUrlProvider =
+    StateProvider<String>((ref) => 'https://www.gstatic.com/generate_204');
 
 final expandedGroupNamesProvider = StateProvider<Set<String>>((ref) => {});
 

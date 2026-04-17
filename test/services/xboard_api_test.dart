@@ -24,8 +24,8 @@ void main() {
 
   /// Install a [MockClient] that returns [body] with [statusCode] for all requests.
   void mockResponse(String body, {int statusCode = 200}) {
-    XBoardHttpClient.testClientFactory = () => MockClient((_) async =>
-        http.Response(body, statusCode,
+    XBoardHttpClient.testClientFactory = ({int? proxyPort}) => MockClient(
+        (_) async => http.Response(body, statusCode,
             headers: {'content-type': 'application/json; charset=utf-8'}));
   }
 
@@ -79,10 +79,11 @@ void main() {
 
     test('failure — HTTP 500 retries and throws', () async {
       var attempts = 0;
-      XBoardHttpClient.testClientFactory = () => MockClient((_) async {
-            attempts++;
-            return http.Response('Internal Server Error', 500);
-          });
+      XBoardHttpClient.testClientFactory =
+          ({int? proxyPort}) => MockClient((_) async {
+                attempts++;
+                return http.Response('Internal Server Error', 500);
+              });
 
       await expectLater(
         () => api.login('user@test.com', 'pass'),
@@ -133,7 +134,8 @@ void main() {
           'email': 'user@test.com',
           'uuid': 'abc-123',
           'online_count': 1,
-          'subscribe_url': 'https://sub.example.com/api/v1/client/subscribe?token=xyz',
+          'subscribe_url':
+              'https://sub.example.com/api/v1/client/subscribe?token=xyz',
         },
       }));
 
@@ -180,6 +182,41 @@ void main() {
           'Token expired',
         )),
       );
+    });
+
+    test('runtime API prefers proxy then falls back to direct', () async {
+      var proxiedAttempts = 0;
+      var directAttempts = 0;
+
+      api = XBoardApi(baseUrl: baseUrl, proxyPort: 7890);
+      XBoardHttpClient.testClientFactory = ({int? proxyPort}) {
+        return MockClient((_) async {
+          if (proxyPort != null) {
+            proxiedAttempts++;
+            throw const SocketException('proxy route failed');
+          }
+          directAttempts++;
+          return http.Response(
+            jsonEncode({
+              'status': 'success',
+              'data': {
+                'plan_id': 1,
+                'plan': {'name': '月付套餐'},
+                'subscribe_url':
+                    'https://sub.example.com/api/v1/client/subscribe?token=xyz',
+              },
+            }),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        });
+      };
+
+      final data = await api.getSubscribeData('Bearer token');
+
+      expect(data.profile.planName, '月付套餐');
+      expect(proxiedAttempts, 1);
+      expect(directAttempts, 1);
     });
   });
 
@@ -307,7 +344,8 @@ void main() {
   group('retry logic', () {
     test('retries on SocketException (transient)', () async {
       var attempts = 0;
-      XBoardHttpClient.testClientFactory = () => MockClient((_) async {
+      XBoardHttpClient.testClientFactory = ({int? proxyPort}) =>
+          MockClient((_) async {
             attempts++;
             if (attempts < 3) throw const SocketException('Connection refused');
             return http.Response(
@@ -329,7 +367,8 @@ void main() {
 
     test('does NOT retry on XBoardApiException with status < 500', () async {
       var attempts = 0;
-      XBoardHttpClient.testClientFactory = () => MockClient((_) async {
+      XBoardHttpClient.testClientFactory = ({int? proxyPort}) =>
+          MockClient((_) async {
             attempts++;
             return http.Response('{"status":"fail","message":"Bad"}', 200,
                 headers: {'content-type': 'application/json; charset=utf-8'});
@@ -346,20 +385,21 @@ void main() {
 
     test('retries on HTTP 500 (transient)', () async {
       var attempts = 0;
-      XBoardHttpClient.testClientFactory = () => MockClient((_) async {
-            attempts++;
-            if (attempts < 3) return http.Response('Server Error', 500);
-            return http.Response(
-              jsonEncode({
-                'status': 'success',
-                'data': {
-                  'auth_data': 'Bearer recovered',
-                  'token': 'x',
-                },
-              }),
-              200,
-            );
-          });
+      XBoardHttpClient.testClientFactory =
+          ({int? proxyPort}) => MockClient((_) async {
+                attempts++;
+                if (attempts < 3) return http.Response('Server Error', 500);
+                return http.Response(
+                  jsonEncode({
+                    'status': 'success',
+                    'data': {
+                      'auth_data': 'Bearer recovered',
+                      'token': 'x',
+                    },
+                  }),
+                  200,
+                );
+              });
 
       final result = await api.login('a@b.com', 'p');
       expect(result.token, 'Bearer recovered');
@@ -368,10 +408,11 @@ void main() {
 
     test('exhausts all retries and rethrows last error', () async {
       var attempts = 0;
-      XBoardHttpClient.testClientFactory = () => MockClient((_) async {
-            attempts++;
-            throw const SocketException('Always fails');
-          });
+      XBoardHttpClient.testClientFactory =
+          ({int? proxyPort}) => MockClient((_) async {
+                attempts++;
+                throw const SocketException('Always fails');
+              });
 
       await expectLater(
         () => api.login('a@b.com', 'p'),

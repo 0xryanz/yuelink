@@ -80,13 +80,16 @@ class CoreHeartbeatManager {
 
     final manager = CoreManager.instance;
 
-    // On iOS, Go core runs in the PacketTunnel extension process — FFI
-    // isRunning only reflects the main process and is always false. Use
-    // API availability as the sole health indicator on iOS.
-    final ffiRunning = Platform.isIOS || CoreController.instance.isRunning;
+    final ffiRunning =
+        Platform.isIOS ? false : CoreController.instance.isRunning;
     final apiOk = await manager.api.isAvailable();
 
-    if (apiOk && ffiRunning) {
+    if (RecoveryManager.isAliveForPlatform(
+      apiOk: apiOk,
+      ffiRunning: ffiRunning,
+      isAndroid: Platform.isAndroid,
+      isIOS: Platform.isIOS,
+    )) {
       _failures = 0;
       _retriedThisOutage = false;
       await _maybeProxyGuard(inBackground: inBackground);

@@ -15,6 +15,7 @@ import '../../infrastructure/repositories/profile_repository.dart';
 import '../connections/providers/connections_providers.dart';
 import '../../theme.dart';
 import '../announcements/providers/announcements_providers.dart';
+import '../mine/providers/account_providers.dart';
 import 'widgets/live_status_card.dart';
 import 'widgets/metrics_row.dart';
 import 'widgets/carrier_card.dart';
@@ -84,9 +85,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 Expanded(
                   child: RefreshIndicator(
                     onRefresh: () async {
-                      await ref
-                          .read(authProvider.notifier)
-                          .refreshUserInfo();
+                      await ref.read(authProvider.notifier).refreshUserInfo();
+                      ref.invalidate(dashboardNoticesProvider);
                       ref.invalidate(announcementsProvider);
                       ref.read(checkinProvider.notifier).refresh();
                     },
@@ -114,8 +114,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                         // ── 1.5 订阅过期提示 ─────────────────────────
                         const _StaggeredIn(
                           index: 1,
-                          child: RepaintBoundary(
-                              child: StaleSubscriptionBanner()),
+                          child:
+                              RepaintBoundary(child: StaleSubscriptionBanner()),
                         ),
 
                         const SizedBox(height: 12),
@@ -228,7 +228,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         return;
       }
 
-      final config = await ref.read(profileRepositoryProvider).loadConfig(activeId);
+      final config =
+          await ref.read(profileRepositoryProvider).loadConfig(activeId);
       if (config == null) {
         AppNotifier.warning(s.snackConfigMissing);
         return;
@@ -294,8 +295,7 @@ class _TrafficSectionState extends ConsumerState<_TrafficSection> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isRunning =
-        ref.watch(coreStatusProvider) == CoreStatus.running;
+    final isRunning = ref.watch(coreStatusProvider) == CoreStatus.running;
 
     final headerColor = isDark ? YLColors.zinc200 : YLColors.zinc700;
     final borderColor = isDark
@@ -316,8 +316,7 @@ class _TrafficSectionState extends ConsumerState<_TrafficSection> {
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
                   Icon(
@@ -338,8 +337,7 @@ class _TrafficSectionState extends ConsumerState<_TrafficSection> {
                   if (!isRunning)
                     Text(
                       S.of(context).vpnNotRunning,
-                      style: YLText.caption
-                          .copyWith(color: YLColors.zinc400),
+                      style: YLText.caption.copyWith(color: YLColors.zinc400),
                     ),
                   const SizedBox(width: 6),
                   Icon(

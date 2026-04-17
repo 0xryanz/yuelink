@@ -192,10 +192,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       // Refresh account overview shown on this page (我的 card).
-      // Do NOT invalidate accountNoticesProvider here — NoticesCard on Dashboard
-      // uses when(loading: () => SizedBox.shrink()), causing it to flash empty
-      // on every background→foreground cycle. Notices are refreshed via
-      // _onAppResumed() → refreshUserInfo() at the app level.
+      // Do NOT invalidate dashboardNoticesProvider here — NoticesCard on
+      // Dashboard uses when(loading: () => SizedBox.shrink()), causing it to
+      // flash empty on every background→foreground cycle. Notices are
+      // refreshed via dashboard pull-to-refresh instead.
       ref.invalidate(accountOverviewProvider);
     }
   }
@@ -440,8 +440,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           YLInfoRow(
                             label: s.mineSubscriptionManage,
                             leading: const YLSettingIcon(
-                                icon: Icons.cloud_outlined,
-                                color: Colors.blue),
+                                icon: Icons.cloud_outlined, color: Colors.blue),
                             trailing: const Icon(Icons.chevron_right,
                                 size: 18, color: YLColors.zinc400),
                             onTap: () => Navigator.of(context).push(
@@ -518,8 +517,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           YLInfoRow(
                             label: S.current.repairTitle,
                             leading: const YLSettingIcon(
-                                icon: Icons.build_outlined,
-                                color: Colors.red),
+                                icon: Icons.build_outlined, color: Colors.red),
                             trailing: const Icon(Icons.chevron_right,
                                 size: 18, color: YLColors.zinc400),
                             onTap: () => Navigator.of(context).push(
@@ -640,8 +638,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           YLInfoRow(
                             label: s.mineTelegramGroup,
                             leading: const YLSettingIcon(
-                                icon: Icons.send,
-                                color: Color(0xFF229ED9)),
+                                icon: Icons.send, color: Color(0xFF229ED9)),
                             trailing: const Icon(Icons.chevron_right,
                                 size: 18, color: YLColors.zinc400),
                             onTap: () async {
@@ -662,8 +659,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           YLInfoRow(
                             label: s.minePrivacyPolicy,
                             leading: const YLSettingIcon(
-                                icon: Icons.lock_outline,
-                                color: Colors.green),
+                                icon: Icons.lock_outline, color: Colors.green),
                             trailing: const Icon(Icons.chevron_right,
                                 size: 18, color: YLColors.zinc400),
                             onTap: () {
@@ -681,8 +677,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           YLInfoRow(
                             label: s.openSourceLicense,
                             leading: const YLSettingIcon(
-                                icon: Icons.info_outline,
-                                color: Colors.blue),
+                                icon: Icons.info_outline, color: Colors.blue),
                             trailing: const Icon(Icons.chevron_right,
                                 size: 18, color: YLColors.zinc400),
                             onTap: () => showLicensePage(
@@ -848,150 +843,152 @@ class _ProfileRow extends ConsumerWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
         child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: isDark ? YLColors.zinc700 : YLColors.zinc200,
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    email.isNotEmpty && email != S.current.loading
-                        ? email[0].toUpperCase()
-                        : '?',
-                    style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? YLColors.zinc300 : YLColors.zinc600),
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: isDark ? YLColors.zinc700 : YLColors.zinc200,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      email.isNotEmpty && email != S.current.loading
+                          ? email[0].toUpperCase()
+                          : '?',
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? YLColors.zinc300 : YLColors.zinc600),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(email,
-                        style: YLText.titleMedium.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? Colors.white : YLColors.zinc900),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 3),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: isDark ? YLColors.zinc700 : YLColors.zinc100,
-                        borderRadius: BorderRadius.circular(YLRadius.sm),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(email,
+                          style: YLText.titleMedium.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Colors.white : YLColors.zinc900),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 3),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isDark ? YLColors.zinc700 : YLColors.zinc100,
+                          borderRadius: BorderRadius.circular(YLRadius.sm),
+                        ),
+                        child: Text(plan,
+                            style: YLText.caption.copyWith(
+                                fontWeight: FontWeight.w500,
+                                color: isDark
+                                    ? YLColors.zinc300
+                                    : YLColors.zinc600)),
                       ),
-                      child: Text(plan,
-                          style: YLText.caption.copyWith(
-                              fontWeight: FontWeight.w500,
-                              color: isDark
-                                  ? YLColors.zinc300
-                                  : YLColors.zinc600)),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              // 改密码 + 退出登录 小图标
-              IconButton(
-                icon: Icon(Icons.lock_outline_rounded,
-                    size: 18,
-                    color: isDark ? YLColors.zinc400 : YLColors.zinc500),
-                tooltip: S.current.mineChangePassword,
-                onPressed: () {
-                  final s = S.of(context);
-                  final oldPwCtrl = TextEditingController();
-                  final newPwCtrl = TextEditingController();
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: Text(s.mineChangePassword),
-                      content:
-                          Column(mainAxisSize: MainAxisSize.min, children: [
-                        TextField(
-                            controller: oldPwCtrl,
-                            obscureText: true,
-                            decoration:
-                                InputDecoration(labelText: s.oldPassword)),
-                        const SizedBox(height: 12),
-                        TextField(
-                            controller: newPwCtrl,
-                            obscureText: true,
-                            decoration:
-                                InputDecoration(labelText: s.newPassword)),
-                      ]),
-                      actions: [
-                        TextButton(
-                            onPressed: () => Navigator.pop(ctx),
-                            child: Text(s.cancel)),
-                        FilledButton(
-                          onPressed: () async {
-                            final oldPw = oldPwCtrl.text.trim();
-                            final newPw = newPwCtrl.text.trim();
-                            if (oldPw.isEmpty || newPw.isEmpty) return;
-                            Navigator.pop(ctx);
-                            final token = ref.read(authProvider).token;
-                            if (token == null) return;
-                            try {
-                              await ref.read(xboardApiProvider).changePassword(
-                                  token: token,
-                                  oldPassword: oldPw,
-                                  newPassword: newPw);
-                              AppNotifier.success(s.passwordChangedSuccess);
-                            } catch (_) {
-                              AppNotifier.error(s.passwordChangeFailed);
-                            }
-                          },
-                          child: Text(s.confirm),
-                        ),
-                      ],
-                    ),
-                  ).whenComplete(() {
-                    oldPwCtrl.dispose();
-                    newPwCtrl.dispose();
-                  });
-                },
-              ),
-              IconButton(
-                icon: Icon(Icons.logout_rounded,
-                    size: 18, color: YLColors.error.withValues(alpha: 0.7)),
-                tooltip: S.current.authLogout,
-                onPressed: () {
-                  final s = S.of(context);
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: Text(s.authLogout),
-                      content: Text(s.authLogoutConfirm),
-                      actions: [
-                        TextButton(
-                            onPressed: () => Navigator.pop(ctx),
-                            child: Text(s.cancel)),
-                        FilledButton(
-                          onPressed: () {
-                            Navigator.pop(ctx);
-                            ref.read(authProvider.notifier).logout();
-                          },
-                          style: FilledButton.styleFrom(
-                              backgroundColor: YLColors.error),
-                          child: Text(s.authLogout),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        ],
-      ),
+                // 改密码 + 退出登录 小图标
+                IconButton(
+                  icon: Icon(Icons.lock_outline_rounded,
+                      size: 18,
+                      color: isDark ? YLColors.zinc400 : YLColors.zinc500),
+                  tooltip: S.current.mineChangePassword,
+                  onPressed: () {
+                    final s = S.of(context);
+                    final oldPwCtrl = TextEditingController();
+                    final newPwCtrl = TextEditingController();
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: Text(s.mineChangePassword),
+                        content:
+                            Column(mainAxisSize: MainAxisSize.min, children: [
+                          TextField(
+                              controller: oldPwCtrl,
+                              obscureText: true,
+                              decoration:
+                                  InputDecoration(labelText: s.oldPassword)),
+                          const SizedBox(height: 12),
+                          TextField(
+                              controller: newPwCtrl,
+                              obscureText: true,
+                              decoration:
+                                  InputDecoration(labelText: s.newPassword)),
+                        ]),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: Text(s.cancel)),
+                          FilledButton(
+                            onPressed: () async {
+                              final oldPw = oldPwCtrl.text.trim();
+                              final newPw = newPwCtrl.text.trim();
+                              if (oldPw.isEmpty || newPw.isEmpty) return;
+                              Navigator.pop(ctx);
+                              final token = ref.read(authProvider).token;
+                              if (token == null) return;
+                              try {
+                                await ref
+                                    .read(businessXboardApiProvider)
+                                    .changePassword(
+                                        token: token,
+                                        oldPassword: oldPw,
+                                        newPassword: newPw);
+                                AppNotifier.success(s.passwordChangedSuccess);
+                              } catch (_) {
+                                AppNotifier.error(s.passwordChangeFailed);
+                              }
+                            },
+                            child: Text(s.confirm),
+                          ),
+                        ],
+                      ),
+                    ).whenComplete(() {
+                      oldPwCtrl.dispose();
+                      newPwCtrl.dispose();
+                    });
+                  },
+                ),
+                IconButton(
+                  icon: Icon(Icons.logout_rounded,
+                      size: 18, color: YLColors.error.withValues(alpha: 0.7)),
+                  tooltip: S.current.authLogout,
+                  onPressed: () {
+                    final s = S.of(context);
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: Text(s.authLogout),
+                        content: Text(s.authLogoutConfirm),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: Text(s.cancel)),
+                          FilledButton(
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              ref.read(authProvider.notifier).logout();
+                            },
+                            style: FilledButton.styleFrom(
+                                backgroundColor: YLColors.error),
+                            child: Text(s.authLogout),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

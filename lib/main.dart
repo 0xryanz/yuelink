@@ -168,8 +168,7 @@ Future<void> _bootstrap() async {
     // Daily heartbeat — emit at most once per calendar day (UTC) so retention
     // curves count users who launched the app even when no feature event
     // happened. Persisted as a YYYY-MM-DD string; cheap string compare.
-    final today =
-        DateTime.now().toUtc().toIso8601String().substring(0, 10);
+    final today = DateTime.now().toUtc().toIso8601String().substring(0, 10);
     final last = await SettingsService.get<String>('telemetryDailyPingDay');
     if (last != today) {
       Telemetry.event('daily_ping');
@@ -511,8 +510,7 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
       _exitIpSub = ref.listenManual(exitIpInfoProvider, (_, __) {
         _pushTileState();
       });
-      _tileNodeInfoSub =
-          ref.listenManual(tileShowNodeInfoProvider, (_, __) {
+      _tileNodeInfoSub = ref.listenManual(tileShowNodeInfoProvider, (_, __) {
         _pushTileState();
       });
     }
@@ -604,9 +602,7 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
       _ => null,
     };
     String? subtitle;
-    if (active &&
-        transition == null &&
-        ref.read(tileShowNodeInfoProvider)) {
+    if (active && transition == null && ref.read(tileShowNodeInfoProvider)) {
       final info = ref.read(exitIpInfoProvider).valueOrNull;
       if (info != null && info.flagEmoji.isNotEmpty) {
         final loc = info.locationLine;
@@ -788,9 +784,8 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
 
     // 3. Normal case: Dart says running — verify core is still alive
     try {
-      final running = manager.isRunning;
-      final apiOk = await manager.api.isAvailable();
-      if (!running || !apiOk) {
+      final health = await RecoveryManager.checkCoreHealth();
+      if (!health.alive || !health.apiOk) {
         debugPrint('[AppLifecycle] core dead after resume — resetting state');
         resetCoreToStopped(ref);
         ref.read(delayResultsProvider.notifier).state = {};
@@ -1063,9 +1058,8 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
   /// Get the currently selected node name from the first selector group.
   String? _getCurrentNodeName(List<ProxyGroup>? groups) {
     if (groups == null || groups.isEmpty) return null;
-    final selector = groups
-        .where((g) => g.type.toLowerCase() == 'selector')
-        .firstOrNull;
+    final selector =
+        groups.where((g) => g.type.toLowerCase() == 'selector').firstOrNull;
     return selector?.now;
   }
 
@@ -1269,7 +1263,9 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
               onTimeout: () {},
             );
       }
-      try { _singleInstanceServer?.close(); } catch (_) {}
+      try {
+        _singleInstanceServer?.close();
+      } catch (_) {}
       // System proxy clear is the user-visible correctness requirement —
       // must complete before exit, or the OS keeps routing traffic through
       // a dead mixed-port. 2s cap covers the slow macOS path (N network
@@ -1279,9 +1275,15 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
         await CoreActions.clearSystemProxyStatic()
             .timeout(const Duration(seconds: 2));
       } catch (_) {}
-      try { trayManager.destroy(); } catch (_) {}
-      try { windowManager.setPreventClose(false); } catch (_) {}
-      try { windowManager.destroy(); } catch (_) {}
+      try {
+        trayManager.destroy();
+      } catch (_) {}
+      try {
+        windowManager.setPreventClose(false);
+      } catch (_) {}
+      try {
+        windowManager.destroy();
+      } catch (_) {}
     } catch (_) {}
     exit(0);
   }
@@ -1392,13 +1394,13 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
     return DynamicColorBuilder(
       builder: (lightDynamic, darkDynamic) {
         final useDynamic = accentColor == YLColors.primary &&
-            lightDynamic != null && darkDynamic != null;
+            lightDynamic != null &&
+            darkDynamic != null;
         return MaterialApp(
           title: AppConstants.appName,
           debugShowCheckedModeBanner: false,
           navigatorKey: navigatorKey,
           scaffoldMessengerKey: scaffoldMessengerKey,
-
           locale: Locale(language),
           supportedLocales: const [Locale('zh'), Locale('en')],
           localizationsDelegates: const [
@@ -1406,7 +1408,6 @@ class _YueLinkAppState extends ConsumerState<YueLinkApp>
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-
           themeMode: themeMode,
           theme: buildTheme(
             Brightness.light,
@@ -1638,10 +1639,8 @@ class _MainShellState extends ConsumerState<MainShell> {
       bottomNavigationBar: CupertinoTabBar(
         currentIndex: _currentIndex,
         onTap: (i) => switchTab(i),
-        backgroundColor: Theme.of(context)
-            .colorScheme
-            .surface
-            .withValues(alpha: 0.85),
+        backgroundColor:
+            Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
         border: Border(
           top: BorderSide(
             color: Theme.of(context).brightness == Brightness.dark

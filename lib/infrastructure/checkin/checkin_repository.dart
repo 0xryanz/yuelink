@@ -11,8 +11,11 @@ import '../transport/yuelink_http_client.dart';
 /// Transport (HttpClient + Bearer + status-code asserts) is shared with
 /// [AccountRepository] and [HomeRepository] via [YueLinkHttpClient].
 class CheckinRepository {
-  CheckinRepository()
-      : _http = YueLinkHttpClient(baseUrl: 'https://yue.yuebao.website');
+  CheckinRepository({int? proxyPort})
+      : _http = YueLinkHttpClient(
+          baseUrl: 'https://yue.yuebao.website',
+          proxyPort: proxyPort,
+        );
 
   final YueLinkHttpClient _http;
 

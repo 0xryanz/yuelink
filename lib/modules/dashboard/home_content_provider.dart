@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../infrastructure/home/home_repository.dart';
+import '../yue_auth/providers/yue_auth_providers.dart';
 import '../nodes/scene_mode/scene_mode.dart';
 import 'widgets/hero_banner_model.dart';
 
@@ -143,8 +144,7 @@ class HomeContent {
           ? EmbyPreviewConfig.fromJson(
               json['embyPreview'] as Map<String, dynamic>)
           : const EmbyPreviewConfig(),
-      showServiceStatusBar:
-          json['showServiceStatusBar'] as bool? ?? true,
+      showServiceStatusBar: json['showServiceStatusBar'] as bool? ?? true,
       sceneModes: json['sceneModes'] as Map<String, dynamic>?,
     );
   }
@@ -178,7 +178,8 @@ class HomeContent {
 /// so **no widget changes** are required when migrating to v2.
 final homeContentProvider = FutureProvider<HomeContent>((ref) async {
   try {
-    final json = await HomeRepository().fetchHomeConfig();
+    final proxyPort = ref.watch(businessProxyPortProvider);
+    final json = await HomeRepository(proxyPort: proxyPort).fetchHomeConfig();
     if (json != null) return HomeContent.fromJson(json);
   } catch (_) {}
   return HomeContent.local(); // fallback to local defaults
@@ -194,7 +195,8 @@ final homeContentProvider = FutureProvider<HomeContent>((ref) async {
 /// Falls back to [kLocalHeroBanners] during [homeContentProvider] load/error,
 /// so the carousel is never empty on cold start.
 final heroBannerConfigProvider = Provider<List<HeroBannerItem>>((ref) {
-  return ref.watch(homeContentProvider).valueOrNull?.banners ?? kLocalHeroBanners;
+  return ref.watch(homeContentProvider).valueOrNull?.banners ??
+      kLocalHeroBanners;
 });
 
 /// Visibility flags for each quick-action tile.
@@ -228,8 +230,7 @@ final serviceStatusBarVisibleProvider = Provider<bool>((ref) {
 /// 场景模式有效配置（本地预设 + 远程覆盖合并）。
 final sceneModeConfigsProvider =
     Provider<Map<SceneMode, SceneModeConfig>>((ref) {
-  final remote =
-      ref.watch(homeContentProvider).valueOrNull?.sceneModes;
+  final remote = ref.watch(homeContentProvider).valueOrNull?.sceneModes;
   if (remote == null) return kSceneModeDefaults;
 
   // 合并：对每个 mode，如果远程有覆盖就 merge，否则用本地默认

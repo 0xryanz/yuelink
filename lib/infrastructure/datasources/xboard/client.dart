@@ -23,10 +23,21 @@ import 'errors.dart';
 /// `xboard/` module so the endpoint methods in `api.dart` are pure
 /// "compose path → call _get → wrap result", with no transport noise.
 class XBoardHttpClient {
-  XBoardHttpClient({required this.baseUrl, List<String>? fallbackUrls})
-      : fallbackUrls = fallbackUrls ?? const [];
+  static const defaultTimeout = Duration(seconds: 20);
+  static const defaultMaxRetries = 3;
+
+  XBoardHttpClient({
+    required this.baseUrl,
+    List<String>? fallbackUrls,
+    this.proxyPort,
+    this.timeout = defaultTimeout,
+    this.maxRetries = defaultMaxRetries,
+  }) : fallbackUrls = fallbackUrls ?? const [];
 
   final String baseUrl;
+  final int? proxyPort;
+  final Duration timeout;
+  final int maxRetries;
 
   /// Ordered fallback hosts tried one-by-one (single-attempt, no retry
   /// per URL) after baseUrl exhausts its retries with a "host-unreachable"
@@ -35,19 +46,19 @@ class XBoardHttpClient {
   /// fallback — they'd fail the same way on every host.
   final List<String> fallbackUrls;
 
-  static const _kTimeout = Duration(seconds: 20);
-
   /// Override in tests to inject a mock [http.Client].
   @visibleForTesting
-  static http.Client Function()? testClientFactory;
+  static http.Client Function({int? proxyPort})? testClientFactory;
 
   /// Build an [http.Client] backed by [dart:io]'s [HttpClient]. Ensures
   /// SNI is always sent (required by CloudFront), explicit timeouts, and
   /// works on all Flutter platforms.
   ///
-  /// ⚠ Bypasses the system proxy via explicit `findProxy = DIRECT`.
+  /// When [proxyPort] is provided, routes through YueLink's local mihomo
+  /// mixed-port (`127.0.0.1:proxyPort`). Otherwise, bypasses the system proxy
+  /// via explicit `findProxy = DIRECT`.
   ///
-  /// Why: YueLink's own TUN / system-proxy mode sets the OS proxy to
+  /// Why direct matters for bootstrap: YueLink's own TUN / system-proxy mode sets the OS proxy to
   /// `127.0.0.1:mixedPort`, which means Dart's HttpClient (that respects
   /// the system proxy by default) would route XBoard API calls THROUGH our
   /// own mihomo. When a subscription's nodes are stale after an app
@@ -61,18 +72,26 @@ class XBoardHttpClient {
   /// because Dart's arrow-function + cascade parser has a known bug
   /// documented in CLAUDE.md — mis-typing the assignment on some Dart
   /// versions.
-  static http.Client buildClient() {
-    if (testClientFactory != null) return testClientFactory!();
+  static http.Client buildClient({
+    int? proxyPort,
+    Duration connectionTimeout = defaultTimeout,
+  }) {
+    if (testClientFactory != null) {
+      return testClientFactory!(proxyPort: proxyPort);
+    }
     final inner = HttpClient();
-    inner.findProxy = (uri) => 'DIRECT';
-    inner.connectionTimeout = const Duration(seconds: 20);
+    if (proxyPort != null && proxyPort > 0) {
+      inner.findProxy = (_) => 'PROXY 127.0.0.1:$proxyPort';
+    } else {
+      inner.findProxy = (_) => 'DIRECT';
+    }
+    inner.connectionTimeout = connectionTimeout;
     inner.idleTimeout = const Duration(seconds: 30);
     return IOClient(inner);
   }
 
   // ── Retry policy ────────────────────────────────────────────────────────
 
-  static const _maxRetries = 3;
   static const _retryDelays = [
     Duration(milliseconds: 500),
     Duration(seconds: 1),
@@ -88,7 +107,7 @@ class XBoardHttpClient {
     return false;
   }
 
-  /// Execute [fn] with automatic retry on transient errors.
+  /// Execute [fn] on the direct path with automatic retry on transient errors.
   /// Non-retryable errors (auth, business logic) propagate immediately.
   ///
   /// Host fallback: after baseUrl exhausts its retries with a transport-
@@ -96,17 +115,18 @@ class XBoardHttpClient {
   /// URL in [fallbackUrls] is tried once in order. Single-attempt per
   /// fallback — already 3 × retry on primary; adding more retries per
   /// fallback would push the worst-case latency past user patience.
-  Future<T> _withRetry<T>(Future<T> Function(String url) fn) async {
+  Future<T> _withDirectRetry<T>(Future<T> Function(String url) fn) async {
     Object? lastError;
-    for (var attempt = 0; attempt < _maxRetries; attempt++) {
+    final attempts = maxRetries < 1 ? 1 : maxRetries;
+    for (var attempt = 0; attempt < attempts; attempt++) {
       try {
         return await fn(baseUrl);
       } catch (e) {
         lastError = e;
-        final isLast = attempt == _maxRetries - 1;
+        final isLast = attempt == attempts - 1;
         if (isLast) break;
         if (!_isTransient(e)) rethrow;
-        debugPrint('[XBoardApi] Retry ${attempt + 1}/$_maxRetries after: $e');
+        debugPrint('[XBoardApi] Retry ${attempt + 1}/$attempts after: $e');
         await Future.delayed(_retryDelays[attempt]);
       }
     }
@@ -129,6 +149,28 @@ class XBoardHttpClient {
 
     debugPrint('[XBoardApi] All hosts exhausted: $lastError');
     throw lastError!;
+  }
+
+  /// Runtime business APIs prefer the local proxy when the core is already
+  /// connected, but always keep the old direct bootstrap path as a fallback.
+  ///
+  /// This avoids the "panel domain blocked by GFW" failure mode after login
+  /// without reintroducing the older self-dependency loop where auth /
+  /// subscription refresh became impossible if the current node was broken.
+  Future<T> _withRouting<T>(
+    Future<T> Function(String url, {int? proxyPort}) fn,
+  ) async {
+    final port = proxyPort;
+    if (port != null && port > 0) {
+      try {
+        return await fn(baseUrl, proxyPort: port);
+      } catch (e) {
+        if (!_isHostUnreachable(e)) rethrow;
+        debugPrint(
+            '[XBoardApi] Proxied route failed, falling back to direct: $e');
+      }
+    }
+    return _withDirectRetry((url) => fn(url));
   }
 
   /// "This host isn't reachable on this network" — the canonical trigger
@@ -170,12 +212,13 @@ class XBoardHttpClient {
 
   /// GET that expects `data` to be a `Map<String, dynamic>`.
   Future<Map<String, dynamic>> get(String path, {String? token}) =>
-      _withRetry((url) async {
-        final client = buildClient();
+      _withRouting((url, {proxyPort}) async {
+        final client =
+            buildClient(proxyPort: proxyPort, connectionTimeout: timeout);
         try {
           final resp = await client
               .get(Uri.parse('$url$path'), headers: _headers(token: token))
-              .timeout(_kTimeout);
+              .timeout(timeout);
           if (resp.statusCode != 200) {
             throw XBoardApiException(resp.statusCode, resp.body);
           }
@@ -195,8 +238,9 @@ class XBoardHttpClient {
     Map<String, dynamic>? body,
     String? token,
   }) =>
-      _withRetry((url) async {
-        final client = buildClient();
+      _withRouting((url, {proxyPort}) async {
+        final client =
+            buildClient(proxyPort: proxyPort, connectionTimeout: timeout);
         try {
           final resp = await client
               .post(
@@ -204,7 +248,7 @@ class XBoardHttpClient {
                 headers: _headers(token: token),
                 body: body != null ? jsonEncode(body) : null,
               )
-              .timeout(_kTimeout);
+              .timeout(timeout);
           if (resp.statusCode != 200) {
             throw XBoardApiException(resp.statusCode, resp.body);
           }
@@ -225,8 +269,9 @@ class XBoardHttpClient {
     String? token,
     Map<String, String>? queryParams,
   }) =>
-      _withRetry((url) async {
-        final client = buildClient();
+      _withRouting((url, {proxyPort}) async {
+        final client =
+            buildClient(proxyPort: proxyPort, connectionTimeout: timeout);
         try {
           var uri = Uri.parse('$url$path');
           if (queryParams != null && queryParams.isNotEmpty) {
@@ -234,7 +279,7 @@ class XBoardHttpClient {
           }
           final resp = await client
               .get(uri, headers: _headers(token: token))
-              .timeout(_kTimeout);
+              .timeout(timeout);
           if (resp.statusCode != 200) {
             throw XBoardApiException(resp.statusCode, resp.body);
           }
@@ -252,8 +297,9 @@ class XBoardHttpClient {
     Map<String, dynamic>? body,
     String? token,
   }) =>
-      _withRetry((url) async {
-        final client = buildClient();
+      _withRouting((url, {proxyPort}) async {
+        final client =
+            buildClient(proxyPort: proxyPort, connectionTimeout: timeout);
         try {
           final resp = await client
               .post(
@@ -261,7 +307,7 @@ class XBoardHttpClient {
                 headers: _headers(token: token),
                 body: body != null ? jsonEncode(body) : null,
               )
-              .timeout(_kTimeout);
+              .timeout(timeout);
           if (resp.statusCode != 200) {
             throw XBoardApiException(resp.statusCode, resp.body);
           }

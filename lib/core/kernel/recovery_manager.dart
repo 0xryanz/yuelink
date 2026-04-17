@@ -15,6 +15,22 @@ import 'core_manager.dart';
 class RecoveryManager {
   RecoveryManager._();
 
+  /// Android/iOS treat a reachable mihomo API as authoritative.
+  ///
+  /// On Android we've observed `IsRunning()` go false while the REST API is
+  /// still healthy, which makes the UI flap to "disconnected" and triggers
+  /// needless silent restarts. iOS already has the same property because the
+  /// Go core lives in the PacketTunnel extension process.
+  static bool isAliveForPlatform({
+    required bool apiOk,
+    required bool ffiRunning,
+    required bool isAndroid,
+    required bool isIOS,
+  }) {
+    if (isAndroid || isIOS) return apiOk;
+    return apiOk && ffiRunning;
+  }
+
   // ── Shared state reset ─────────────────────────────────────────────────
 
   /// Reset all core-related provider state to stopped and stop the core.
@@ -51,24 +67,28 @@ class RecoveryManager {
   /// always returns false in the main app. Only the REST API check works.
   static Future<({bool alive, bool apiOk})> checkCoreHealth() async {
     final manager = CoreManager.instance;
-    if (Platform.isIOS) {
-      final apiOk = await manager.api
-          .isAvailable()
-          .timeout(const Duration(seconds: 2), onTimeout: () => false);
+    final apiOk = await manager.api
+        .isAvailable()
+        .timeout(const Duration(seconds: 2), onTimeout: () => false);
+    if (Platform.isIOS || Platform.isAndroid) {
       return (alive: apiOk, apiOk: apiOk);
     }
     if (Platform.isMacOS || Platform.isWindows) {
       final connectionMode = await SettingsService.getConnectionMode();
       if (connectionMode == 'tun') {
-        final apiOk = await manager.api
-            .isAvailable()
-            .timeout(const Duration(seconds: 2), onTimeout: () => false);
         return (alive: apiOk, apiOk: apiOk);
       }
     }
     final alive = manager.isCoreActuallyRunning;
-    final apiOk = alive ? await manager.api.isAvailable() : false;
-    return (alive: alive, apiOk: apiOk);
+    return (
+      alive: isAliveForPlatform(
+        apiOk: apiOk,
+        ffiRunning: alive,
+        isAndroid: Platform.isAndroid,
+        isIOS: Platform.isIOS,
+      ),
+      apiOk: apiOk,
+    );
   }
 }
 

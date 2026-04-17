@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/storage/auth_token_service.dart';
 import '../../../core/storage/settings_service.dart';
+import '../../../core/providers/core_provider.dart';
 import '../../../infrastructure/datasources/xboard/index.dart';
 // Re-export shared types so other modules import from auth, not datasources.
 export '../../../infrastructure/datasources/xboard/index.dart'
@@ -69,32 +71,62 @@ class AuthState {
 // ------------------------------------------------------------------
 
 /// Default XBoard panel URL — override via AuthTokenService.saveApiHost().
-/// Uses yue.yuebao.website (direct to 23.80.91.14) as primary — most reliable
-/// for API calls from China. CloudFront is fallback-only: better for web
-/// browsers but less stable for native app API calls on some Chinese ISPs.
-const _kDefaultApiHost = 'https://yue.yuebao.website';
-
-/// Ordered fallback hosts tried when the primary returns a
-/// transport-level error (502/503/504 / timeout / socket / TLS).
+/// The current primary bootstrap route is the raw panel IP on port 8001.
 ///
-/// - `d7ccm19ki90mg.cloudfront.net` — CloudFront native domain; DNS is
-///   owned by AWS and never depends on our registrar / alias chain, so
-///   it stays resolvable even when yuetong.app's CNAME or DNS host
-///   flakes. Tried first.
-/// - `yuetong.app` — CloudFront alias; kept as a last resort because
-///   edges may still have cached responses even if the alias's DNS
-///   misbehaves.
+/// Note: this endpoint only speaks plain HTTP on 66.55.76.208:8001; HTTPS
+/// fails the TLS handshake, so the scheme here must stay `http://`.
+const _kDefaultApiHost = 'http://66.55.76.208:8001';
+
+/// Ordered fallback hosts tried when the primary returns a transport-level
+/// error (502/503/504 / timeout / socket / TLS).
+///
+/// Keep the old CDN / business domains as alternates so the app can fail over
+/// if the raw IP route is unreachable on a given network.
 const _kFallbackHosts = <String>[
   'https://d7ccm19ki90mg.cloudfront.net',
+  'https://yue.yuebao.website',
   'https://yuetong.app',
 ];
+
+const _kBootstrapTimeout = Duration(seconds: 8);
+const _kBootstrapRetries = 1;
 
 /// Tracks the current API host — updated on login and restored from storage.
 final _apiHostProvider = StateProvider<String>((ref) => _kDefaultApiHost);
 
+List<String> _fallbackHostsFor(String primaryHost) => [
+      for (final host in [_kDefaultApiHost, ..._kFallbackHosts])
+        if (host != primaryHost) host,
+    ];
+
 final xboardApiProvider = Provider<XBoardApi>((ref) {
   final host = ref.watch(_apiHostProvider);
-  return XBoardApi(baseUrl: host, fallbackUrls: _kFallbackHosts);
+  return XBoardApi(baseUrl: host, fallbackUrls: _fallbackHostsFor(host));
+});
+
+/// Runtime business APIs may use the local proxy after login, but only when
+/// the core is genuinely up. Bootstrap/auth flows continue to use
+/// [xboardApiProvider] directly so login / subscription recovery never depend
+/// on the current node being healthy.
+final businessProxyPortProvider = Provider<int?>((ref) {
+  final token = ref.watch(authProvider.select((s) => s.token));
+  final status = ref.watch(coreStatusProvider);
+  if (token == null || status != CoreStatus.running) return null;
+  if (!CoreManager.instance.isRunning || CoreManager.instance.isMockMode) {
+    return null;
+  }
+  final port = CoreManager.instance.mixedPort;
+  return port > 0 ? port : null;
+});
+
+final businessXboardApiProvider = Provider<XBoardApi>((ref) {
+  final host = ref.watch(_apiHostProvider);
+  final proxyPort = ref.watch(businessProxyPortProvider);
+  return XBoardApi(
+    baseUrl: host,
+    fallbackUrls: _fallbackHostsFor(host),
+    proxyPort: proxyPort,
+  );
 });
 
 // ------------------------------------------------------------------
@@ -112,6 +144,55 @@ final authProvider = NotifierProvider<AuthNotifier, AuthState>(
 class AuthNotifier extends Notifier<AuthState> {
   late final AuthTokenService _authService;
   bool _disposed = false;
+
+  static bool _isBootstrapNetworkError(Object e) {
+    if (e is TimeoutException) return true;
+    if (e is SocketException) return true;
+    if (e is HandshakeException) return true;
+    if (e is HttpException) return true;
+    if (e is XBoardApiException) {
+      return e.statusCode == 502 || e.statusCode == 503 || e.statusCode == 504;
+    }
+    return false;
+  }
+
+  Iterable<String> _bootstrapHosts(String preferredHost) sync* {
+    final seen = <String>{};
+    for (final host in [
+      _kDefaultApiHost,
+      preferredHost,
+      ..._fallbackHostsFor(preferredHost),
+    ]) {
+      if (host.isEmpty || !seen.add(host)) {
+        continue;
+      }
+      yield host;
+    }
+  }
+
+  Future<({String host, T value})> _runBootstrapRequest<T>(
+    Future<T> Function(XBoardApi api) request, {
+    required String preferredHost,
+  }) async {
+    Object? lastError;
+    for (final host in _bootstrapHosts(preferredHost)) {
+      try {
+        final api = XBoardApi(
+          baseUrl: host,
+          fallbackUrls: const <String>[],
+          timeout: _kBootstrapTimeout,
+          maxRetries: _kBootstrapRetries,
+        );
+        final value = await request(api);
+        return (host: host, value: value);
+      } catch (e) {
+        lastError = e;
+        if (!_isBootstrapNetworkError(e)) rethrow;
+        debugPrint('[Auth] bootstrap host failed: $host error=$e');
+      }
+    }
+    throw lastError ?? Exception('Bootstrap hosts exhausted');
+  }
 
   @override
   AuthState build() {
@@ -168,11 +249,15 @@ class AuthNotifier extends Notifier<AuthState> {
 
     try {
       // Resolve API host
-      final host = apiHost ?? _kDefaultApiHost;
-      final api = XBoardApi(baseUrl: host, fallbackUrls: _kFallbackHosts);
+      final preferredHost = apiHost ?? _kDefaultApiHost;
 
       // 1. Login
-      final loginResp = await api.login(email, password);
+      final loginResult = await _runBootstrapRequest(
+        (api) => api.login(email, password),
+        preferredHost: preferredHost,
+      );
+      final host = loginResult.host;
+      final loginResp = loginResult.value;
       final token = loginResp.token;
 
       // 2. Save token and host, update provider so all consumers get correct host
@@ -186,7 +271,11 @@ class AuthNotifier extends Notifier<AuthState> {
       //    /api/v1/user/info does NOT return u/d or nested plan object — do not use it.
       UserProfile? profile;
       try {
-        final sub = await api.getSubscribeData(token);
+        final subResult = await _runBootstrapRequest(
+          (api) => api.getSubscribeData(token),
+          preferredHost: host,
+        );
+        final sub = subResult.value;
         profile = sub.profile;
         await _authService.cacheProfile(profile);
         await _authService.saveSubscribeUrl(sub.subscribeUrl);
@@ -332,17 +421,26 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<void> _refreshUserInfo(String token) async {
     try {
       final host = await _authService.getApiHost() ?? _kDefaultApiHost;
-      final api = XBoardApi(baseUrl: host, fallbackUrls: _kFallbackHosts);
-      final sub = await api.getSubscribeData(token);
+      final subResult = await _runBootstrapRequest(
+        (api) => api.getSubscribeData(token),
+        preferredHost: host,
+      );
+      final sub = subResult.value;
+      final resolvedHost = subResult.host;
       await _authService.cacheProfile(sub.profile);
       // Also update subscribe URL in case it changed
       await _authService.saveSubscribeUrl(sub.subscribeUrl);
+      if (resolvedHost != host) {
+        await _authService.saveApiHost(resolvedHost);
+        ref.read(_apiHostProvider.notifier).state = resolvedHost;
+      }
       if (!_disposed) {
         state = state.copyWith(userProfile: sub.profile);
       }
     } catch (e) {
       debugPrint('[Auth] Failed to refresh user info: $e');
-      if (e is XBoardApiException && (e.statusCode == 401 || e.statusCode == 403)) {
+      if (e is XBoardApiException &&
+          (e.statusCode == 401 || e.statusCode == 403)) {
         await handleUnauthenticated();
       }
     }
@@ -354,17 +452,26 @@ class AuthNotifier extends Notifier<AuthState> {
     if (token == null) return;
     try {
       final host = await _authService.getApiHost() ?? _kDefaultApiHost;
-      final api = XBoardApi(baseUrl: host, fallbackUrls: _kFallbackHosts);
       // Always fetch fresh from server — also updates profile data
-      final sub = await api.getSubscribeData(token);
+      final subResult = await _runBootstrapRequest(
+        (api) => api.getSubscribeData(token),
+        preferredHost: host,
+      );
+      final sub = subResult.value;
+      final resolvedHost = subResult.host;
       await _authService.cacheProfile(sub.profile);
+      if (resolvedHost != host) {
+        await _authService.saveApiHost(resolvedHost);
+        ref.read(_apiHostProvider.notifier).state = resolvedHost;
+      }
       await _authService.saveSubscribeUrl(sub.subscribeUrl);
       if (!_disposed) state = state.copyWith(userProfile: sub.profile);
       await _syncSubscription(sub.subscribeUrl);
       Telemetry.event(TelemetryEvents.subscriptionSync);
     } catch (e) {
       debugPrint('[Auth] Failed to sync subscription: $e');
-      if (e is XBoardApiException && (e.statusCode == 401 || e.statusCode == 403)) {
+      if (e is XBoardApiException &&
+          (e.statusCode == 401 || e.statusCode == 403)) {
         await handleUnauthenticated();
         return; // after logout, don't rethrow
       }
@@ -380,7 +487,11 @@ class AuthNotifier extends Notifier<AuthState> {
   /// there is no retry loop here. If the primary URL fails, surface the
   /// real error.
   Future<void> _syncSubscription(String subscribeUrl) async {
-    assert(() { debugPrint('[Auth] Syncing subscription from: ${subscribeUrl.substring(0, subscribeUrl.length.clamp(0, 50))}...'); return true; }());
+    assert(() {
+      debugPrint(
+          '[Auth] Syncing subscription from: ${subscribeUrl.substring(0, subscribeUrl.length.clamp(0, 50))}...');
+      return true;
+    }());
 
     // Use ProfileRepository for consistent config processing.
     // Check if we already have a "悦通" profile — update it instead of adding.
@@ -389,9 +500,8 @@ class AuthNotifier extends Notifier<AuthState> {
     final existing = profiles.where((p) => p.name == '悦通').toList();
     final isFirstTime = existing.isEmpty;
 
-    final proxyPort = CoreManager.instance.isRunning
-        ? CoreManager.instance.mixedPort
-        : null;
+    final proxyPort =
+        CoreManager.instance.isRunning ? CoreManager.instance.mixedPort : null;
 
     if (existing.isNotEmpty) {
       // Update existing profile and tag it as account-managed so logout
@@ -445,11 +555,12 @@ class AuthNotifier extends Notifier<AuthState> {
     try {
       final repo = ref.read(profileRepositoryProvider);
       final profiles = await repo.loadProfiles();
-      final profile =
-          profiles.where((p) => p.name == '悦通').firstOrNull;
+      final profile = profiles.where((p) => p.name == '悦通').firstOrNull;
       if (profile == null) return;
       final info = profile.subInfo;
-      if (info == null) return; // panel didn't send subscription-userinfo header
+      if (info == null) {
+        return; // panel didn't send subscription-userinfo header
+      }
 
       final alerts = <String>[];
       String? alertKey; // same-day dedup key per alert category

@@ -25,11 +25,24 @@ import 'models.dart';
 /// The endpoint methods are now ~3 lines each ("compose path → call client →
 /// wrap result") and the file fits comfortably under 350 lines.
 class XBoardApi {
-  XBoardApi({required this.baseUrl, this.fallbackUrls = const <String>[]})
-      : _http =
-            XBoardHttpClient(baseUrl: baseUrl, fallbackUrls: fallbackUrls);
+  XBoardApi({
+    required this.baseUrl,
+    this.fallbackUrls = const <String>[],
+    this.proxyPort,
+    this.timeout = XBoardHttpClient.defaultTimeout,
+    this.maxRetries = XBoardHttpClient.defaultMaxRetries,
+  }) : _http = XBoardHttpClient(
+          baseUrl: baseUrl,
+          fallbackUrls: fallbackUrls,
+          proxyPort: proxyPort,
+          timeout: timeout,
+          maxRetries: maxRetries,
+        );
 
   final String baseUrl;
+  final int? proxyPort;
+  final Duration timeout;
+  final int maxRetries;
 
   /// Ordered fallback hosts — see [XBoardHttpClient.fallbackUrls].
   final List<String> fallbackUrls;
@@ -103,14 +116,15 @@ class XBoardApi {
   /// API call. Returns both the YAML content and parsed
   /// `subscription-userinfo` headers.
   Future<SubscribeResult> fetchSubscribeConfig(String subscribeUrl) async {
-    final client = XBoardHttpClient.buildClient();
+    final client = XBoardHttpClient.buildClient(
+      proxyPort: proxyPort,
+      connectionTimeout: timeout,
+    );
     try {
-      final response = await client
-          .get(
-            Uri.parse(subscribeUrl),
-            headers: {'User-Agent': AppConstants.userAgent},
-          )
-          .timeout(const Duration(seconds: 30));
+      final response = await client.get(
+        Uri.parse(subscribeUrl),
+        headers: {'User-Agent': AppConstants.userAgent},
+      ).timeout(const Duration(seconds: 30));
       if (response.statusCode != 200) {
         throw XBoardApiException(
           response.statusCode,
@@ -299,7 +313,7 @@ class XBoardApi {
       );
     }
 
-    return OrderListResult(orders: [], hasMore: false);
+    return const OrderListResult(orders: [], hasMore: false);
   }
 
   /// Cancel a pending order. POST /api/v1/user/order/cancel

@@ -7,7 +7,7 @@ import '../yue_auth/providers/yue_auth_providers.dart';
 // ── DI: Infrastructure instance ─────────────────────────────────────────────
 
 final embyRepositoryProvider = Provider<EmbyRepository>((ref) {
-  final api = ref.watch(xboardApiProvider);
+  final api = ref.watch(businessXboardApiProvider);
   return EmbyRepository(api: api);
 });
 

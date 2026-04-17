@@ -19,7 +19,7 @@ export '../../domain/store/order_list_result.dart';
 
 final storeRepositoryProvider = Provider<StoreRepository?>((ref) {
   final token = ref.watch(authProvider).token;
-  final api = ref.watch(xboardApiProvider);
+  final api = ref.watch(businessXboardApiProvider);
   if (token == null) return null;
   return StoreRepository(api, token);
 });
@@ -54,8 +54,7 @@ class StorePlansNotifier extends AsyncNotifier<List<StorePlan>> {
 // Payment methods (cached for the session)
 // ------------------------------------------------------------------
 
-final paymentMethodsProvider =
-    FutureProvider<List<PaymentMethod>>((ref) async {
+final paymentMethodsProvider = FutureProvider<List<PaymentMethod>>((ref) async {
   final repo = ref.watch(storeRepositoryProvider);
   if (repo == null) return [];
   return repo.fetchPaymentMethods();
@@ -90,7 +89,8 @@ class PurchaseNotifier extends Notifier<PurchaseState> {
     int? methodId,
   }) async {
     // Prevent double submit during loading, polling, or awaiting payment
-    if (state is PurchaseLoading || state is PurchasePolling ||
+    if (state is PurchaseLoading ||
+        state is PurchasePolling ||
         state is PurchaseAwaitingPayment) {
       return;
     }
@@ -103,14 +103,16 @@ class PurchaseNotifier extends Notifier<PurchaseState> {
 
     // Idempotency: check for existing pending order for same plan
     try {
-      final List<StoreOrder> orders = ref.read(orderHistoryProvider).valueOrNull ??
-          (await repo.fetchOrders(page: 1)).orders;
+      final List<StoreOrder> orders =
+          ref.read(orderHistoryProvider).valueOrNull ??
+              (await repo.fetchOrders(page: 1)).orders;
       final pending = orders
           .where((o) => o.planId == planId && o.status == OrderStatus.pending)
           .firstOrNull;
       if (pending != null) {
         // Reuse existing pending order instead of creating a duplicate
-        debugPrint('[Store] Found pending order ${pending.tradeNo} for plan $planId — reusing');
+        debugPrint(
+            '[Store] Found pending order ${pending.tradeNo} for plan $planId — reusing');
         await payExistingOrder(tradeNo: pending.tradeNo, methodId: methodId);
         return;
       }
@@ -232,7 +234,8 @@ class PurchaseNotifier extends Notifier<PurchaseState> {
     required String tradeNo,
     int? methodId,
   }) async {
-    if (state is PurchaseLoading || state is PurchasePolling ||
+    if (state is PurchaseLoading ||
+        state is PurchasePolling ||
         state is PurchaseAwaitingPayment) {
       return;
     }

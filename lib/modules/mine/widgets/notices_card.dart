@@ -14,7 +14,7 @@ class NoticesCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final noticesAsync = ref.watch(accountNoticesProvider);
+    final noticesAsync = ref.watch(dashboardNoticesProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return noticesAsync.when(
@@ -139,7 +139,7 @@ class _NoticeTile extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, size: 16, color: YLColors.zinc400),
+            const Icon(Icons.chevron_right, size: 16, color: YLColors.zinc400),
           ],
         ),
       ),
@@ -192,7 +192,8 @@ class _NoticeTile extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 12),
-            Divider(height: 1, color: isDark ? YLColors.zinc700 : YLColors.zinc200),
+            Divider(
+                height: 1, color: isDark ? YLColors.zinc700 : YLColors.zinc200),
             // 内容
             Expanded(
               child: SingleChildScrollView(

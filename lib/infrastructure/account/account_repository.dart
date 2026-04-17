@@ -7,8 +7,11 @@ import '../transport/yuelink_http_client.dart';
 /// Uses the same standalone YueLink Checkin API server (yue.yuebao.website)
 /// as [CheckinRepository], with shared transport via [YueLinkHttpClient].
 class AccountRepository {
-  AccountRepository()
-      : _http = YueLinkHttpClient(baseUrl: 'https://yue.yuebao.website');
+  AccountRepository({int? proxyPort})
+      : _http = YueLinkHttpClient(
+          baseUrl: 'https://yue.yuebao.website',
+          proxyPort: proxyPort,
+        );
 
   final YueLinkHttpClient _http;
 

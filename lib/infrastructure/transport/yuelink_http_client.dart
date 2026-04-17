@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 
 import '../datasources/xboard/index.dart';
 
@@ -22,24 +25,65 @@ class YueLinkHttpClient {
   YueLinkHttpClient({
     required this.baseUrl,
     this.timeout = const Duration(seconds: 10),
+    this.proxyPort,
   });
 
   final String baseUrl;
   final Duration timeout;
+  final int? proxyPort;
 
   /// Build a raw [HttpClient] with timeout applied as a separate statement
   /// (per CLAUDE.md cascade-bug guidance).
-  HttpClient _buildClient() {
+  HttpClient _buildClient({int? proxyPort}) {
     final client = HttpClient();
+    if (proxyPort != null && proxyPort > 0) {
+      client.findProxy = (_) => 'PROXY 127.0.0.1:$proxyPort';
+    } else {
+      client.findProxy = (_) => 'DIRECT';
+    }
     client.connectionTimeout = timeout;
     return client;
+  }
+
+  static bool _isRetryable(Object e) {
+    if (e is TimeoutException) return true;
+    if (e is SocketException) return true;
+    if (e is HandshakeException) return true;
+    if (e is HttpException) return true;
+    if (e is XBoardApiException) {
+      final c = e.statusCode;
+      return c == 502 || c == 503 || c == 504;
+    }
+    return false;
+  }
+
+  Future<T> _withRouting<T>(Future<T> Function(HttpClient client) fn) async {
+    final port = proxyPort;
+    if (port != null && port > 0) {
+      final proxied = _buildClient(proxyPort: port);
+      try {
+        return await fn(proxied);
+      } catch (e) {
+        if (!_isRetryable(e)) rethrow;
+        debugPrint(
+            '[YueLinkHttp] Proxied request failed, falling back to direct: $e');
+      } finally {
+        proxied.close();
+      }
+    }
+
+    final direct = _buildClient();
+    try {
+      return await fn(direct);
+    } finally {
+      direct.close();
+    }
   }
 
   /// GET returning decoded `data` Map (or whole body if `data` is absent).
   /// Throws [XBoardApiException] on non-2xx or `status:"fail"`.
   Future<Map<String, dynamic>> get(String path, {String? token}) async {
-    final client = _buildClient();
-    try {
+    return _withRouting((client) async {
       final request = await client.getUrl(Uri.parse('$baseUrl$path'));
       if (token != null) request.headers.set('Authorization', token);
       request.headers.set('Accept', 'application/json');
@@ -48,9 +92,7 @@ class YueLinkHttpClient {
       final json = jsonDecode(body) as Map<String, dynamic>;
       _assertSuccess(json, response.statusCode);
       return json['data'] as Map<String, dynamic>? ?? json;
-    } finally {
-      client.close();
-    }
+    });
   }
 
   /// POST returning decoded `data` Map.
@@ -59,8 +101,7 @@ class YueLinkHttpClient {
     String? token,
     Map<String, dynamic>? body,
   }) async {
-    final client = _buildClient();
-    try {
+    return _withRouting((client) async {
       final request = await client.postUrl(Uri.parse('$baseUrl$path'));
       if (token != null) request.headers.set('Authorization', token);
       request.headers.set('Accept', 'application/json');
@@ -71,9 +112,7 @@ class YueLinkHttpClient {
       final json = jsonDecode(respBody) as Map<String, dynamic>;
       _assertSuccess(json, response.statusCode);
       return json['data'] as Map<String, dynamic>? ?? json;
-    } finally {
-      client.close();
-    }
+    });
   }
 
   /// Same as [get] but returns the parsed `data` value as a List, or empty
@@ -83,13 +122,17 @@ class YueLinkHttpClient {
     String path, {
     String? token,
   }) async {
-    final client = _buildClient();
-    try {
+    return _withRouting((client) async {
       final request = await client.getUrl(Uri.parse('$baseUrl$path'));
       if (token != null) request.headers.set('Authorization', token);
       request.headers.set('Accept', 'application/json');
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode == 502 ||
+          response.statusCode == 503 ||
+          response.statusCode == 504) {
+        throw XBoardApiException(response.statusCode, body);
+      }
       if (response.statusCode < 200 || response.statusCode >= 300) return [];
       final json = jsonDecode(body) as Map<String, dynamic>;
       final data = json['data'];
@@ -97,28 +140,30 @@ class YueLinkHttpClient {
         return data.whereType<Map<String, dynamic>>().toList();
       }
       return [];
-    } finally {
-      client.close();
-    }
+    });
   }
 
   /// Same as [get] but returns null on any error / non-2xx instead of
   /// throwing. Used by anonymous public endpoints (HomeRepository).
   Future<Map<String, dynamic>?> tryGet(String path, {String? token}) async {
-    final client = _buildClient();
     try {
-      final request = await client.getUrl(Uri.parse('$baseUrl$path'));
-      if (token != null) request.headers.set('Authorization', token);
-      request.headers.set('Accept', 'application/json');
-      final response = await request.close();
-      if (response.statusCode != 200) return null;
-      final body = await response.transform(utf8.decoder).join();
-      final json = jsonDecode(body) as Map<String, dynamic>;
-      return json['data'] as Map<String, dynamic>? ?? json;
+      return await _withRouting((client) async {
+        final request = await client.getUrl(Uri.parse('$baseUrl$path'));
+        if (token != null) request.headers.set('Authorization', token);
+        request.headers.set('Accept', 'application/json');
+        final response = await request.close();
+        if (response.statusCode == 502 ||
+            response.statusCode == 503 ||
+            response.statusCode == 504) {
+          throw XBoardApiException(response.statusCode, 'Server error');
+        }
+        if (response.statusCode != 200) return null;
+        final body = await response.transform(utf8.decoder).join();
+        final json = jsonDecode(body) as Map<String, dynamic>;
+        return json['data'] as Map<String, dynamic>? ?? json;
+      });
     } catch (_) {
       return null;
-    } finally {
-      client.close();
     }
   }
 

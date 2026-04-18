@@ -179,8 +179,8 @@ class ConfigTemplate {
     config = _ensureConnectivityRules(config);
     debugPrint('[Config] 10b connectivityRules done');
 
-    config = _ensureVideoQuicFallback(config);
-    debugPrint('[Config] 10c videoQuicFallback done');
+    config = _ensureQuicReject(config);
+    debugPrint('[Config] 10c quicReject done');
 
     if (!_hasKey(config, 'mode')) {
       config += '\nmode: rule\n';
@@ -1304,30 +1304,36 @@ class ConfigTemplate {
         config.substring(rulesMatch.end);
   }
 
-  /// Reject UDP/QUIC to YouTube video CDN so clients fall back to TCP/HTTP/2.
+  /// Reject QUIC (all UDP/443) so apps fall back to TCP/TLS.
   ///
-  /// Symptom it fixes: "封面加载很快，视频播放很卡" — thumbnails (`ytimg.com`,
-  /// small HTTPS/TCP) stream fine while video bytes (`*.googlevideo.com`,
-  /// HTTPS+QUIC/UDP 443, 20+Mbps bursts) stall. Root cause on Android is
-  /// gVisor's userspace UDP path: TUN's `stack: gvisor` + `file-descriptor`
-  /// caps UDP conntrack at a few Mbps, while TCP through the same tunnel
-  /// gets kernel offload and handles 4K. The CN-ISP UDP 443 throttling /
-  /// QUIC-path instability on some proxies compounds this.
+  /// Symptom it fixes: "封面加载很快，视频播放很卡" — thumbnails over TCP/TLS
+  /// stream fine while video bytes over QUIC/UDP-443 stall. Affects YouTube
+  /// (`*.googlevideo.com`), Cloudflare-hosted media, Meta/TikTok, any site
+  /// advertising `Alt-Svc: h3=...`. Root causes: on Android, TUN `stack:
+  /// gvisor` + `file-descriptor` caps UDP conntrack at a few Mbps (TCP gets
+  /// kernel offload and handles 4K); on HY2 tunnels, CN-ISP UDP throttling /
+  /// QUIC-path instability compounds the problem.
   ///
-  /// YouTube clients (web + mobile app) transparently fall back to HTTP/2
-  /// when QUIC handshake times out, so dropping UDP to `googlevideo.com`
-  /// yields a slight first-stream delay then smooth playback at TCP speed.
-  /// Matches the canonical fix in ACL4SSR / Loyalsoldier / mihomo-party
-  /// default rulesets. Skipped when the subscription already ships an
-  /// equivalent REJECT for googlevideo (idempotent).
-  static String _ensureVideoQuicFallback(String config) {
+  /// Chrome/Safari/Firefox and mobile apps all honor the QUIC `broken-path`
+  /// signal when UDP handshake times out (REJECT-DROP silently drops the
+  /// packet) and fall back to HTTP/2 over TLS/TCP within ~100ms, yielding a
+  /// slight first-stream delay then smooth playback at TCP speed.
+  ///
+  /// Matches the panel's clashmeta subscription template and the node-side
+  /// `route-singbox.json` UDP:443 block — three defense layers agree.
+  /// Idempotent: skip if any rule already rejects UDP/443 globally.
+  static String _ensureQuicReject(String config) {
     final rulesMatch =
         RegExp(r'^rules:\s*\n', multiLine: true).firstMatch(config);
     if (rulesMatch == null) return config;
 
     final rulesBody = config.substring(rulesMatch.end);
+    // Idempotent: skip when a UDP/443 REJECT already exists (either
+    // ordering of the AND condition). The panel subscription template now
+    // injects this exact rule, so this prevents duplication on re-process.
     final alreadyHandled = RegExp(
-      r'googlevideo\.com[^\n]*REJECT',
+      r'AND,\(\(NETWORK,UDP\),\(DST-PORT,443\)\),REJECT'
+      r'|AND,\(\(DST-PORT,443\),\(NETWORK,UDP\)\),REJECT',
       caseSensitive: false,
     ).hasMatch(rulesBody);
     if (alreadyHandled) return config;
@@ -1337,7 +1343,7 @@ class ConfigTemplate {
     final ruleIndent = firstRule?.group(1) ?? '  ';
 
     final injection =
-        '$ruleIndent- "AND,((DOMAIN-SUFFIX,googlevideo.com),(NETWORK,UDP)),REJECT-DROP"\n';
+        '$ruleIndent- "AND,((NETWORK,UDP),(DST-PORT,443)),REJECT-DROP"\n';
 
     return config.substring(0, rulesMatch.end) +
         injection +

@@ -412,9 +412,8 @@ proxy-groups:
     });
   });
 
-  group('ConfigTemplate video QUIC fallback', () {
-    const quicRejectRule =
-        'AND,((DOMAIN-SUFFIX,googlevideo.com),(NETWORK,UDP)),REJECT-DROP';
+  group('ConfigTemplate QUIC reject', () {
+    const quicRejectRule = 'AND,((NETWORK,UDP),(DST-PORT,443)),REJECT-DROP';
 
     test('injects QUIC reject rule at top of rules section', () {
       const config = '''
@@ -424,7 +423,7 @@ proxy-groups:
     type: select
     proxies: [DIRECT]
 rules:
-  - DOMAIN-SUFFIX,googlevideo.com,YueLink
+  - DOMAIN-SUFFIX,example.com,YueLink
   - MATCH,YueLink
 ''';
       final result = ConfigTemplate.process(config);
@@ -432,12 +431,11 @@ rules:
 
       final rulesStart = result.indexOf('rules:');
       final rejectIdx = result.indexOf(quicRejectRule, rulesStart);
-      final proxyIdx =
-          result.indexOf('DOMAIN-SUFFIX,googlevideo.com,YueLink', rulesStart);
+      final matchIdx = result.indexOf('MATCH,YueLink', rulesStart);
       expect(rejectIdx, greaterThan(0));
-      expect(proxyIdx, greaterThan(0));
-      expect(rejectIdx, lessThan(proxyIdx),
-          reason: 'reject rule must precede the proxy rule');
+      expect(matchIdx, greaterThan(0));
+      expect(rejectIdx, lessThan(matchIdx),
+          reason: 'reject rule must precede other rules');
     });
 
     test('is idempotent — double-processing does not duplicate', () {
@@ -448,7 +446,7 @@ proxy-groups:
     type: select
     proxies: [DIRECT]
 rules:
-  - DOMAIN-SUFFIX,googlevideo.com,YueLink
+  - DOMAIN-SUFFIX,example.com,YueLink
   - MATCH,YueLink
 ''';
       final once = ConfigTemplate.process(config);
@@ -459,25 +457,37 @@ rules:
       expect(occurrences, 1);
     });
 
-    test('skips injection when subscription already has a googlevideo REJECT',
-        () {
+    test('skips injection when subscription already has UDP/443 REJECT', () {
       const config = '''
 mixed-port: 7890
 rules:
-  - DOMAIN-SUFFIX,googlevideo.com,REJECT
+  - AND,((NETWORK,UDP),(DST-PORT,443)),REJECT-DROP
   - MATCH,DIRECT
 ''';
       final result = ConfigTemplate.process(config);
-      // Should NOT inject our AND/NETWORK,UDP variant — subscription handles it
-      expect(result, isNot(contains('(NETWORK,UDP)')));
-      // Original REJECT preserved
-      expect(result, contains('DOMAIN-SUFFIX,googlevideo.com,REJECT'));
+      // Panel-injected rule already present — must not duplicate
+      final occurrences = RegExp(RegExp.escape(quicRejectRule))
+          .allMatches(result)
+          .length;
+      expect(occurrences, 1);
+    });
+
+    test('skips injection when subscription uses reversed AND ordering', () {
+      const config = '''
+mixed-port: 7890
+rules:
+  - AND,((DST-PORT,443),(NETWORK,UDP)),REJECT-DROP
+  - MATCH,DIRECT
+''';
+      final result = ConfigTemplate.process(config);
+      // Should NOT inject our variant — equivalent rule already present
+      expect(result, isNot(contains(quicRejectRule)));
     });
 
     test('does nothing when config has no rules section', () {
       const config = 'mixed-port: 7890\nproxies: []\n';
       final result = ConfigTemplate.process(config);
-      expect(result, isNot(contains('googlevideo.com')));
+      expect(result, isNot(contains('NETWORK,UDP')));
     });
 
     test('preserves indentation of existing rules (4-space)', () {
@@ -488,7 +498,8 @@ rules:
     - MATCH,DIRECT
 ''';
       final result = ConfigTemplate.process(config);
-      expect(result, contains('    - "AND,((DOMAIN-SUFFIX,googlevideo.com'));
+      expect(result,
+          contains('    - "AND,((NETWORK,UDP),(DST-PORT,443)),REJECT-DROP"'));
     });
   });
 }
